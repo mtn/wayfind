@@ -8,7 +8,8 @@ A minimal DAP client that:
  – waits for a breakpoint hit (stopped event),
  – requests a stack trace to obtain a frame id,
  – sends an evaluate request to inspect variable "next_val" at the breakpoint,
- – sends a continue request, then exits.
+ – sends continue requests until the debugger is no longer stopping,
+ – waits for the target process to terminate, then exits.
 Note: This is a bare‐bones implementation meant for testing.
 """
 
@@ -24,7 +25,7 @@ import re
 # Global variables to help manage DAP messages
 next_seq = 1
 responses = {}
-events = []
+events = {}
 
 def next_sequence():
     global next_seq
@@ -67,23 +68,22 @@ def dap_receiver(sock):
         except Exception as e:
             print(f"Receiver exiting: {e}")
             break
-
         msg_type = msg.get("type")
+        # We key responses by request_seq for responses,
+        # and simply append events to a list.
         if msg_type == "response":
             req_seq = msg.get("request_seq")
             responses[req_seq] = msg
         elif msg_type == "event":
-            events.append(msg)
+            events.setdefault(msg.get("event"), []).append(msg)
         else:
             print("Unknown message type", msg)
 
 def wait_for_event(event_name, timeout=10):
     t0 = time.time()
     while time.time() - t0 < timeout:
-        for ev in events:
-            if ev.get("event") == event_name:
-                events.remove(ev)
-                return ev
+        if event_name in events and events[event_name]:
+            return events[event_name].pop(0)
         time.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for event {event_name}")
 
@@ -91,8 +91,7 @@ def wait_for_response(seq, timeout=10):
     t0 = time.time()
     while time.time() - t0 < timeout:
         if seq in responses:
-            resp = responses.pop(seq)
-            return resp
+            return responses.pop(seq)
         time.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for response to seq {seq}")
 
@@ -101,16 +100,16 @@ def main():
     target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data", "a.py"))
     debugpy_port = 5678
 
-    # # Step 1: Launch target script with debugpy.
-    # launcher_cmd = [
-    #     sys.executable, "-m", "debugpy",
-    #     "--listen", f"127.0.0.1:{debugpy_port}",
-    #     "--wait-for-client",
-    #     target_script
-    # ]
-    # print("Launching target script with debugpy:", " ".join(launcher_cmd))
-    # proc = subprocess.Popen(launcher_cmd)
-    # time.sleep(1)
+    # Step 1: Launch target script with debugpy.
+    launcher_cmd = [
+         sys.executable, "-m", "debugpy",
+         "--listen", f"127.0.0.1:{debugpy_port}",
+         "--wait-for-client",
+         target_script
+    ]
+    print("Launching target script with debugpy:", " ".join(launcher_cmd))
+    proc = subprocess.Popen(launcher_cmd)
+    time.sleep(1)
 
     # Step 2: Connect to debugpy.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -153,9 +152,9 @@ def main():
         }
     }
     send_dap_message(sock, attach_req)
-    # Do not block waiting for attach response immediately; configuration phase follows.
     time.sleep(0.2)
 
+    # Wait for the "initialized" event sent by the adapter.
     _ = wait_for_event("initialized")
     print("Initialization complete")
 
@@ -171,7 +170,7 @@ def main():
                 "name": os.path.basename(target_script)
             },
             "breakpoints": [
-                {"line": 20}
+                {"line": 20}  # Adjust if needed.
             ],
             "sourceModified": False
         }
@@ -194,7 +193,6 @@ def main():
     conf_resp = wait_for_response(conf_seq)
     print("ConfigurationDone response:", conf_resp)
 
-    # Now, wait for attach response.
     try:
         attach_resp = wait_for_response(attach_seq)
     except TimeoutError:
@@ -203,16 +201,10 @@ def main():
     else:
         print("Attach response:", attach_resp)
 
-    # Step 7: Wait for a "stopped" event.
+    # Step 7: Wait for the "stopped" event.
     print("Waiting for the target to hit the breakpoint (stopped event)...")
-    try:
-        stopped_event = wait_for_event("stopped", timeout=15)
-    except TimeoutError as te:
-        print("Error: Timeout waiting for stopped event.")
-        raise te
+    stopped_event = wait_for_event("stopped", timeout=15)
     print("Received stopped event:", stopped_event)
-
-    # Retrieve the thread id from the stopped event.
     thread_id = stopped_event.get("body", {}).get("threadId", 1)
 
     # New Step: Request a stack trace to get the correct frame id.
@@ -231,27 +223,22 @@ def main():
     st_resp = wait_for_response(st_seq)
     print("StackTrace response:", st_resp)
     frames = st_resp.get("body", {}).get("stackFrames", [])
-    if not frames:
-        print("No stack frames returned!")
-        frame_id = None
-    else:
-        frame_id = frames[0].get("id")
-        print("Using frameId:", frame_id)
+    frame_id = frames[0].get("id") if frames else None
+    print("Using frameId:", frame_id)
 
-    # Step 8: While stopped, send an evaluate request for variable "next_val".
+    # Step 8: While stopped, send an evaluate request for "next_val".
     eval_seq = next_sequence()
-    eval_arguments = {
+    eval_args = {
         "expression": "next_val",
         "context": "hover",
     }
-    # Include the frameId if we got one.
-    if frame_id is not None:
-        eval_arguments["frameId"] = frame_id
+    if frame_id:
+        eval_args["frameId"] = frame_id
     eval_req = {
         "seq": eval_seq,
         "type": "request",
         "command": "evaluate",
-        "arguments": eval_arguments
+        "arguments": eval_args
     }
     send_dap_message(sock, eval_req)
     eval_resp = wait_for_response(eval_seq)
@@ -271,8 +258,28 @@ def main():
     cont_resp = wait_for_response(cont_seq)
     print("Continue response:", cont_resp)
 
-    # proc.wait(timeout=10)
-    # print("Target process terminated.")
+    # Our debugger received a second stopped event (i.e. the breakpoint was hit again).
+    # Loop to send continue requests until no stopped event remains.
+    while True:
+        try:
+            extra_stop = wait_for_event("stopped", timeout=1)
+            print("Extra stopped event received; sending another continue.")
+            cont_seq = next_sequence()
+            cont_req = {
+                "seq": cont_seq,
+                "type": "request",
+                "command": "continue",
+                "arguments": {"threadId": thread_id}
+            }
+            send_dap_message(sock, cont_req)
+            extra_cont = wait_for_response(cont_seq)
+            print("Extra continue response:", extra_cont)
+        except TimeoutError:
+            break
+
+    # Now, wait for the target process to terminate.
+    proc.wait()  # You could add a longer timeout here, if needed.
+    print("Target process terminated.")
 
     sock.close()
 
