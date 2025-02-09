@@ -6,6 +6,7 @@ A minimal DAP client that:
  – sends an initialize request, then an attach request;
  – sends setBreakpoints and configurationDone requests during the configuration phase;
  – waits for a breakpoint hit (stopped event),
+ – requests a stack trace to obtain a frame id,
  – sends an evaluate request to inspect variable "next_val" at the breakpoint,
  – sends a continue request, then exits.
 Note: This is a bare‐bones implementation meant for testing.
@@ -83,8 +84,6 @@ def wait_for_event(event_name, timeout=10):
             if ev.get("event") == event_name:
                 events.remove(ev)
                 return ev
-            else:
-                print("Nope, event is", ev.get("event"))
         time.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for event {event_name}")
 
@@ -154,7 +153,7 @@ def main():
         }
     }
     send_dap_message(sock, attach_req)
-    # Do not block waiting for attach response immediately; configuration phase follows
+    # Do not block waiting for attach response immediately; configuration phase follows.
     time.sleep(0.2)
 
     _ = wait_for_event("initialized")
@@ -172,7 +171,7 @@ def main():
                 "name": os.path.basename(target_script)
             },
             "breakpoints": [
-                {"line": 20}  # Adjust this line number if the breakpoint in a.py is elsewhere.
+                {"line": 20}
             ],
             "sourceModified": False
         }
@@ -213,17 +212,46 @@ def main():
         raise te
     print("Received stopped event:", stopped_event)
 
+    # Retrieve the thread id from the stopped event.
+    thread_id = stopped_event.get("body", {}).get("threadId", 1)
+
+    # New Step: Request a stack trace to get the correct frame id.
+    st_seq = next_sequence()
+    st_req = {
+        "seq": st_seq,
+        "type": "request",
+        "command": "stackTrace",
+        "arguments": {
+            "threadId": thread_id,
+            "startFrame": 0,
+            "levels": 1
+        }
+    }
+    send_dap_message(sock, st_req)
+    st_resp = wait_for_response(st_seq)
+    print("StackTrace response:", st_resp)
+    frames = st_resp.get("body", {}).get("stackFrames", [])
+    if not frames:
+        print("No stack frames returned!")
+        frame_id = None
+    else:
+        frame_id = frames[0].get("id")
+        print("Using frameId:", frame_id)
+
     # Step 8: While stopped, send an evaluate request for variable "next_val".
     eval_seq = next_sequence()
+    eval_arguments = {
+        "expression": "next_val",
+        "context": "hover",
+    }
+    # Include the frameId if we got one.
+    if frame_id is not None:
+        eval_arguments["frameId"] = frame_id
     eval_req = {
         "seq": eval_seq,
         "type": "request",
         "command": "evaluate",
-        "arguments": {
-            "expression": "next_val",
-            "context": "hover"
-            # Optionally add "frameId" if available.
-        }
+        "arguments": eval_arguments
     }
     send_dap_message(sock, eval_req)
     eval_resp = wait_for_response(eval_seq)
@@ -233,7 +261,6 @@ def main():
 
     # Step 9: Send a continue request.
     cont_seq = next_sequence()
-    thread_id = stopped_event.get("body", {}).get("threadId", 1)
     cont_req = {
         "seq": cont_seq,
         "type": "request",
@@ -244,8 +271,8 @@ def main():
     cont_resp = wait_for_response(cont_seq)
     print("Continue response:", cont_resp)
 
-    proc.wait(timeout=10)
-    print("Target process terminated.")
+    # proc.wait(timeout=10)
+    # print("Target process terminated.")
 
     sock.close()
 
