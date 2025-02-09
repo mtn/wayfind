@@ -55,9 +55,17 @@ if __name__ == '__main__':
 
 const initialFiles = [aPy];
 
+export interface IBreakpoint {
+  line: number;
+  verified?: boolean;
+  enabled: boolean;
+}
+
 export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFile, setSelectedFile] = useState(files[0]);
+  const [breakpoints, setBreakpoints] = useState<IBreakpoint[]>([]);
+  const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
 
   const handleFileSelect = (file: { name: string; content: string }) => {
     setSelectedFile(file);
@@ -71,6 +79,60 @@ export default function Home() {
     setSelectedFile({ ...selectedFile, content: newContent });
   };
 
+  const handleBreakpointChange = async (lineNumber: number) => {
+    const existingBp = breakpoints.find((bp) => bp.line === lineNumber);
+    let newBreakpoints: IBreakpoint[];
+
+    if (!existingBp) {
+      // Add new breakpoint (enabled by default)
+      newBreakpoints = [...breakpoints, { line: lineNumber, enabled: true }];
+    } else if (existingBp.enabled) {
+      // Disable existing breakpoint
+      newBreakpoints = breakpoints.map((bp) =>
+        bp.line === lineNumber ? { ...bp, enabled: false } : bp,
+      );
+    } else {
+      // Remove disabled breakpoint
+      newBreakpoints = breakpoints.filter((bp) => bp.line !== lineNumber);
+    }
+
+    setBreakpoints(newBreakpoints);
+
+    // If debug session is active, send the updated breakpoints to the server
+    if (isDebugSessionActive) {
+      try {
+        const response = await fetch("/api/debug?action=setBreakpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            // Only send enabled breakpoints to the debug adapter
+            breakpoints: newBreakpoints.filter((bp) => bp.enabled),
+            filePath: selectedFile.name,
+          }),
+        });
+        const data = await response.json();
+        if (data.breakpoints) {
+          // Merge verification status with our local state
+          const mergedBreakpoints = newBreakpoints.map((bp) => {
+            const verifiedBp = data.breakpoints.find(
+              (vbp: IBreakpoint) => vbp.line === bp.line,
+            );
+            return verifiedBp && bp.enabled
+              ? { ...bp, verified: verifiedBp.verified }
+              : bp;
+          });
+          setBreakpoints(mergedBreakpoints);
+        }
+      } catch (error) {
+        console.error("Failed to update breakpoints:", error);
+      }
+    }
+  };
+
+  const handleDebugSessionStart = () => {
+    setIsDebugSessionActive(true);
+  };
+
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
@@ -80,7 +142,6 @@ export default function Home() {
           </div>
         </ResizablePanel>
         <ResizablePanel defaultSize={80}>
-          {/* Replacing the vertical split from two panels to three panels */}
           <ResizablePanelGroup direction="vertical">
             <ResizablePanel defaultSize={60}>
               <div className="h-full">
@@ -88,6 +149,8 @@ export default function Home() {
                   content={selectedFile.content}
                   language="python"
                   onChange={handleFileChange}
+                  breakpoints={breakpoints}
+                  onBreakpointChange={handleBreakpointChange}
                 />
               </div>
             </ResizablePanel>
@@ -95,7 +158,10 @@ export default function Home() {
               <ChatInterface files={files} />
             </ResizablePanel>
             <ResizablePanel defaultSize={20}>
-              <DebugToolbar />
+              <DebugToolbar
+                onDebugSessionStart={handleDebugSessionStart}
+                breakpoints={breakpoints}
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>

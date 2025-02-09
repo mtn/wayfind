@@ -76,3 +76,20 @@ body {
         @apply bg-background text-foreground;
     }
 }
+
+.breakpoint {
+    background-color: #e51400;
+    border-radius: 50%;
+    cursor: pointer;
+    margin-left: 2px;
+    width: 8px !important;
+    height: 8px !important;
+}
+
+.breakpoint.verified {
+    background-color: #e51400;
+}
+
+.breakpoint:not(.verified) {
+    background-color: #848484;
+}
