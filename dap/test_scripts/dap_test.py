@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 A minimal DAP client that:
-  – launches the target script (a.py) with debugpy;
-  – connects to debugpy over TCP;
-  – sends the initialize, setBreakpoints, and configurationDone requests;
-  – waits for a breakpoint hit (stopped event),
-  – sends an evaluate request to inspect variable "next_val" at the breakpoint,
-  – sends a continue command then exits.
+ – launches the target script (a.py) with debugpy;
+ – connects to debugpy over TCP;
+ – sends an initialize request, then an attach request;
+ – sends setBreakpoints and configurationDone requests during the configuration phase;
+ – waits for a breakpoint hit (stopped event),
+ – sends an evaluate request to inspect variable "next_val" at the breakpoint,
+ – sends a continue request, then exits.
 Note: This is a bare‐bones implementation meant for testing.
 """
 
@@ -35,13 +36,10 @@ def send_dap_message(sock, message):
     data = json.dumps(message)
     header = f"Content-Length: {len(data)}\r\n\r\n"
     sock.sendall(header.encode('utf-8') + data.encode('utf-8'))
-    # For debugging:
-    print(f"--> Sent (seq {message.get('seq')}, cmd: {message.get('command')}): {data}")
-    print()
+    print(f"--> Sent (seq {message.get('seq')}, cmd: {message.get('command')}): {data}\n")
 
 def read_dap_message(sock):
     """Read a DAP message from the socket. Blocks until complete."""
-    # First, read header lines until an empty line is found.
     header = b""
     while b"\r\n\r\n" not in header:
         chunk = sock.recv(1)
@@ -49,19 +47,15 @@ def read_dap_message(sock):
             raise ConnectionError("Socket closed while reading header")
         header += chunk
     header_text, _ = header.split(b"\r\n\r\n", 1)
-    # Parse content-length value:
     m = re.search(rb"Content-Length:\s*(\d+)", header_text)
     if not m:
         raise ValueError("Content-Length header not found")
     length = int(m.group(1))
-    # Now read exactly 'length' bytes
     body = b""
     while len(body) < length:
         body += sock.recv(length - len(body))
     message = json.loads(body.decode('utf-8'))
-    # For debugging:
-    print(f"<-- Received: {json.dumps(message)}")
-    print()
+    print(f"<-- Received: {json.dumps(message)}\n")
     return message
 
 def dap_receiver(sock):
@@ -83,7 +77,6 @@ def dap_receiver(sock):
             print("Unknown message type", msg)
 
 def wait_for_event(event_name, timeout=10):
-    """Wait for an event with a given name."""
     t0 = time.time()
     while time.time() - t0 < timeout:
         for ev in events:
@@ -94,7 +87,6 @@ def wait_for_event(event_name, timeout=10):
     raise TimeoutError(f"Timeout waiting for event {event_name}")
 
 def wait_for_response(seq, timeout=10):
-    """Busy-wait for a response message with the given sequence number."""
     t0 = time.time()
     while time.time() - t0 < timeout:
         if seq in responses:
@@ -104,29 +96,30 @@ def wait_for_response(seq, timeout=10):
     raise TimeoutError(f"Timeout waiting for response to seq {seq}")
 
 def main():
-    # Paths: adjust these as needed.
+    # Adjust the target path (a.py should be in test_data subfolder).
     target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data", "a.py"))
     debugpy_port = 5678
 
-    # Step 1: Launch target script (a.py) with debugpy.
-    # We must use --wait-for-client so that a.py does not run until we attach.
-    launcher_cmd = [sys.executable, "-m", "debugpy", "--listen", f"127.0.0.1:{debugpy_port}",
-                    "--wait-for-client", target_script]
+    # Step 1: Launch target script with debugpy.
+    launcher_cmd = [
+        sys.executable, "-m", "debugpy",
+        "--listen", f"127.0.0.1:{debugpy_port}",
+        "--wait-for-client",
+        target_script
+    ]
     print("Launching target script with debugpy:", " ".join(launcher_cmd))
     proc = subprocess.Popen(launcher_cmd)
-    # Give it a moment to start and open the port.
     time.sleep(1)
 
-    # Step 2: Connect to debugpy over TCP.
+    # Step 2: Connect to debugpy.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect(("127.0.0.1", debugpy_port))
     print("Connected to debugpy.")
 
-    # Start the DAP receiver thread.
     recv_thread = threading.Thread(target=dap_receiver, args=(sock,), daemon=True)
     recv_thread.start()
 
-    # Step 3: Send "initialize" request.
+    # Step 3: Send initialize.
     init_seq = next_sequence()
     init_req = {
         "seq": init_seq,
@@ -145,25 +138,37 @@ def main():
     }
     send_dap_message(sock, init_req)
     init_resp = wait_for_response(init_seq)
-    # Typically, the adapter also sends an "initialized" event.
-    _ = wait_for_event("initialized")
-    print("Initialization complete.")
+    print("Received initialize response:", init_resp)
+    print("Initialization complete.\n")
 
-    # Step 4: Set a breakpoint in a.py.
-    # Suppose we want to set a breakpoint at line 20 (in our a.py, the debug point).
+    # Step 4: Send an attach request (since --wait-for-client was used).
+    attach_seq = next_sequence()
+    attach_req = {
+        "seq": attach_seq,
+        "type": "request",
+        "command": "attach",
+        "arguments": {
+            "host": "127.0.0.1",
+            "port": debugpy_port
+        }
+    }
+    send_dap_message(sock, attach_req)
+    # Do not block waiting for attach response immediately; configuration phase follows
+    time.sleep(0.2)
+
+    # Step 5: Send setBreakpoints.
     bp_seq = next_sequence()
     set_bp_req = {
         "seq": bp_seq,
         "type": "request",
         "command": "setBreakpoints",
         "arguments": {
-            # Specify the source path that debugpy can see.
             "source": {
                 "path": target_script,
                 "name": os.path.basename(target_script)
             },
             "breakpoints": [
-                {"line": 20}  # adjust if needed
+                {"line": 20}  # Adjust this line number if the breakpoint in a.py is elsewhere.
             ],
             "sourceModified": False
         }
@@ -171,8 +176,10 @@ def main():
     send_dap_message(sock, set_bp_req)
     bp_resp = wait_for_response(bp_seq)
     print("Breakpoints response:", bp_resp)
+    if not bp_resp.get("success"):
+        print("Error setting breakpoints:", bp_resp.get("message"))
 
-    # Step 5: Send configurationDone to tell the adapter that configuration is complete.
+    # Step 6: Send configurationDone.
     conf_seq = next_sequence()
     conf_req = {
         "seq": conf_seq,
@@ -181,15 +188,28 @@ def main():
         "arguments": {}
     }
     send_dap_message(sock, conf_req)
-    _ = wait_for_response(conf_seq)
-    print("Sent configurationDone.")
+    conf_resp = wait_for_response(conf_seq)
+    print("ConfigurationDone response:", conf_resp)
 
-    # Now the target (a.py) will resume until it hits the breakpoint.
+    # Now, wait for attach response.
+    try:
+        attach_resp = wait_for_response(attach_seq)
+    except TimeoutError:
+        attach_resp = None
+        print("No attach response received (expected in some configurations).")
+    else:
+        print("Attach response:", attach_resp)
+
+    # Step 7: Wait for a "stopped" event.
     print("Waiting for the target to hit the breakpoint (stopped event)...")
-    stopped_event = wait_for_event("stopped", timeout=15)
+    try:
+        stopped_event = wait_for_event("stopped", timeout=15)
+    except TimeoutError as te:
+        print("Error: Timeout waiting for stopped event.")
+        raise te
     print("Received stopped event:", stopped_event)
 
-    # Step 6: While stopped at the breakpoint, send an evaluate request.
+    # Step 8: While stopped, send an evaluate request for variable "next_val".
     eval_seq = next_sequence()
     eval_req = {
         "seq": eval_seq,
@@ -197,32 +217,29 @@ def main():
         "command": "evaluate",
         "arguments": {
             "expression": "next_val",
-            "context": "hover",
-            # Optionally, you can supply the frameId if you got one from a stackTrace response.
+            "context": "hover"
+            # Optionally add "frameId" if available.
         }
     }
     send_dap_message(sock, eval_req)
     eval_resp = wait_for_response(eval_seq)
     print("Evaluate response:", eval_resp)
-    # For example, you could extract the result:
     result_value = eval_resp.get("body", {}).get("result")
     print("Value of next_val at breakpoint:", result_value)
 
-    # Step 7: Send a "continue" request so that the target can finish.
+    # Step 9: Send a continue request.
     cont_seq = next_sequence()
+    thread_id = stopped_event.get("body", {}).get("threadId", 1)
     cont_req = {
         "seq": cont_seq,
         "type": "request",
         "command": "continue",
-        "arguments": {
-            "threadId": stopped_event.get("body", {}).get("threadId", 1)
-        }
+        "arguments": {"threadId": thread_id}
     }
     send_dap_message(sock, cont_req)
     cont_resp = wait_for_response(cont_seq)
     print("Continue response:", cont_resp)
 
-    # Give the target time to finish.
     proc.wait(timeout=10)
     print("Target process terminated.")
 
