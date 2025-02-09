@@ -3,19 +3,25 @@ import { spawn } from "child_process";
 import path from "path";
 import { DAPClient } from "../../lib/dapClient";
 
-// Store the DAP session and Python process in module scope so they persist between calls.
+// Store the DAP session and Python process globally so subsequent requests reuse them.
 let dapClient: DAPClient | null = null;
 let pythonProcess: ReturnType<typeof spawn> | null = null;
 
-// Hardcoded target script path (adjust this accordingly)
-const targetScript = path.join(process.cwd(), "dap", "test_data", "a.py");
+// Adjust the following to match your file structure.
+const targetScript = path.join(
+  process.cwd(),
+  "..",
+  "dap",
+  "test_scripts",
+  "test_data",
+  "a.py",
+);
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
   const { action } = req.query;
-
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
     return;
@@ -23,7 +29,6 @@ export default async function handler(
 
   try {
     if (action === "launch") {
-      // Launch the target Python process with debugpy.
       const debugpyPort = 5678;
       pythonProcess = spawn("python", [
         "-m",
@@ -34,28 +39,24 @@ export default async function handler(
         targetScript,
       ]);
       console.log("Launched Python process with PID:", pythonProcess.pid);
-
-      // Give the Python process time to start and listen.
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Create and connect the DAP client.
       dapClient = new DAPClient();
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
 
-      // Listen for messages (for logging).
+      // Log incoming messages for debugging.
       dapClient.on("message", (msg) => {
         console.log("<-- Message received:", msg);
       });
 
-      // Perform the sequence: initialize, attach, setBreakpoints, configurationDone.
+      // Execute the sequence exactly as in the Python script.
       const initResp = await dapClient.initialize();
       console.log("Initialize response:", initResp);
 
       const attachResp = await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach response:", attachResp);
 
-      // Set a breakpoint at line 20 (for example).
       const bpResp = await dapClient.setBreakpoints(targetScript, [
         { line: 20 },
       ]);
@@ -76,7 +77,6 @@ export default async function handler(
         res.status(400).json({ error: "Missing expression in request body" });
         return;
       }
-      // Get a stack trace to obtain a frame id.
       const stackResp = await dapClient.stackTrace(threadId || 1);
       let frameId: number | undefined;
       if (

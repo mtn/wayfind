@@ -16,10 +16,11 @@ export interface DAPMessage {
 const SEQ_UNASSIGNED = -1;
 
 export class DAPClient extends EventEmitter {
-  socket: net.Socket;
-  buffer: string;
-  nextSeq: number;
-  pendingResponses: Map<number, (msg: DAPMessage) => void>;
+  private socket: net.Socket;
+  private buffer: string;
+  private nextSeq: number;
+  // This map stores responses keyed by request_seq.
+  private pendingResponses: Map<number, DAPMessage>;
 
   constructor() {
     super();
@@ -29,55 +30,98 @@ export class DAPClient extends EventEmitter {
     this.pendingResponses = new Map();
   }
 
-  // Helper: Sleep for the specified ms.
-  sleep(ms: number): Promise<void> {
+  // Utility: pause for ms milliseconds.
+  private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // Helper: Wait for a one-time event with a timeout.
-  waitForEvent(eventName: string, timeout = 10000): Promise<any> {
+  // Wait for a specific event name once, with a timeout in ms.
+  waitForEvent(eventName: string, timeout = 10000): Promise<DAPMessage> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.removeListener(eventName, listener);
         reject(new Error(`Timeout waiting for event ${eventName}`));
       }, timeout);
-      const listener = (data: any) => {
+
+      const listener = (data: DAPMessage) => {
         clearTimeout(timer);
         resolve(data);
       };
+
+      // We emit("eventName", data) below in handleData for any event.
+      // So here, we listen once for eventName.
       this.once(eventName, listener);
     });
   }
 
+  // Connect to the debugpy socket at host:port.
   connect(host: string, port: number): Promise<void> {
     return new Promise((resolve, reject) => {
       this.socket.connect(port, host, () => {
+        // Start buffering incoming data once connected.
         this.socket.on("data", (data: Buffer) => this.handleData(data));
         resolve();
       });
-      this.socket.on("error", (err) => {
-        reject(err);
-      });
+      this.socket.on("error", (err) => reject(err));
     });
   }
 
-  handleData(data: Buffer) {
+  // Send a DAP message by prepending Content-Length headers, with no wait for response.
+  sendMessage(message: DAPMessage): void {
+    message.seq = this.nextSeq++;
+    const json = JSON.stringify(message);
+    const header = `Content-Length: ${Buffer.byteLength(json, "utf8")}\r\n\r\n`;
+    const data = header + json;
+    this.socket.write(data);
+
+    // For visibility in logs:
+    console.log(
+      `--> Sent (seq ${message.seq}, cmd: ${message.command}): ${json}`,
+    );
+  }
+
+  // Wait for a DAP response matching the given request_seq within the specified timeout.
+  waitForResponse(seq: number, timeout = 10000): Promise<DAPMessage> {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        if (this.pendingResponses.has(seq)) {
+          const msg = this.pendingResponses.get(seq)!;
+          this.pendingResponses.delete(seq);
+          clearInterval(interval);
+          resolve(msg);
+        } else if (Date.now() - start > timeout) {
+          clearInterval(interval);
+          reject(new Error(`Timeout waiting for response to seq ${seq}`));
+        }
+      }, 100);
+    });
+  }
+
+  // -- The main loop that buffers incoming data and emits DAP messages. --
+  private handleData(data: Buffer): void {
     this.buffer += data.toString("utf8");
-    // Look for complete messages (header ends with "\r\n\r\n")
+
     while (true) {
       const headerEnd = this.buffer.indexOf("\r\n\r\n");
       if (headerEnd === -1) break;
+
       const header = this.buffer.slice(0, headerEnd);
       const match = header.match(/Content-Length:\s*(\d+)/);
       if (!match) {
         this.emit("error", new Error("No Content-Length header found"));
         return;
       }
+
       const length = parseInt(match[1], 10);
       const totalMessageLength = headerEnd + 4 + length;
       if (this.buffer.length < totalMessageLength) break;
+
+      // Extract the body and remove it from the buffer.
       const body = this.buffer.slice(headerEnd + 4, totalMessageLength);
       this.buffer = this.buffer.slice(totalMessageLength);
+
+      // Parse the JSON message.
       let msg: DAPMessage;
       try {
         msg = JSON.parse(body);
@@ -85,49 +129,38 @@ export class DAPClient extends EventEmitter {
         console.error("Error parsing JSON message", e);
         continue;
       }
-      // If this is a response message, see if someone is waiting for it.
+
+      // If it's a response, store it under pendingResponses so waitForResponse can pick it up.
       if (msg.type === "response" && msg.request_seq) {
-        const resolver = this.pendingResponses.get(msg.request_seq);
-        if (resolver) {
-          resolver(msg);
-          this.pendingResponses.delete(msg.request_seq);
-        }
+        this.pendingResponses.set(msg.request_seq, msg);
       }
+
+      // We also emit an event with the raw message so that logs/debugging can see it.
+      // But for DAP "event" messages, we also emit by the event name, so waitForEvent can catch them.
       this.emit("message", msg);
+      if (msg.type === "event" && msg.event) {
+        // e.g. "initialized", "stopped", etc.
+        this.emit(msg.event, msg);
+      }
+
       console.log("<-- Received:", msg);
     }
   }
 
-  sendMessage(message: DAPMessage): Promise<DAPMessage> {
-    // Assign a sequence number.
-    message.seq = this.nextSeq++;
-    const json = JSON.stringify(message);
-    // Construct header with Content-Length.
-    const data = `Content-Length: ${Buffer.byteLength(json, "utf8")}\r\n\r\n${json}`;
-    this.socket.write(data);
-    console.log("--> Sent:", json);
-    return new Promise((resolve, reject) => {
-      this.pendingResponses.set(message.seq, resolve);
-      setTimeout(() => {
-        if (this.pendingResponses.has(message.seq)) {
-          this.pendingResponses.delete(message.seq);
-          reject(
-            new Error(`Timeout waiting for response for seq ${message.seq}`),
-          );
-        }
-      }, 10000);
-    });
-  }
+  //
+  //  -- Below are the higher-level request methods that mimic the Python script. --
+  //
 
-  async initialize() {
+  async initialize(): Promise<DAPMessage> {
+    const initSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
       command: "initialize",
       arguments: {
         adapterID: "python",
-        clientID: "nextjs_dap_client",
-        clientName: "Next.js DAP Client",
+        clientID: "dap_test_client",
+        clientName: "DAP Test",
         linesStartAt1: true,
         columnsStartAt1: true,
         pathFormat: "path",
@@ -135,50 +168,42 @@ export class DAPClient extends EventEmitter {
         supportsEvaluateForHovers: true,
       },
     };
-    return await this.sendMessage(req);
+    this.sendMessage(req);
+    return this.waitForResponse(initSeq);
   }
 
-  // This attach method is now updated to mimic the Python script exactly.
-  async attach(host: string, port: number): Promise<DAPMessage | null> {
+  /**
+   * Send the "attach" request. In the Python script, the code:
+   *   - sends attach,
+   *   - sleeps 0.2s,
+   *   - waits for "initialized" event,
+   *   - sets breakpoints / config done,
+   *   - THEN tries to retrieve attach response with a short timeout.
+   *
+   * So here we just do the attach request + short sleep, and return the seq.
+   * The caller can do the rest of the steps in the same order as Python.
+   */
+  async attach(host: string, port: number): Promise<number> {
+    const attachSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
       command: "attach",
       arguments: { host, port },
     };
-    // Remember the sequence number that will be assigned to this request.
-    const currentSeq = this.nextSeq;
     this.sendMessage(req);
-    // Sleep 200 ms (like time.sleep(0.2) in Python)
+
+    // Just like Python: "time.sleep(0.2)"
     await this.sleep(200);
-    // Wait for the "initialized" event.
-    await this.waitForEvent("initialized", 10000);
-    console.log("Initialization complete");
-    // Now, try to wait for the attach response.
-    let attachResp: DAPMessage | null = null;
-    try {
-      attachResp = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          reject(
-            new Error(`Timeout waiting for response for seq ${currentSeq}`),
-          );
-        }, 1000);
-        // This pendingResponses map already holds a resolver keyed by the sequence.
-        this.pendingResponses.set(currentSeq, (msg: DAPMessage) => {
-          clearTimeout(timer);
-          resolve(msg);
-        });
-      });
-    } catch (err) {
-      attachResp = null;
-      console.log(
-        "No attach response received (expected in some configurations).",
-      );
-    }
-    return attachResp;
+
+    return attachSeq;
   }
 
-  async setBreakpoints(filePath: string, breakpoints: Array<{ line: number }>) {
+  async setBreakpoints(
+    filePath: string,
+    breakpoints: Array<{ line: number }>,
+  ): Promise<DAPMessage> {
+    const bpSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
@@ -192,44 +217,76 @@ export class DAPClient extends EventEmitter {
         sourceModified: false,
       },
     };
-    return await this.sendMessage(req);
+    this.sendMessage(req);
+    return this.waitForResponse(bpSeq);
   }
 
-  async configurationDone() {
+  async configurationDone(): Promise<DAPMessage> {
+    const confSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
       command: "configurationDone",
       arguments: {},
     };
-    return await this.sendMessage(req);
+    this.sendMessage(req);
+    return this.waitForResponse(confSeq);
   }
 
-  async continue(threadId: number) {
+  /**
+   * Try to retrieve the attach response with a short timeout, similarly to the Python code,
+   * which does:
+   *   try:
+   *       attach_resp = wait_for_response(attach_seq)
+   *   except TimeoutError:
+   *       attach_resp = None
+   */
+  async tryGetAttachResponse(
+    attachSeq: number,
+    timeout = 1000,
+  ): Promise<DAPMessage | null> {
+    try {
+      const resp = await this.waitForResponse(attachSeq, timeout);
+      return resp;
+    } catch (err) {
+      console.log(
+        "No attach response received (expected in some configurations).",
+      );
+      return null;
+    }
+  }
+
+  async continue(threadId: number): Promise<DAPMessage> {
+    const contSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
       command: "continue",
       arguments: { threadId },
     };
-    return await this.sendMessage(req);
+    this.sendMessage(req);
+    return this.waitForResponse(contSeq);
   }
 
-  async stackTrace(threadId: number, startFrame = 0, levels = 1) {
+  async stackTrace(
+    threadId: number,
+    startFrame = 0,
+    levels = 1,
+  ): Promise<DAPMessage> {
+    const stSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
       command: "stackTrace",
       arguments: { threadId, startFrame, levels },
     };
-    return await this.sendMessage(req);
+    this.sendMessage(req);
+    return this.waitForResponse(stSeq);
   }
 
-  async evaluate(expression: string, frameId?: number) {
-    const args: any = {
-      expression,
-      context: "hover",
-    };
+  async evaluate(expression: string, frameId?: number): Promise<DAPMessage> {
+    const evalSeq = this.nextSeq;
+    const args: any = { expression, context: "hover" };
     if (frameId) {
       args.frameId = frameId;
     }
@@ -239,10 +296,12 @@ export class DAPClient extends EventEmitter {
       command: "evaluate",
       arguments: args,
     };
-    return await this.sendMessage(req);
+    this.sendMessage(req);
+    return this.waitForResponse(evalSeq);
   }
 
-  close() {
+  // Close the TCP socket.
+  close(): void {
     this.socket.end();
   }
 }
