@@ -29,6 +29,26 @@ export class DAPClient extends EventEmitter {
     this.pendingResponses = new Map();
   }
 
+  // Helper: Sleep for the specified ms.
+  sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // Helper: Wait for a one-time event with a timeout.
+  waitForEvent(eventName: string, timeout = 10000): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.removeListener(eventName, listener);
+        reject(new Error(`Timeout waiting for event ${eventName}`));
+      }, timeout);
+      const listener = (data: any) => {
+        clearTimeout(timer);
+        resolve(data);
+      };
+      this.once(eventName, listener);
+    });
+  }
+
   connect(host: string, port: number): Promise<void> {
     return new Promise((resolve, reject) => {
       this.socket.connect(port, host, () => {
@@ -79,17 +99,15 @@ export class DAPClient extends EventEmitter {
   }
 
   sendMessage(message: DAPMessage): Promise<DAPMessage> {
+    // Assign a sequence number.
     message.seq = this.nextSeq++;
     const json = JSON.stringify(message);
-    // Construct header with Content-Length
+    // Construct header with Content-Length.
     const data = `Content-Length: ${Buffer.byteLength(json, "utf8")}\r\n\r\n${json}`;
-    // Write to the socket
     this.socket.write(data);
     console.log("--> Sent:", json);
-    // Return a promise that will resolve when the response arrives
     return new Promise((resolve, reject) => {
       this.pendingResponses.set(message.seq, resolve);
-      // Optional: set a timeout for the response
       setTimeout(() => {
         if (this.pendingResponses.has(message.seq)) {
           this.pendingResponses.delete(message.seq);
@@ -120,17 +138,44 @@ export class DAPClient extends EventEmitter {
     return await this.sendMessage(req);
   }
 
-  async attach(host: string, port: number) {
+  // This attach method is now updated to mimic the Python script exactly.
+  async attach(host: string, port: number): Promise<DAPMessage | null> {
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
       command: "attach",
-      arguments: {
-        host,
-        port,
-      },
+      arguments: { host, port },
     };
-    return await this.sendMessage(req);
+    // Remember the sequence number that will be assigned to this request.
+    const currentSeq = this.nextSeq;
+    this.sendMessage(req);
+    // Sleep 200 ms (like time.sleep(0.2) in Python)
+    await this.sleep(200);
+    // Wait for the "initialized" event.
+    await this.waitForEvent("initialized", 10000);
+    console.log("Initialization complete");
+    // Now, try to wait for the attach response.
+    let attachResp: DAPMessage | null = null;
+    try {
+      attachResp = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(
+            new Error(`Timeout waiting for response for seq ${currentSeq}`),
+          );
+        }, 1000);
+        // This pendingResponses map already holds a resolver keyed by the sequence.
+        this.pendingResponses.set(currentSeq, (msg: DAPMessage) => {
+          clearTimeout(timer);
+          resolve(msg);
+        });
+      });
+    } catch (err) {
+      attachResp = null;
+      console.log(
+        "No attach response received (expected in some configurations).",
+      );
+    }
+    return attachResp;
   }
 
   async setBreakpoints(filePath: string, breakpoints: Array<{ line: number }>) {
@@ -143,7 +188,7 @@ export class DAPClient extends EventEmitter {
           path: filePath,
           name: path.basename(filePath),
         },
-        breakpoints: breakpoints,
+        breakpoints,
         sourceModified: false,
       },
     };

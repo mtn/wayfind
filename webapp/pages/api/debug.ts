@@ -7,17 +7,15 @@ import { DAPClient } from "../../lib/dapClient";
 let dapClient: DAPClient | null = null;
 let pythonProcess: ReturnType<typeof spawn> | null = null;
 
-// Hardcoded target script path (adjust according to your project structure)
+// Hardcoded target script path (adjust this accordingly)
 const targetScript = path.join(process.cwd(), "dap", "test_data", "a.py");
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  // Use a query parameter ?action=launch or ?action=evaluate or ?action=continue
   const { action } = req.query;
 
-  // Only allow POST requests.
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
     return;
@@ -45,7 +43,7 @@ export default async function handler(
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
 
-      // Attach event listener for logging incoming messages.
+      // Listen for messages (for logging).
       dapClient.on("message", (msg) => {
         console.log("<-- Message received:", msg);
       });
@@ -57,7 +55,7 @@ export default async function handler(
       const attachResp = await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach response:", attachResp);
 
-      // Set a breakpoint at line 20 (hardcoded for now)
+      // Set a breakpoint at line 20 (for example).
       const bpResp = await dapClient.setBreakpoints(targetScript, [
         { line: 20 },
       ]);
@@ -70,7 +68,6 @@ export default async function handler(
         .status(200)
         .json({ success: true, message: "Debug session launched" });
     } else if (action === "evaluate") {
-      // Evaluate an expression. Expects a JSON body with { expression: string, threadId?: number }.
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
@@ -79,7 +76,7 @@ export default async function handler(
         res.status(400).json({ error: "Missing expression in request body" });
         return;
       }
-      // Get stackTrace to obtain a frame id.
+      // Get a stack trace to obtain a frame id.
       const stackResp = await dapClient.stackTrace(threadId || 1);
       let frameId: number | undefined;
       if (
@@ -92,7 +89,6 @@ export default async function handler(
       const evalResp = await dapClient.evaluate(expression, frameId);
       res.status(200).json({ result: evalResp.body?.result });
     } else if (action === "continue") {
-      // Continue a running process. Expects a JSON body with { threadId?: number }.
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
