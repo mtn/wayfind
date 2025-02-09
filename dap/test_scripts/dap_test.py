@@ -83,6 +83,8 @@ def wait_for_event(event_name, timeout=10):
             if ev.get("event") == event_name:
                 events.remove(ev)
                 return ev
+            else:
+                print("Nope, event is", ev.get("event"))
         time.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for event {event_name}")
 
@@ -100,16 +102,16 @@ def main():
     target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data", "a.py"))
     debugpy_port = 5678
 
-    # Step 1: Launch target script with debugpy.
-    launcher_cmd = [
-        sys.executable, "-m", "debugpy",
-        "--listen", f"127.0.0.1:{debugpy_port}",
-        "--wait-for-client",
-        target_script
-    ]
-    print("Launching target script with debugpy:", " ".join(launcher_cmd))
-    proc = subprocess.Popen(launcher_cmd)
-    time.sleep(1)
+    # # Step 1: Launch target script with debugpy.
+    # launcher_cmd = [
+    #     sys.executable, "-m", "debugpy",
+    #     "--listen", f"127.0.0.1:{debugpy_port}",
+    #     "--wait-for-client",
+    #     target_script
+    # ]
+    # print("Launching target script with debugpy:", " ".join(launcher_cmd))
+    # proc = subprocess.Popen(launcher_cmd)
+    # time.sleep(1)
 
     # Step 2: Connect to debugpy.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -139,7 +141,6 @@ def main():
     send_dap_message(sock, init_req)
     init_resp = wait_for_response(init_seq)
     print("Received initialize response:", init_resp)
-    print("Initialization complete.\n")
 
     # Step 4: Send an attach request (since --wait-for-client was used).
     attach_seq = next_sequence()
@@ -155,6 +156,9 @@ def main():
     send_dap_message(sock, attach_req)
     # Do not block waiting for attach response immediately; configuration phase follows
     time.sleep(0.2)
+
+    _ = wait_for_event("initialized")
+    print("Initialization complete")
 
     # Step 5: Send setBreakpoints.
     bp_seq = next_sequence()
