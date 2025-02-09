@@ -262,7 +262,7 @@ def main():
     # Loop to send continue requests until no stopped event remains.
     while True:
         try:
-            extra_stop = wait_for_event("stopped", timeout=1)
+            _ = wait_for_event("stopped", timeout=1)
             print("Extra stopped event received; sending another continue.")
             cont_seq = next_sequence()
             cont_req = {
