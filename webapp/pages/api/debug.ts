@@ -29,6 +29,14 @@ export default async function handler(
 
   try {
     if (action === "launch") {
+      // Cleanup any existing session
+      if (pythonProcess) {
+        pythonProcess.kill();
+      }
+      if (dapClient) {
+        dapClient.close();
+      }
+
       const debugpyPort = 5678;
       pythonProcess = spawn("python", [
         "-m",
@@ -39,35 +47,54 @@ export default async function handler(
         targetScript,
       ]);
       console.log("Launched Python process with PID:", pythonProcess.pid);
+
+      // Wait for debugpy to start
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       dapClient = new DAPClient();
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
 
-      // Log incoming messages for debugging.
-      dapClient.on("message", (msg) => {
-        console.log("<-- Message received:", msg);
-      });
-
-      // Execute the sequence exactly as in the Python script.
+      // Initialize the debug session
       const initResp = await dapClient.initialize();
       console.log("Initialize response:", initResp);
 
-      const attachResp = await dapClient.attach("127.0.0.1", debugpyPort);
-      console.log("Attach response:", attachResp);
+      // Send attach and wait for initialized event
+      await dapClient.attach("127.0.0.1", debugpyPort);
+      console.log("Attach sent and initialized event received");
 
-      const bpResp = await dapClient.setBreakpoints(targetScript, [
-        { line: 20 },
-      ]);
-      console.log("Breakpoint response:", bpResp);
-
+      // Send configuration done
       const confResp = await dapClient.configurationDone();
       console.log("Configuration done response:", confResp);
 
-      res
-        .status(200)
-        .json({ success: true, message: "Debug session launched" });
+      // Try to get attach response, but don't fail if we don't get it
+      try {
+        const attachResp = await dapClient.tryGetAttachResponse(2, 1000);
+        if (attachResp) {
+          console.log("Attach response received:", attachResp);
+        }
+      } catch (err) {
+        console.log(
+          "No attach response received (expected in some configurations)",
+        );
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Debug session launched and ready for breakpoints",
+      });
+    } else if (action === "setBreakpoints") {
+      if (!dapClient) {
+        throw new Error("No active DAP session; launch first.");
+      }
+      const { breakpoints, filePath } = req.body;
+      if (!breakpoints) {
+        res.status(400).json({ error: "Missing breakpoints in request body" });
+        return;
+      }
+      const bpResp = await dapClient.setBreakpoints(targetScript, breakpoints);
+      console.log("Breakpoint response:", bpResp);
+      res.status(200).json({ breakpoints: bpResp.body?.breakpoints || [] });
     } else if (action === "evaluate") {
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");

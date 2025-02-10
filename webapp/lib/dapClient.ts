@@ -183,7 +183,7 @@ export class DAPClient extends EventEmitter {
    * So here we just do the attach request + short sleep, and return the seq.
    * The caller can do the rest of the steps in the same order as Python.
    */
-  async attach(host: string, port: number): Promise<number> {
+  async attach(host: string, port: number): Promise<void> {
     const attachSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
@@ -193,10 +193,14 @@ export class DAPClient extends EventEmitter {
     };
     this.sendMessage(req);
 
-    // Just like Python: "time.sleep(0.2)"
+    // Sleep like the Python script does
     await this.sleep(200);
 
-    return attachSeq;
+    // Wait for initialized event
+    await this.waitForEvent("initialized");
+
+    // Note: We don't wait for attach response here
+    // The caller can use tryGetAttachResponse later if needed
   }
 
   async setBreakpoints(
