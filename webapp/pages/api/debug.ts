@@ -76,7 +76,7 @@ export default async function handler(
           console.log("Attach response received:", attachResp);
         }
       } catch (err) {
-        console.log("No attach response received (expected in some configs)");
+        console.log("No attach response received", err);
       }
 
       // -----------------------------------------------------------------
@@ -97,7 +97,7 @@ export default async function handler(
         throw new Error("No active DAP session; launch first.");
       }
 
-      const { breakpoints, filePath } = req.body;
+      const { breakpoints } = req.body;
       if (!breakpoints) {
         res.status(400).json({ error: "Missing breakpoints in request body" });
         return;
@@ -117,7 +117,6 @@ export default async function handler(
         .status(200)
         .json({ breakpoints: bpResp.body?.breakpoints || [], confResp });
     } else if (action === "evaluate") {
-      // no change from your original
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
@@ -138,7 +137,6 @@ export default async function handler(
       const evalResp = await dapClient.evaluate(expression, frameId);
       res.status(200).json({ result: evalResp.body?.result });
     } else if (action === "continue") {
-      // no change from your original
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
@@ -148,8 +146,12 @@ export default async function handler(
     } else {
       res.status(400).json({ error: "Unknown action" });
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error in debug API:", error);
-    res.status(500).json({ error: error.message });
+    if (error instanceof Error) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: "An unknown error occurred" });
+    }
   }
 }

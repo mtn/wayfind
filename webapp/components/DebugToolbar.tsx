@@ -2,17 +2,12 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { IBreakpoint } from "@/app/page";
 
 interface DebugToolbarProps {
   onDebugSessionStart: () => void;
-  breakpoints: IBreakpoint[];
 }
 
-export function DebugToolbar({
-  onDebugSessionStart,
-  breakpoints,
-}: DebugToolbarProps) {
+export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
   const [sessionStarted, setSessionStarted] = useState(false);
   const [expression, setExpression] = useState("");
   const [log, setLog] = useState<string[]>([]);
@@ -26,8 +21,12 @@ export function DebugToolbar({
       setLog((prev) => [...prev, `Session launched: ${data.message}`]);
       setSessionStarted(true);
       onDebugSessionStart();
-    } catch (err: any) {
-      setLog((prev) => [...prev, `Error launching session: ${err.message}`]);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setLog((prev) => [...prev, `Error launching session: ${err.message}`]);
+      } else {
+        setLog((prev) => [...prev, `Unknown error launching session: ${err}`]);
+      }
     }
   }
 
@@ -46,8 +45,12 @@ export function DebugToolbar({
       });
       const data = await res.json();
       setLog((prev) => [...prev, `Evaluation result: ${data.result}`]);
-    } catch (err: any) {
-      setLog((prev) => [...prev, `Error evaluating: ${err.message}`]);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setLog((prev) => [...prev, `Error evaluating: ${err.message}`]);
+      } else {
+        setLog((prev) => [...prev, `Unknown error evaluating: ${err}`]);
+      }
     }
   }
 
@@ -69,8 +72,18 @@ export function DebugToolbar({
         ...prev,
         `Continue result: ${JSON.stringify(data.result)}`,
       ]);
-    } catch (err: any) {
-      setLog((prev) => [...prev, `Error continuing execution: ${err.message}`]);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setLog((prev) => [
+          ...prev,
+          `Error continuing execution: ${err.message}`,
+        ]);
+      } else {
+        setLog((prev) => [
+          ...prev,
+          `Unknown error continuing execution: ${err}`,
+        ]);
+      }
     }
   }
 

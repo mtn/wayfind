@@ -88,7 +88,7 @@ export class DAPClient extends EventEmitter {
 
       // 1) Function to see if we already have such an event waiting.
       const checkQueue = () => {
-        let existing = this.eventQueue.get(eventName);
+        const existing = this.eventQueue.get(eventName);
         if (existing && existing.length > 0) {
           // Dequeue the first event
           const msg = existing.shift()!;
@@ -198,7 +198,6 @@ export class DAPClient extends EventEmitter {
   }
 
   async attach(host: string, port: number): Promise<void> {
-    const attachSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
@@ -256,9 +255,7 @@ export class DAPClient extends EventEmitter {
       const resp = await this.waitForResponse(attachSeq, timeout);
       return resp;
     } catch (err) {
-      console.log(
-        "No attach response received (expected in some configurations).",
-      );
+      console.log("No attach response received", err);
       return null;
     }
   }

@@ -222,10 +222,7 @@ export default function Home() {
               <ChatInterface files={files} />
             </ResizablePanel>
             <ResizablePanel defaultSize={20}>
-              <DebugToolbar
-                onDebugSessionStart={handleDebugSessionStart}
-                breakpoints={breakpoints}
-              />
+              <DebugToolbar onDebugSessionStart={handleDebugSessionStart} />
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>
