@@ -4,86 +4,64 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 interface DebugToolbarProps {
+  ws: WebSocket | null;
   onDebugSessionStart: () => void;
+  onDebuggerStopped?: (line: number | null) => void;
 }
 
-export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
+export function DebugToolbar({
+  ws,
+  onDebugSessionStart,
+  onDebuggerStopped,
+}: DebugToolbarProps) {
   const [sessionStarted, setSessionStarted] = useState(false);
   const [expression, setExpression] = useState("");
   const [log, setLog] = useState<string[]>([]);
 
-  // Handler to launch the debug session.
-  async function handleLaunch() {
-    try {
-      setLog((prev) => [...prev, "Launching debug session..."]);
-      const res = await fetch("/api/debug?action=launch", { method: "POST" });
-      const data = await res.json();
-      setLog((prev) => [...prev, `Session launched: ${data.message}`]);
-      setSessionStarted(true);
-      onDebugSessionStart();
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setLog((prev) => [...prev, `Error launching session: ${err.message}`]);
-      } else {
-        setLog((prev) => [...prev, `Unknown error launching session: ${err}`]);
-      }
+  // Helper to send a message over WS.
+  function sendMessage(action: string, payload: any): number | null {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const requestId = Date.now(); // simple unique requestId
+      const message = { action, payload, requestId };
+      ws.send(JSON.stringify(message));
+      return requestId;
+    } else {
+      console.error("WebSocket is not open. Cannot send message:", action);
+      setLog((prev) => [...prev, "Error: WebSocket is not open."]);
+      return null;
     }
   }
 
-  // Handler to evaluate an expression.
+  async function handleLaunch() {
+    const reqId = sendMessage("launch", {});
+    if (reqId) {
+      setLog((prev) => [...prev, "Launching debug session..."]);
+      setSessionStarted(true);
+      onDebugSessionStart();
+    }
+  }
+
   async function handleEvaluate() {
     if (!sessionStarted) {
       setLog((prev) => [...prev, "Cannot evaluate: Debug session not started"]);
       return;
     }
-
-    try {
-      const res = await fetch("/api/debug?action=evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expression, threadId: 1 }),
-      });
-      const data = await res.json();
-      setLog((prev) => [...prev, `Evaluation result: ${data.result}`]);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setLog((prev) => [...prev, `Error evaluating: ${err.message}`]);
-      } else {
-        setLog((prev) => [...prev, `Unknown error evaluating: ${err}`]);
-      }
+    const reqId = sendMessage("evaluate", { expression, threadId: 1 });
+    if (reqId) {
+      setLog((prev) => [...prev, `Sent evaluate request: ${expression}`]);
     }
   }
 
-  // Handler to continue execution.
   async function handleContinue() {
     if (!sessionStarted) {
       setLog((prev) => [...prev, "Cannot continue: Debug session not started"]);
       return;
     }
-
-    try {
-      const res = await fetch("/api/debug?action=continue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: 1 }),
-      });
-      const data = await res.json();
-      setLog((prev) => [
-        ...prev,
-        `Continue result: ${JSON.stringify(data.result)}`,
-      ]);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setLog((prev) => [
-          ...prev,
-          `Error continuing execution: ${err.message}`,
-        ]);
-      } else {
-        setLog((prev) => [
-          ...prev,
-          `Unknown error continuing execution: ${err}`,
-        ]);
-      }
+    const reqId = sendMessage("continue", { threadId: 1 });
+    if (reqId) {
+      setLog((prev) => [...prev, "Sent continue command"]);
+      // The backend will later broadcast a "stopped" event,
+      // which will trigger a stackTrace request and update pausedLineNumber.
     }
   }
 

@@ -2,6 +2,7 @@ import net from "net";
 import { EventEmitter } from "events";
 import path from "path";
 
+// Used internally for requests that have not yet received a response.
 export interface DAPMessage {
   seq: number;
   type: "request" | "response" | "event";
@@ -19,9 +20,12 @@ export class DAPClient extends EventEmitter {
   private socket: net.Socket;
   private buffer: string;
   private nextSeq: number;
-  // Responses keyed by request_seq for "response" messages.
   private pendingResponses: Map<number, DAPMessage>;
   private eventQueue: Map<string, DAPMessage[]>;
+
+  // Optional callback that higher–level code (e.g. our WebSocket server)
+  // can assign to broadcast DAP events.
+  public broadcastFn?: (msg: DAPMessage) => void;
 
   constructor() {
     super();
@@ -32,16 +36,14 @@ export class DAPClient extends EventEmitter {
     this.eventQueue = new Map();
   }
 
-  // Utility: pause for ms milliseconds.
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // Connect to debugpy at host:port.
+  // Connect to debugpy at host:port
   connect(host: string, port: number): Promise<void> {
     return new Promise((resolve, reject) => {
       this.socket.connect(port, host, () => {
-        // Start buffering incoming data once connected.
         this.socket.on("data", (data: Buffer) => this.handleData(data));
         resolve();
       });
@@ -49,7 +51,7 @@ export class DAPClient extends EventEmitter {
     });
   }
 
-  // Send a DAP message with Content-Length
+  // Send a DAP message with Content-Length header.
   sendMessage(message: DAPMessage): void {
     message.seq = this.nextSeq++;
     const json = JSON.stringify(message);
@@ -62,7 +64,7 @@ export class DAPClient extends EventEmitter {
     );
   }
 
-  // Wait for a DAP "response" matching request_seq
+  // Wait for a specific response matching the requestSeq.
   waitForResponse(seq: number, timeout = 10000): Promise<DAPMessage> {
     return new Promise((resolve, reject) => {
       const start = Date.now();
@@ -80,36 +82,28 @@ export class DAPClient extends EventEmitter {
     });
   }
 
-  // Wait for a DAP "event" by name, checking our local queue
+  // Wait for a DAP event by name.
   waitForEvent(eventName: string, timeout = 10000): Promise<DAPMessage> {
     return new Promise((resolve, reject) => {
       let timer: NodeJS.Timeout | null = null;
 
-      // 1) Function to see if we already have such an event waiting.
       const checkQueue = () => {
         const existing = this.eventQueue.get(eventName);
         if (existing && existing.length > 0) {
-          // Dequeue the first event
           const msg = existing.shift()!;
           resolve(msg);
           if (timer) clearTimeout(timer);
         }
       };
 
-      // 2) Start by checking if there's already an event queued.
       checkQueue();
 
-      // 3) If not found, we listen for further events
       if (!timer) {
-        // We'll also set a once-listener for the event.
-        // But we must push incoming events into the queue in handleData, so:
         const onEvent = () => {
           checkQueue();
         };
-
         this.on(eventName, onEvent);
 
-        // 4) Timeout if not found soon
         timer = setTimeout(() => {
           this.off(eventName, onEvent);
           reject(new Error(`Timeout waiting for event ${eventName}`));
@@ -118,7 +112,7 @@ export class DAPClient extends EventEmitter {
     });
   }
 
-  // The main data handler for receiving DAP messages over the socket
+  // Main data handler for incoming data from the debugpy socket.
   private handleData(data: Buffer): void {
     this.buffer += data.toString("utf8");
 
@@ -132,12 +126,10 @@ export class DAPClient extends EventEmitter {
         this.emit("error", new Error("No Content-Length header found"));
         return;
       }
-
       const length = parseInt(match[1], 10);
       const totalMessageLength = headerEnd + 4 + length;
       if (this.buffer.length < totalMessageLength) break;
 
-      // Extract the body and remove it from the buffer
       const body = this.buffer.slice(headerEnd + 4, totalMessageLength);
       this.buffer = this.buffer.slice(totalMessageLength);
 
@@ -149,31 +141,32 @@ export class DAPClient extends EventEmitter {
         continue;
       }
 
-      // Store "response" messages so that waitForResponse can find them.
+      // If it is a response, store it in pendingResponses.
       if (msg.type === "response" && msg.request_seq) {
         this.pendingResponses.set(msg.request_seq, msg);
       }
 
-      // NEW: If it's an event, push it into eventQueue so we don't lose it if no listener is registered yet.
+      // For events, enqueue them and
       if (msg.type === "event" && msg.event) {
         if (!this.eventQueue.has(msg.event)) {
           this.eventQueue.set(msg.event, []);
         }
         this.eventQueue.get(msg.event)!.push(msg);
-
-        // Also emit it in case someone is actively listening "live".
         this.emit(msg.event, msg);
+
+        // Call the broadcast callback if it is set.
+        if (this.broadcastFn) {
+          this.broadcastFn(msg);
+        }
       }
 
-      // For debugging/logging
+      // Emit the generic message for logging and further processing.
       this.emit("message", msg);
       console.log("<-- Received:", msg);
     }
   }
 
-  //
-  //  HIGHER-LEVEL REQUEST METHODS
-  //
+  // HIGHER-LEVEL REQUEST METHODS
 
   async initialize(): Promise<DAPMessage> {
     const initSeq = this.nextSeq;
@@ -204,11 +197,7 @@ export class DAPClient extends EventEmitter {
       arguments: { host, port },
     };
     this.sendMessage(req);
-
-    // Sleep a bit to mimic python script logic
     await this.sleep(200);
-
-    // Wait for "initialized" to appear in our queue, whether it arrived before or after we started waiting.
     await this.waitForEvent("initialized");
   }
 
@@ -303,7 +292,6 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(evalSeq);
   }
 
-  // Close the TCP socket
   close(): void {
     this.socket.end();
   }

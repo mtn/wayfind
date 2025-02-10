@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -12,45 +12,34 @@ const aPy = {
   content: `#!/usr/bin/env python3
 
 def add_numbers(a, b):
-    # Adds two numbers and returns the result.
     total = a + b
     return total
 
 def compute_fibonacci(n):
-    # Computes the first n numbers in the Fibonacci sequence.
-    # Handles the case when n is 0 or 1.
     if n <= 0:
         return []
     elif n == 1:
         return [0]
-
     fib_sequence = [0, 1]
     for i in range(2, n):
         next_val = fib_sequence[i - 1] + fib_sequence[i - 2]
-        # Debug point: check the next value before appending.
         fib_sequence.append(next_val)
     return fib_sequence
 
 def main():
     print("Starting test script for debugger step-through...")
-
-    # Test addition function.
     a, b = 3, 4
     print("Adding numbers:", a, "and", b)
     result = add_numbers(a, b)
     print("Result of add_numbers:", result)
-
-    # Test Fibonacci function.
     n = 10
     print("Computing Fibonacci sequence for first", n, "terms")
     fib_series = compute_fibonacci(n)
     print("Fibonacci sequence:", fib_series)
-
     print("Test script finished.")
 
 if __name__ == '__main__':
-    main()
-`,
+    main()`,
 };
 
 const initialFiles = [aPy];
@@ -64,7 +53,63 @@ export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFile, setSelectedFile] = useState(files[0]);
   const [breakpoints, setBreakpoints] = useState<IBreakpoint[]>([]);
-  const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
+  const [pausedLineNumber, setPausedLineNumber] = useState<number | null>(null);
+  const [ws, setWs] = useState<WebSocket | null>(null);
+
+  // Simple function to connect and try reconnecting if necessary.
+  const connectWebSocket = useCallback(() => {
+    console.log("Attempting to connect to WebSocket...");
+    const socket = new WebSocket("ws://localhost:8080");
+    socket.onopen = () => {
+      console.log("WebSocket connected");
+      setWs(socket);
+    };
+    socket.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        // Check for broadcasted events.
+        if (msg.type === "event" && msg.payload) {
+          const event = msg.payload;
+          console.log("Received event over WS:", event);
+          if (event.event === "stopped") {
+            // When a 'stopped' event arrives, send a stackTrace request.
+            const stackReq = {
+              action: "stackTrace",
+              payload: { threadId: event.body.threadId },
+              requestId: Date.now(),
+            };
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify(stackReq));
+            }
+          }
+        }
+        // Check if this is a response with stackFrames.
+        if (msg.requestId && msg.result && msg.result.stackFrames) {
+          const frames = msg.result.stackFrames;
+          if (frames && frames.length > 0) {
+            setPausedLineNumber(frames[0].line);
+          }
+        }
+      } catch (err) {
+        console.error("Error processing WS message:", err);
+      }
+    };
+    socket.onerror = (e) => {
+      console.error("WebSocket error:", e);
+    };
+    socket.onclose = (e) => {
+      console.error("WebSocket closed:", e);
+      setWs(null);
+      // Attempt reconnect after a delay.
+      setTimeout(() => {
+        connectWebSocket();
+      }, 3000);
+    };
+  }, []);
+
+  useEffect(() => {
+    connectWebSocket();
+  }, [connectWebSocket]);
 
   const handleFileSelect = (file: { name: string; content: string }) => {
     setSelectedFile(file);
@@ -78,123 +123,14 @@ export default function Home() {
     setSelectedFile({ ...selectedFile, content: newContent });
   };
 
-  // Updated handleBreakpointChange with additional logging.
   const handleBreakpointChange = (lineNumber: number) => {
-    console.log(
-      "handleBreakpointChange: toggling breakpoint at line",
-      lineNumber,
-    );
+    console.log("Toggling breakpoint at line", lineNumber);
     setBreakpoints((currentBreakpoints) => {
-      const existingBp = currentBreakpoints.find(
-        (bp) => bp.line === lineNumber,
-      );
-      let newBreakpoints: IBreakpoint[];
-
-      if (!existingBp) {
-        newBreakpoints = [...currentBreakpoints, { line: lineNumber }];
-      } else {
-        newBreakpoints = currentBreakpoints.filter(
-          (bp) => bp.line !== lineNumber,
-        );
-      }
-
-      console.log("New breakpoints array:", newBreakpoints);
-
-      // If debug session is active, send the updated breakpoints to the server.
-      if (isDebugSessionActive) {
-        console.log(
-          "Debug session is active. Sending breakpoints to /api/debug?action=setBreakpoints for file:",
-          selectedFile.name,
-        );
-        fetch("/api/debug?action=setBreakpoints", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            breakpoints: newBreakpoints,
-            filePath: selectedFile.name,
-          }),
-        })
-          .then((response) => {
-            console.log(
-              "Received response from setBreakpoints endpoint",
-              response,
-            );
-            return response.json();
-          })
-          .then((data) => {
-            console.log("Breakpoint update response data:", data);
-            if (data.breakpoints) {
-              setBreakpoints((current) =>
-                current.map((bp) => {
-                  const verifiedBp = data.breakpoints.find(
-                    (vbp: IBreakpoint) => vbp.line === bp.line,
-                  );
-                  return verifiedBp
-                    ? { ...bp, verified: verifiedBp.verified }
-                    : bp;
-                }),
-              );
-            }
-          })
-          .catch((error) =>
-            console.error("Failed to update breakpoints:", error),
-          );
-      } else {
-        console.log(
-          "Debug session is not active; breakpoints update not sent.",
-        );
-      }
-
-      return newBreakpoints;
+      const exists = currentBreakpoints.find((bp) => bp.line === lineNumber);
+      return exists
+        ? currentBreakpoints.filter((bp) => bp.line !== lineNumber)
+        : [...currentBreakpoints, { line: lineNumber }];
     });
-  };
-
-  // Updated on debug session start with logging and sending pre-existing breakpoints.
-  const handleDebugSessionStart = () => {
-    console.log("handleDebugSessionStart: Starting debug session");
-    setIsDebugSessionActive(true);
-
-    fetch("/api/debug?action=launch", { method: "POST" })
-      .then((resp) => resp.json())
-      .then((data) => {
-        console.log("Launch response from server:", data);
-        // If there are any pre-existing breakpoints, send them now.
-        if (breakpoints.length > 0) {
-          console.log(
-            "Sending pre-existing breakpoints to /api/debug?action=setBreakpoints",
-          );
-          fetch("/api/debug?action=setBreakpoints", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              breakpoints,
-              filePath: selectedFile.name,
-            }),
-          })
-            .then((resp) => resp.json())
-            .then((setData) => {
-              console.log("Set breakpoints after launch response:", setData);
-              if (setData.breakpoints) {
-                setBreakpoints((current) =>
-                  current.map((bp) => {
-                    const verifiedBp = setData.breakpoints.find(
-                      (vbp: IBreakpoint) => vbp.line === bp.line,
-                    );
-                    return verifiedBp
-                      ? { ...bp, verified: verifiedBp.verified }
-                      : bp;
-                  }),
-                );
-              }
-            })
-            .catch((error) =>
-              console.error("Failed to set breakpoints:", error),
-            );
-        }
-      })
-      .catch((error) =>
-        console.error("Failed launching debug session:", error),
-      );
   };
 
   return (
@@ -215,6 +151,7 @@ export default function Home() {
                   onChange={handleFileChange}
                   breakpoints={breakpoints}
                   onBreakpointChange={handleBreakpointChange}
+                  pausedLineNumber={pausedLineNumber}
                 />
               </div>
             </ResizablePanel>
@@ -222,7 +159,15 @@ export default function Home() {
               <ChatInterface files={files} />
             </ResizablePanel>
             <ResizablePanel defaultSize={20}>
-              <DebugToolbar onDebugSessionStart={handleDebugSessionStart} />
+              <DebugToolbar
+                ws={ws}
+                onDebugSessionStart={() => {
+                  console.log("Debug session starting...");
+                }}
+                onDebuggerStopped={(line) => {
+                  setPausedLineNumber(line);
+                }}
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>
