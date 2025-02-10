@@ -26,7 +26,6 @@ export function MonacoEditorWrapper({
   useEffect(() => {
     if (editorRef.current) {
       const editor = editorRef.current;
-      console.log("Updating decorations for breakpoints:", breakpoints);
 
       // Clear existing decorations
       decorationsRef.current = editor.deltaDecorations(
@@ -36,7 +35,6 @@ export function MonacoEditorWrapper({
 
       // Add new decorations for breakpoints
       const decorations = breakpoints.map((bp) => {
-        console.log("Creating decoration for breakpoint:", bp);
         return {
           range: {
             startLineNumber: bp.line,
@@ -58,17 +56,14 @@ export function MonacoEditorWrapper({
 
   const getBreakpointClassName = (bp: IBreakpoint) => {
     const classes = ["breakpoint"];
-    if (!bp.enabled) classes.push("disabled");
     if (bp.verified) classes.push("verified");
-    const className = classes.join(" ");
-    console.log("Breakpoint className:", className, "for breakpoint:", bp);
-    return className;
+    return classes.join(" ");
   };
 
   const getBreakpointTooltip = (bp: IBreakpoint) => {
-    if (!bp.enabled) return "Disabled breakpoint (click to remove)";
-    if (bp.verified) return "Active breakpoint (click to disable)";
-    return "Unverified breakpoint";
+    return bp.verified
+      ? "Active breakpoint (click to remove)"
+      : "Unverified breakpoint";
   };
 
   const handleEditorDidMount = (
@@ -79,17 +74,10 @@ export function MonacoEditorWrapper({
 
     // Add click handler for both gutter and line numbers
     editor.onMouseDown((e) => {
-      console.log("Mouse down event:", {
-        type: e.target.type,
-        position: e.target.position,
-        detail: e.target,
-      });
-
       if (
         e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS ||
         e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN
       ) {
-        console.log("Valid gutter click detected");
         onBreakpointChange(e.target.position!.lineNumber);
       }
     });

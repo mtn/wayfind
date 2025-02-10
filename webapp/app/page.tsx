@@ -58,7 +58,6 @@ const initialFiles = [aPy];
 export interface IBreakpoint {
   line: number;
   verified?: boolean;
-  enabled: boolean;
 }
 
 export default function Home() {
@@ -80,32 +79,16 @@ export default function Home() {
   };
 
   const handleBreakpointChange = async (lineNumber: number) => {
-    console.log("=== START handleBreakpointChange ===");
-    console.log("Called with line:", lineNumber);
-
     setBreakpoints((currentBreakpoints) => {
-      console.log("Current breakpoints:", currentBreakpoints);
-
       const existingBp = currentBreakpoints.find(
         (bp) => bp.line === lineNumber,
       );
-      console.log("Existing breakpoint found:", existingBp);
 
       let newBreakpoints: IBreakpoint[];
 
       if (!existingBp) {
-        console.log("Adding new breakpoint");
-        newBreakpoints = [
-          ...currentBreakpoints,
-          { line: lineNumber, enabled: true },
-        ];
-      } else if (existingBp.enabled) {
-        console.log("Disabling existing breakpoint");
-        newBreakpoints = currentBreakpoints.map((bp) =>
-          bp.line === lineNumber ? { ...bp, enabled: false } : bp,
-        );
+        newBreakpoints = [...currentBreakpoints, { line: lineNumber }];
       } else {
-        console.log("Removing disabled breakpoint");
         newBreakpoints = currentBreakpoints.filter(
           (bp) => bp.line !== lineNumber,
         );
@@ -113,12 +96,11 @@ export default function Home() {
 
       // If debug session is active, send the updated breakpoints to the server
       if (isDebugSessionActive) {
-        const enabledBreakpoints = newBreakpoints.filter((bp) => bp.enabled);
         fetch("/api/debug?action=setBreakpoints", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            breakpoints: enabledBreakpoints,
+            breakpoints: newBreakpoints,
             filePath: selectedFile.name,
           }),
         })
@@ -130,7 +112,7 @@ export default function Home() {
                   const verifiedBp = data.breakpoints.find(
                     (vbp: IBreakpoint) => vbp.line === bp.line,
                   );
-                  return verifiedBp && bp.enabled
+                  return verifiedBp
                     ? { ...bp, verified: verifiedBp.verified }
                     : bp;
                 }),
@@ -144,8 +126,6 @@ export default function Home() {
 
       return newBreakpoints;
     });
-
-    console.log("=== END handleBreakpointChange ===");
   };
 
   const handleDebugSessionStart = () => {
