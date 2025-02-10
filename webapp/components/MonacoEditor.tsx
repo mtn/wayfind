@@ -26,6 +26,7 @@ export function MonacoEditorWrapper({
   useEffect(() => {
     if (editorRef.current) {
       const editor = editorRef.current;
+      console.log("Updating decorations for breakpoints:", breakpoints);
 
       // Clear existing decorations
       decorationsRef.current = editor.deltaDecorations(
@@ -34,19 +35,22 @@ export function MonacoEditorWrapper({
       );
 
       // Add new decorations for breakpoints
-      const decorations = breakpoints.map((bp) => ({
-        range: {
-          startLineNumber: bp.line,
-          startColumn: 1,
-          endLineNumber: bp.line,
-          endColumn: 1,
-        },
-        options: {
-          isWholeLine: true,
-          glyphMarginClassName: getBreakpointClassName(bp),
-          glyphMarginHoverMessage: { value: getBreakpointTooltip(bp) },
-        },
-      }));
+      const decorations = breakpoints.map((bp) => {
+        console.log("Creating decoration for breakpoint:", bp);
+        return {
+          range: {
+            startLineNumber: bp.line,
+            startColumn: 1,
+            endLineNumber: bp.line,
+            endColumn: 1,
+          },
+          options: {
+            isWholeLine: true,
+            glyphMarginClassName: getBreakpointClassName(bp),
+            glyphMarginHoverMessage: { value: getBreakpointTooltip(bp) },
+          },
+        };
+      });
 
       decorationsRef.current = editor.deltaDecorations([], decorations);
     }
@@ -56,7 +60,9 @@ export function MonacoEditorWrapper({
     const classes = ["breakpoint"];
     if (!bp.enabled) classes.push("disabled");
     if (bp.verified) classes.push("verified");
-    return classes.join(" ");
+    const className = classes.join(" ");
+    console.log("Breakpoint className:", className, "for breakpoint:", bp);
+    return className;
   };
 
   const getBreakpointTooltip = (bp: IBreakpoint) => {
@@ -73,10 +79,17 @@ export function MonacoEditorWrapper({
 
     // Add click handler for both gutter and line numbers
     editor.onMouseDown((e) => {
+      console.log("Mouse down event:", {
+        type: e.target.type,
+        position: e.target.position,
+        detail: e.target,
+      });
+
       if (
         e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS ||
         e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN
       ) {
+        console.log("Valid gutter click detected");
         onBreakpointChange(e.target.position!.lineNumber);
       }
     });

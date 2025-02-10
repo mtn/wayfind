@@ -80,53 +80,72 @@ export default function Home() {
   };
 
   const handleBreakpointChange = async (lineNumber: number) => {
-    const existingBp = breakpoints.find((bp) => bp.line === lineNumber);
-    let newBreakpoints: IBreakpoint[];
+    console.log("=== START handleBreakpointChange ===");
+    console.log("Called with line:", lineNumber);
 
-    if (!existingBp) {
-      // Add new breakpoint (enabled by default)
-      newBreakpoints = [...breakpoints, { line: lineNumber, enabled: true }];
-    } else if (existingBp.enabled) {
-      // Disable existing breakpoint
-      newBreakpoints = breakpoints.map((bp) =>
-        bp.line === lineNumber ? { ...bp, enabled: false } : bp,
+    setBreakpoints((currentBreakpoints) => {
+      console.log("Current breakpoints:", currentBreakpoints);
+
+      const existingBp = currentBreakpoints.find(
+        (bp) => bp.line === lineNumber,
       );
-    } else {
-      // Remove disabled breakpoint
-      newBreakpoints = breakpoints.filter((bp) => bp.line !== lineNumber);
-    }
+      console.log("Existing breakpoint found:", existingBp);
 
-    setBreakpoints(newBreakpoints);
+      let newBreakpoints: IBreakpoint[];
 
-    // If debug session is active, send the updated breakpoints to the server
-    if (isDebugSessionActive) {
-      try {
-        const response = await fetch("/api/debug?action=setBreakpoints", {
+      if (!existingBp) {
+        console.log("Adding new breakpoint");
+        newBreakpoints = [
+          ...currentBreakpoints,
+          { line: lineNumber, enabled: true },
+        ];
+      } else if (existingBp.enabled) {
+        console.log("Disabling existing breakpoint");
+        newBreakpoints = currentBreakpoints.map((bp) =>
+          bp.line === lineNumber ? { ...bp, enabled: false } : bp,
+        );
+      } else {
+        console.log("Removing disabled breakpoint");
+        newBreakpoints = currentBreakpoints.filter(
+          (bp) => bp.line !== lineNumber,
+        );
+      }
+
+      // If debug session is active, send the updated breakpoints to the server
+      if (isDebugSessionActive) {
+        const enabledBreakpoints = newBreakpoints.filter((bp) => bp.enabled);
+        fetch("/api/debug?action=setBreakpoints", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            // Only send enabled breakpoints to the debug adapter
-            breakpoints: newBreakpoints.filter((bp) => bp.enabled),
+            breakpoints: enabledBreakpoints,
             filePath: selectedFile.name,
           }),
-        });
-        const data = await response.json();
-        if (data.breakpoints) {
-          // Merge verification status with our local state
-          const mergedBreakpoints = newBreakpoints.map((bp) => {
-            const verifiedBp = data.breakpoints.find(
-              (vbp: IBreakpoint) => vbp.line === bp.line,
-            );
-            return verifiedBp && bp.enabled
-              ? { ...bp, verified: verifiedBp.verified }
-              : bp;
-          });
-          setBreakpoints(mergedBreakpoints);
-        }
-      } catch (error) {
-        console.error("Failed to update breakpoints:", error);
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.breakpoints) {
+              setBreakpoints((current) =>
+                current.map((bp) => {
+                  const verifiedBp = data.breakpoints.find(
+                    (vbp: IBreakpoint) => vbp.line === bp.line,
+                  );
+                  return verifiedBp && bp.enabled
+                    ? { ...bp, verified: verifiedBp.verified }
+                    : bp;
+                }),
+              );
+            }
+          })
+          .catch((error) =>
+            console.error("Failed to update breakpoints:", error),
+          );
       }
-    }
+
+      return newBreakpoints;
+    });
+
+    console.log("=== END handleBreakpointChange ===");
   };
 
   const handleDebugSessionStart = () => {
