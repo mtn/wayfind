@@ -19,8 +19,10 @@ export class DAPClient extends EventEmitter {
   private socket: net.Socket;
   private buffer: string;
   private nextSeq: number;
-  // This map stores responses keyed by request_seq.
+  // Responses keyed by request_seq for "response" messages.
   private pendingResponses: Map<number, DAPMessage>;
+  // NEW: a queue of events keyed by event name.
+  private eventQueue: Map<string, DAPMessage[]>;
 
   constructor() {
     super();
@@ -28,6 +30,7 @@ export class DAPClient extends EventEmitter {
     this.buffer = "";
     this.nextSeq = 1;
     this.pendingResponses = new Map();
+    this.eventQueue = new Map();
   }
 
   // Utility: pause for ms milliseconds.
@@ -35,26 +38,7 @@ export class DAPClient extends EventEmitter {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // Wait for a specific event name once, with a timeout in ms.
-  waitForEvent(eventName: string, timeout = 10000): Promise<DAPMessage> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.removeListener(eventName, listener);
-        reject(new Error(`Timeout waiting for event ${eventName}`));
-      }, timeout);
-
-      const listener = (data: DAPMessage) => {
-        clearTimeout(timer);
-        resolve(data);
-      };
-
-      // We emit("eventName", data) below in handleData for any event.
-      // So here, we listen once for eventName.
-      this.once(eventName, listener);
-    });
-  }
-
-  // Connect to the debugpy socket at host:port.
+  // Connect to debugpy at host:port.
   connect(host: string, port: number): Promise<void> {
     return new Promise((resolve, reject) => {
       this.socket.connect(port, host, () => {
@@ -66,7 +50,7 @@ export class DAPClient extends EventEmitter {
     });
   }
 
-  // Send a DAP message by prepending Content-Length headers, with no wait for response.
+  // Send a DAP message with Content-Length
   sendMessage(message: DAPMessage): void {
     message.seq = this.nextSeq++;
     const json = JSON.stringify(message);
@@ -74,13 +58,12 @@ export class DAPClient extends EventEmitter {
     const data = header + json;
     this.socket.write(data);
 
-    // For visibility in logs:
     console.log(
       `--> Sent (seq ${message.seq}, cmd: ${message.command}): ${json}`,
     );
   }
 
-  // Wait for a DAP response matching the given request_seq within the specified timeout.
+  // Wait for a DAP "response" matching request_seq
   waitForResponse(seq: number, timeout = 10000): Promise<DAPMessage> {
     return new Promise((resolve, reject) => {
       const start = Date.now();
@@ -98,7 +81,45 @@ export class DAPClient extends EventEmitter {
     });
   }
 
-  // -- The main loop that buffers incoming data and emits DAP messages. --
+  // NEW: Wait for a DAP "event" by name, checking our local queue
+  waitForEvent(eventName: string, timeout = 10000): Promise<DAPMessage> {
+    return new Promise((resolve, reject) => {
+      let timer: NodeJS.Timeout | null = null;
+
+      // 1) Function to see if we already have such an event waiting.
+      const checkQueue = () => {
+        let existing = this.eventQueue.get(eventName);
+        if (existing && existing.length > 0) {
+          // Dequeue the first event
+          const msg = existing.shift()!;
+          resolve(msg);
+          if (timer) clearTimeout(timer);
+        }
+      };
+
+      // 2) Start by checking if there's already an event queued.
+      checkQueue();
+
+      // 3) If not found, we listen for further events
+      if (!timer) {
+        // We'll also set a once-listener for the event.
+        // But we must push incoming events into the queue in handleData, so:
+        const onEvent = () => {
+          checkQueue();
+        };
+
+        this.on(eventName, onEvent);
+
+        // 4) Timeout if not found soon
+        timer = setTimeout(() => {
+          this.off(eventName, onEvent);
+          reject(new Error(`Timeout waiting for event ${eventName}`));
+        }, timeout);
+      }
+    });
+  }
+
+  // The main data handler for receiving DAP messages over the socket
   private handleData(data: Buffer): void {
     this.buffer += data.toString("utf8");
 
@@ -117,11 +138,10 @@ export class DAPClient extends EventEmitter {
       const totalMessageLength = headerEnd + 4 + length;
       if (this.buffer.length < totalMessageLength) break;
 
-      // Extract the body and remove it from the buffer.
+      // Extract the body and remove it from the buffer
       const body = this.buffer.slice(headerEnd + 4, totalMessageLength);
       this.buffer = this.buffer.slice(totalMessageLength);
 
-      // Parse the JSON message.
       let msg: DAPMessage;
       try {
         msg = JSON.parse(body);
@@ -130,25 +150,30 @@ export class DAPClient extends EventEmitter {
         continue;
       }
 
-      // If it's a response, store it under pendingResponses so waitForResponse can pick it up.
+      // Store "response" messages so that waitForResponse can find them.
       if (msg.type === "response" && msg.request_seq) {
         this.pendingResponses.set(msg.request_seq, msg);
       }
 
-      // We also emit an event with the raw message so that logs/debugging can see it.
-      // But for DAP "event" messages, we also emit by the event name, so waitForEvent can catch them.
-      this.emit("message", msg);
+      // NEW: If it's an event, push it into eventQueue so we don't lose it if no listener is registered yet.
       if (msg.type === "event" && msg.event) {
-        // e.g. "initialized", "stopped", etc.
+        if (!this.eventQueue.has(msg.event)) {
+          this.eventQueue.set(msg.event, []);
+        }
+        this.eventQueue.get(msg.event)!.push(msg);
+
+        // Also emit it in case someone is actively listening "live".
         this.emit(msg.event, msg);
       }
 
+      // For debugging/logging
+      this.emit("message", msg);
       console.log("<-- Received:", msg);
     }
   }
 
   //
-  //  -- Below are the higher-level request methods that mimic the Python script. --
+  //  HIGHER-LEVEL REQUEST METHODS
   //
 
   async initialize(): Promise<DAPMessage> {
@@ -172,17 +197,6 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(initSeq);
   }
 
-  /**
-   * Send the "attach" request. In the Python script, the code:
-   *   - sends attach,
-   *   - sleeps 0.2s,
-   *   - waits for "initialized" event,
-   *   - sets breakpoints / config done,
-   *   - THEN tries to retrieve attach response with a short timeout.
-   *
-   * So here we just do the attach request + short sleep, and return the seq.
-   * The caller can do the rest of the steps in the same order as Python.
-   */
   async attach(host: string, port: number): Promise<void> {
     const attachSeq = this.nextSeq;
     const req: DAPMessage = {
@@ -193,14 +207,11 @@ export class DAPClient extends EventEmitter {
     };
     this.sendMessage(req);
 
-    // Sleep like the Python script does
+    // Sleep a bit to mimic python script logic
     await this.sleep(200);
 
-    // Wait for initialized event
+    // Wait for "initialized" to appear in our queue, whether it arrived before or after we started waiting.
     await this.waitForEvent("initialized");
-
-    // Note: We don't wait for attach response here
-    // The caller can use tryGetAttachResponse later if needed
   }
 
   async setBreakpoints(
@@ -237,14 +248,6 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(confSeq);
   }
 
-  /**
-   * Try to retrieve the attach response with a short timeout, similarly to the Python code,
-   * which does:
-   *   try:
-   *       attach_resp = wait_for_response(attach_seq)
-   *   except TimeoutError:
-   *       attach_resp = None
-   */
   async tryGetAttachResponse(
     attachSeq: number,
     timeout = 1000,
@@ -304,7 +307,7 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(evalSeq);
   }
 
-  // Close the TCP socket.
+  // Close the TCP socket
   close(): void {
     this.socket.end();
   }

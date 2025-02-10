@@ -78,12 +78,16 @@ export default function Home() {
     setSelectedFile({ ...selectedFile, content: newContent });
   };
 
-  const handleBreakpointChange = async (lineNumber: number) => {
+  // Updated handleBreakpointChange with additional logging.
+  const handleBreakpointChange = (lineNumber: number) => {
+    console.log(
+      "handleBreakpointChange: toggling breakpoint at line",
+      lineNumber,
+    );
     setBreakpoints((currentBreakpoints) => {
       const existingBp = currentBreakpoints.find(
         (bp) => bp.line === lineNumber,
       );
-
       let newBreakpoints: IBreakpoint[];
 
       if (!existingBp) {
@@ -94,8 +98,14 @@ export default function Home() {
         );
       }
 
-      // If debug session is active, send the updated breakpoints to the server
+      console.log("New breakpoints array:", newBreakpoints);
+
+      // If debug session is active, send the updated breakpoints to the server.
       if (isDebugSessionActive) {
+        console.log(
+          "Debug session is active. Sending breakpoints to /api/debug?action=setBreakpoints for file:",
+          selectedFile.name,
+        );
         fetch("/api/debug?action=setBreakpoints", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -104,8 +114,15 @@ export default function Home() {
             filePath: selectedFile.name,
           }),
         })
-          .then((response) => response.json())
+          .then((response) => {
+            console.log(
+              "Received response from setBreakpoints endpoint",
+              response,
+            );
+            return response.json();
+          })
           .then((data) => {
+            console.log("Breakpoint update response data:", data);
             if (data.breakpoints) {
               setBreakpoints((current) =>
                 current.map((bp) => {
@@ -122,14 +139,62 @@ export default function Home() {
           .catch((error) =>
             console.error("Failed to update breakpoints:", error),
           );
+      } else {
+        console.log(
+          "Debug session is not active; breakpoints update not sent.",
+        );
       }
 
       return newBreakpoints;
     });
   };
 
+  // Updated on debug session start with logging and sending pre-existing breakpoints.
   const handleDebugSessionStart = () => {
+    console.log("handleDebugSessionStart: Starting debug session");
     setIsDebugSessionActive(true);
+
+    fetch("/api/debug?action=launch", { method: "POST" })
+      .then((resp) => resp.json())
+      .then((data) => {
+        console.log("Launch response from server:", data);
+        // If there are any pre-existing breakpoints, send them now.
+        if (breakpoints.length > 0) {
+          console.log(
+            "Sending pre-existing breakpoints to /api/debug?action=setBreakpoints",
+          );
+          fetch("/api/debug?action=setBreakpoints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              breakpoints,
+              filePath: selectedFile.name,
+            }),
+          })
+            .then((resp) => resp.json())
+            .then((setData) => {
+              console.log("Set breakpoints after launch response:", setData);
+              if (setData.breakpoints) {
+                setBreakpoints((current) =>
+                  current.map((bp) => {
+                    const verifiedBp = setData.breakpoints.find(
+                      (vbp: IBreakpoint) => vbp.line === bp.line,
+                    );
+                    return verifiedBp
+                      ? { ...bp, verified: verifiedBp.verified }
+                      : bp;
+                  }),
+                );
+              }
+            })
+            .catch((error) =>
+              console.error("Failed to set breakpoints:", error),
+            );
+        }
+      })
+      .catch((error) =>
+        console.error("Failed launching debug session:", error),
+      );
   };
 
   return (

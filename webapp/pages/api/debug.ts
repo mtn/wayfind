@@ -3,11 +3,11 @@ import { spawn } from "child_process";
 import path from "path";
 import { DAPClient } from "../../lib/dapClient";
 
-// Store the DAP session and Python process globally so subsequent requests reuse them.
+// Store globally so subsequent requests reuse them.
 let dapClient: DAPClient | null = null;
 let pythonProcess: ReturnType<typeof spawn> | null = null;
 
-// Adjust the following to match your file structure.
+// Adjust to match your file structure.
 const targetScript = path.join(
   process.cwd(),
   "..",
@@ -29,7 +29,9 @@ export default async function handler(
 
   try {
     if (action === "launch") {
-      // Cleanup any existing session
+      // -----------------------------------------------------------------
+      // 1) Cleanup any existing session
+      // -----------------------------------------------------------------
       if (pythonProcess) {
         pythonProcess.kill();
       }
@@ -48,24 +50,24 @@ export default async function handler(
       ]);
       console.log("Launched Python process with PID:", pythonProcess.pid);
 
-      // Wait for debugpy to start
+      // Wait for debugpy to start up
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
       dapClient = new DAPClient();
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
 
-      // Initialize the debug session
+      // -----------------------------------------------------------------
+      // 2) Initialize
+      // -----------------------------------------------------------------
       const initResp = await dapClient.initialize();
       console.log("Initialize response:", initResp);
 
-      // Send attach and wait for initialized event
+      // -----------------------------------------------------------------
+      // 3) Attach (but do NOT call configurationDone yet!)
+      // -----------------------------------------------------------------
       await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach sent and initialized event received");
-
-      // Send configuration done
-      const confResp = await dapClient.configurationDone();
-      console.log("Configuration done response:", confResp);
 
       // Try to get attach response, but don't fail if we don't get it
       try {
@@ -74,28 +76,48 @@ export default async function handler(
           console.log("Attach response received:", attachResp);
         }
       } catch (err) {
-        console.log(
-          "No attach response received (expected in some configurations)",
-        );
+        console.log("No attach response received (expected in some configs)");
       }
+
+      // -----------------------------------------------------------------
+      // DO NOT call configurationDone here. We want to wait
+      // until after breakpoints are set.
+      // -----------------------------------------------------------------
 
       res.status(200).json({
         success: true,
-        message: "Debug session launched and ready for breakpoints",
+        message:
+          "Debug session launched. Set breakpoints and then it will run.",
       });
     } else if (action === "setBreakpoints") {
+      // -----------------------------------------------------------------
+      // 4) Set breakpoints, THEN call configurationDone to let the script run
+      // -----------------------------------------------------------------
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
+
       const { breakpoints, filePath } = req.body;
       if (!breakpoints) {
         res.status(400).json({ error: "Missing breakpoints in request body" });
         return;
       }
+
+      // 4a) setBreakpoints
+      console.log("Setting breakpoints for script:", targetScript);
       const bpResp = await dapClient.setBreakpoints(targetScript, breakpoints);
       console.log("Breakpoint response:", bpResp);
-      res.status(200).json({ breakpoints: bpResp.body?.breakpoints || [] });
+
+      // 4b) configurationDone
+      console.log("Calling configurationDone so the script can run now...");
+      const confResp = await dapClient.configurationDone();
+      console.log("configurationDone response:", confResp);
+
+      res
+        .status(200)
+        .json({ breakpoints: bpResp.body?.breakpoints || [], confResp });
     } else if (action === "evaluate") {
+      // no change from your original
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
@@ -116,6 +138,7 @@ export default async function handler(
       const evalResp = await dapClient.evaluate(expression, frameId);
       res.status(200).json({ result: evalResp.body?.result });
     } else if (action === "continue") {
+      // no change from your original
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
