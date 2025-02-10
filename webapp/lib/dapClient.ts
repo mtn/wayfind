@@ -21,7 +21,6 @@ export class DAPClient extends EventEmitter {
   private nextSeq: number;
   // Responses keyed by request_seq for "response" messages.
   private pendingResponses: Map<number, DAPMessage>;
-  // NEW: a queue of events keyed by event name.
   private eventQueue: Map<string, DAPMessage[]>;
 
   constructor() {
@@ -81,7 +80,7 @@ export class DAPClient extends EventEmitter {
     });
   }
 
-  // NEW: Wait for a DAP "event" by name, checking our local queue
+  // Wait for a DAP "event" by name, checking our local queue
   waitForEvent(eventName: string, timeout = 10000): Promise<DAPMessage> {
     return new Promise((resolve, reject) => {
       let timer: NodeJS.Timeout | null = null;
