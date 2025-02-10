@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -12,40 +12,30 @@ const aPy = {
   content: `#!/usr/bin/env python3
 
 def add_numbers(a, b):
-    # Adds two numbers and returns the result.
     total = a + b
     return total
 
 def compute_fibonacci(n):
-    # Computes the first n numbers in the Fibonacci sequence.
-    # Handles the case when n is 0 or 1.
     if n <= 0:
         return []
     elif n == 1:
         return [0]
-
     fib_sequence = [0, 1]
     for i in range(2, n):
         next_val = fib_sequence[i - 1] + fib_sequence[i - 2]
-        # Debug point: check the next value before appending.
         fib_sequence.append(next_val)
     return fib_sequence
 
 def main():
     print("Starting test script for debugger step-through...")
-
-    # Test addition function.
     a, b = 3, 4
     print("Adding numbers:", a, "and", b)
     result = add_numbers(a, b)
     print("Result of add_numbers:", result)
-
-    # Test Fibonacci function.
     n = 10
     print("Computing Fibonacci sequence for first", n, "terms")
     fib_series = compute_fibonacci(n)
     print("Fibonacci sequence:", fib_series)
-
     print("Test script finished.")
 
 if __name__ == '__main__':
@@ -66,6 +56,10 @@ export default function Home() {
   const [breakpoints, setBreakpoints] = useState<IBreakpoint[]>([]);
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
 
+  // NEW: Add execution status state
+  const [executionLine, setExecutionLine] = useState<number | null>(null);
+  const [executionFile, setExecutionFile] = useState<string | null>(null);
+
   const handleFileSelect = (file: { name: string; content: string }) => {
     setSelectedFile(file);
   };
@@ -78,7 +72,6 @@ export default function Home() {
     setSelectedFile({ ...selectedFile, content: newContent });
   };
 
-  // Updated handleBreakpointChange with additional logging.
   const handleBreakpointChange = (lineNumber: number) => {
     console.log(
       "handleBreakpointChange: toggling breakpoint at line",
@@ -89,7 +82,6 @@ export default function Home() {
         (bp) => bp.line === lineNumber,
       );
       let newBreakpoints: IBreakpoint[];
-
       if (!existingBp) {
         newBreakpoints = [...currentBreakpoints, { line: lineNumber }];
       } else {
@@ -97,10 +89,7 @@ export default function Home() {
           (bp) => bp.line !== lineNumber,
         );
       }
-
       console.log("New breakpoints array:", newBreakpoints);
-
-      // If debug session is active, send the updated breakpoints to the server.
       if (isDebugSessionActive) {
         console.log(
           "Debug session is active. Sending breakpoints to /api/debug?action=setBreakpoints for file:",
@@ -144,21 +133,17 @@ export default function Home() {
           "Debug session is not active; breakpoints update not sent.",
         );
       }
-
       return newBreakpoints;
     });
   };
 
-  // Updated on debug session start with logging and sending pre-existing breakpoints.
   const handleDebugSessionStart = () => {
     console.log("handleDebugSessionStart: Starting debug session");
     setIsDebugSessionActive(true);
-
     fetch("/api/debug?action=launch", { method: "POST" })
       .then((resp) => resp.json())
       .then((data) => {
         console.log("Launch response from server:", data);
-        // If there are any pre-existing breakpoints, send them now.
         if (breakpoints.length > 0) {
           console.log(
             "Sending pre-existing breakpoints to /api/debug?action=setBreakpoints",
@@ -197,6 +182,31 @@ export default function Home() {
       );
   };
 
+  // NEW: Poll debug status if a debug session is active.
+  useEffect(() => {
+    if (isDebugSessionActive) {
+      const pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch("/api/debug?action=status");
+          const data = await res.json();
+          if (data.status === "paused" && data.file && data.line) {
+            setExecutionFile(data.file);
+            setExecutionLine(data.line);
+          } else {
+            setExecutionFile(null);
+            setExecutionLine(null);
+          }
+        } catch (e) {
+          console.error("Failed polling debug status:", e);
+        }
+      }, 1500);
+      return () => clearInterval(pollInterval);
+    } else {
+      setExecutionFile(null);
+      setExecutionLine(null);
+    }
+  }, [isDebugSessionActive]);
+
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
@@ -215,6 +225,8 @@ export default function Home() {
                   onChange={handleFileChange}
                   breakpoints={breakpoints}
                   onBreakpointChange={handleBreakpointChange}
+                  executionFile={executionFile}
+                  executionLine={executionLine}
                 />
               </div>
             </ResizablePanel>

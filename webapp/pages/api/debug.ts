@@ -22,7 +22,7 @@ export default async function handler(
   res: NextApiResponse,
 ) {
   const { action } = req.query;
-  if (req.method !== "POST") {
+  if (req.method !== "POST" && action !== "status") {
     res.status(405).json({ error: "Method not allowed" });
     return;
   }
@@ -143,6 +143,21 @@ export default async function handler(
       const { threadId } = req.body;
       const contResp = await dapClient.continue(threadId || 1);
       res.status(200).json({ result: contResp.body });
+    } else if (action === "status") {
+      if (!dapClient) {
+        res.status(200).json({ status: "inactive" });
+        return;
+      }
+      if (!dapClient.isPaused) {
+        res.status(200).json({ status: "running" });
+        return;
+      }
+      const location = dapClient.currentPausedLocation || {};
+      res.status(200).json({
+        status: "paused",
+        file: location.file,
+        line: location.line,
+      });
     } else {
       res.status(400).json({ error: "Unknown action" });
     }

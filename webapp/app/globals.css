@@ -93,3 +93,7 @@ body {
 .breakpoint:not(.verified) {
     background-color: #848484;
 }
+
+.current-line-highlight {
+    background-color: rgba(255, 255, 128, 0.2) !important;
+}

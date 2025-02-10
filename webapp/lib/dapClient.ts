@@ -22,6 +22,9 @@ export class DAPClient extends EventEmitter {
   // Responses keyed by request_seq for "response" messages.
   private pendingResponses: Map<number, DAPMessage>;
   private eventQueue: Map<string, DAPMessage[]>;
+  // New fields to track paused status and location
+  public currentPausedLocation: { file?: string; line?: number } | null = null;
+  public isPaused: boolean = false;
 
   constructor() {
     super();
@@ -147,6 +150,36 @@ export class DAPClient extends EventEmitter {
       } catch (e) {
         console.error("Error parsing JSON message", e);
         continue;
+      }
+
+      // NEW: Check for debug events to update paused state and current location
+      if (msg.type === "event") {
+        if (msg.event === "stopped") {
+          this.isPaused = true;
+          const threadId = msg.body?.threadId;
+          if (threadId) {
+            this.stackTrace(threadId, 0, 1)
+              .then((stackResp) => {
+                const frames = stackResp.body?.stackFrames;
+                if (frames && frames.length > 0) {
+                  const topFrame = frames[0];
+                  const file = topFrame.source?.path;
+                  const line = topFrame.line;
+                  this.currentPausedLocation = { file, line };
+                }
+              })
+              .catch((err) => {
+                console.error("Error fetching stack trace on stop event:", err);
+              });
+          }
+        } else if (
+          msg.event === "continued" ||
+          msg.event === "terminated" ||
+          msg.event === "exited"
+        ) {
+          this.isPaused = false;
+          this.currentPausedLocation = null;
+        }
       }
 
       // Store "response" messages so that waitForResponse can find them.
