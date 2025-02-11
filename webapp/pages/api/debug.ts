@@ -37,6 +37,14 @@ const targetScript = path.join(
   "a.py",
 );
 
+// Helper function to send output to connected SSE clients.
+// This function should be integrated with your SSE endpoint implementation.
+function sendOutput(data: string) {
+  // For demonstration, we're simply logging the output.
+  // In a complete implementation, you would push this data to your SSE stream.
+  console.log("Sending output to SSE clients:", data);
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
@@ -72,6 +80,13 @@ export default async function handler(
         targetScript,
       ]);
       console.log("Launched Python process with PID:", pythonProcess.pid);
+
+      // Attach listeners to capture the program's output and stream it to the frontend.
+      if (pythonProcess && pythonProcess.stdout) {
+        pythonProcess.stdout.on("data", (data: Buffer) => {
+          sendOutput(data.toString());
+        });
+      }
 
       // Wait for debugpy to start up
       await new Promise((resolve) => setTimeout(resolve, 1000));
