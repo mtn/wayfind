@@ -4,8 +4,9 @@ import { useState } from "react";
 import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
 import { SendIcon } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 
-// Optionally keep this helper if you plan on processing message content for display.
+// Helper: extract <userPrompt> from the raw message (purely for display).
 function extractUserPrompt(content: string): string {
   const match = content.match(/<userPrompt>([\s\S]*?)<\/userPrompt>/);
   return match ? match[1].trim() : content;
@@ -18,12 +19,9 @@ interface ChatInterfaceProps {
 export function ChatInterface({ files }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
 
-  // Get chat-related functionality from the useChat hook.
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat();
 
-  // Convert provided files into an array of Attachment objects.
-  // For example, if you have a text file, we set contentType to "text/plain"
-  // and create a data URL from the file content.
+  // Convert the provided files into attachment objects for the API.
   const attachments = files.map(({ name, content }) => ({
     name,
     contentType: "text/plain",
@@ -34,14 +32,13 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
     e.preventDefault();
     if (!input.trim()) return;
 
-    // Instead of building a custom XML payload, we simply send the user input as
-    // the message text and attach the file data as attachments.
+    // Here we can send the raw user input and allow the backend to format its markdown response.
     handleSubmit(e, {
       body: { content: input },
       experimental_attachments: attachments,
     });
 
-    // Clear the input field after submitting.
+    // Clear the input field.
     setInput("");
   };
 
@@ -62,12 +59,11 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
 
   return (
     <div className="flex flex-col h-full border-t">
-      {/* Messages display area */}
+      {/* Messages Display */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message, i) => {
-          // If you still expect structured content, you can extract it here.
-          // Otherwise simply render message.content.
-          const displayContent =
+          // If the message is from the user, extract the prompt using extractUserPrompt.
+          const rawContent =
             message.role === "user"
               ? extractUserPrompt(message.content)
               : message.content;
@@ -80,7 +76,8 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
                 ${message.role === "user" ? "bg-primary/10 ml-auto max-w-[80%]" : "bg-muted mr-auto max-w-[80%]"}
               `}
             >
-              {displayContent}
+              {/* Render the markdown content using ReactMarkdown. */}
+              <ReactMarkdown>{rawContent}</ReactMarkdown>
             </div>
           );
         })}
@@ -91,7 +88,7 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
         )}
       </div>
 
-      {/* Input form */}
+      {/* Input Form */}
       <form
         onSubmit={onSubmit}
         className="p-4 flex gap-2 border-t bg-background"
@@ -100,7 +97,6 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
           value={input}
           onChange={(e) => {
             setInput(e.target.value);
-            // Calling handleInputChange keeps useChat’s internal state in sync.
             handleInputChange(e);
           }}
           placeholder="Type your message..."
