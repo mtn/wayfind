@@ -88,15 +88,6 @@ export default async function handler(
       await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach sent and initialized event received");
 
-      try {
-        const attachResp = await dapClient.tryGetAttachResponse(2, 1000);
-        if (attachResp) {
-          console.log("Attach response received:", attachResp);
-        }
-      } catch (err) {
-        console.log("No attach response received", err);
-      }
-
       res.status(200).json({
         success: true,
         message:

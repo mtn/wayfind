@@ -193,14 +193,6 @@ def main():
     conf_resp = wait_for_response(conf_seq)
     print("ConfigurationDone response:", conf_resp)
 
-    try:
-        attach_resp = wait_for_response(attach_seq)
-    except TimeoutError:
-        attach_resp = None
-        print("No attach response received (expected in some configurations).")
-    else:
-        print("Attach response:", attach_resp)
-
     # Step 7: Wait for the "stopped" event.
     print("Waiting for the target to hit the breakpoint (stopped event)...")
     stopped_event = wait_for_event("stopped", timeout=15)

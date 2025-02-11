@@ -281,19 +281,6 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(confSeq);
   }
 
-  async tryGetAttachResponse(
-    attachSeq: number,
-    timeout = 1000,
-  ): Promise<DAPMessage | null> {
-    try {
-      const resp = await this.waitForResponse(attachSeq, timeout);
-      return resp;
-    } catch (err) {
-      console.log("No attach response received", err);
-      return null;
-    }
-  }
-
   async continue(threadId: number): Promise<DAPMessage> {
     const contSeq = this.nextSeq;
     const req: DAPMessage = {
