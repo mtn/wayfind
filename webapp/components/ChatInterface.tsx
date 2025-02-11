@@ -6,22 +6,45 @@ import { Button } from "@/components/ui/button";
 import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-// Helper: extract <userPrompt> from the raw message (purely for display).
+// Import our DAP tool(s) from the consolidated file.
+import { setBreakpoint } from "@/tools/dapTools";
+
+interface ChatInterfaceProps {
+  // Expect an array of files; each file has a name and content.
+  files: { name: string; content: string }[];
+  // New callback that should update the breakpoints (just as if the user clicked the gutter).
+  onSetBreakpoint: (line: number) => void;
+}
+
+// Helper function to extract user prompt if wrapped in a tag.
 function extractUserPrompt(content: string): string {
   const match = content.match(/<userPrompt>([\s\S]*?)<\/userPrompt>/);
   return match ? match[1].trim() : content;
 }
 
-interface ChatInterfaceProps {
-  files: { name: string; content: string }[];
-}
-
-export function ChatInterface({ files }: ChatInterfaceProps) {
+export function ChatInterface({ files, onSetBreakpoint }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
 
-  const { messages, handleSubmit, handleInputChange, isLoading } = useChat();
+  // Configure useChat with maxSteps.
+  // Note: We do not pass tools here—the API route sends them—but we do define
+  // an onToolCall to handle client-side tool calls.
+  const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
+    maxSteps: 5,
+    async onToolCall({ toolCall }) {
+      if (toolCall.toolName === "setBreakpoint") {
+        // Extract the line number from the tool call arguments.
+        const { line } = toolCall.args;
+        // Call the onSetBreakpoint callback that was passed from the parent,
+        // simulating a gutter click (which toggles the breakpoint in page.tsx).
+        onSetBreakpoint(line);
+        // Return a dummy tool result so the tool invocation is marked complete.
+        return { message: "Breakpoint set." };
+      }
+      // For any other tools, simply return undefined.
+    },
+  });
 
-  // Convert the provided files into attachment objects for the API.
+  // Create attachments from files (if needed by your LLM).
   const attachments = files.map(({ name, content }) => ({
     name,
     contentType: "text/plain",
@@ -31,59 +54,73 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-
-    // Here we can send the raw user input and allow the backend to format its markdown response.
+    // Submit the user’s prompt (for example, "Set breakpoint on line 5 in a.py")
     handleSubmit(e, {
       body: { content: input },
       experimental_attachments: attachments,
     });
-
-    // Clear the input field.
     setInput("");
   };
 
-  // A simple loading indicator.
-  const BouncingDots = () => (
-    <div className="flex gap-1">
-      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-      <div
-        className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-        style={{ animationDelay: "0.2s" }}
-      />
-      <div
-        className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-        style={{ animationDelay: "0.4s" }}
-      />
-    </div>
-  );
-
   return (
     <div className="flex flex-col h-full border-t">
-      {/* Messages Display */}
+      {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, i) => {
-          // If the message is from the user, extract the prompt using extractUserPrompt.
-          const rawContent =
-            message.role === "user"
-              ? extractUserPrompt(message.content)
-              : message.content;
-
-          return (
-            <div
-              key={i}
-              className={`
-                p-3 rounded-lg text-sm
-                ${message.role === "user" ? "bg-primary/10 ml-auto max-w-[80%]" : "bg-muted mr-auto max-w-[80%]"}
-              `}
-            >
-              {/* Render the markdown content using ReactMarkdown. */}
-              <ReactMarkdown>{rawContent}</ReactMarkdown>
-            </div>
-          );
-        })}
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`
+              p-3 rounded-lg text-sm
+              ${message.role === "user" ? "bg-primary/10 ml-auto max-w-[80%]" : "bg-muted mr-auto max-w-[80%]"}
+            `}
+          >
+            {message.parts ? (
+              message.parts.map((part, idx) => {
+                if (part.type === "text") {
+                  return <ReactMarkdown key={idx}>{part.text}</ReactMarkdown>;
+                } else if (part.type === "tool-invocation") {
+                  // Render a summary of the tool invocation.
+                  return (
+                    <div
+                      key={idx}
+                      className="text-xs text-gray-600 border rounded p-1"
+                    >
+                      <strong>Tool Call:</strong> {part.toolInvocation.toolName}{" "}
+                      with args {JSON.stringify(part.toolInvocation.args)}
+                      <br />
+                      <em>Status: {part.toolInvocation.state}</em>
+                      {part.toolInvocation.state === "result" && (
+                        <>
+                          <br />
+                          <strong>Result:</strong>{" "}
+                          {JSON.stringify(part.toolInvocation.result)}
+                        </>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              })
+            ) : (
+              <ReactMarkdown>
+                {extractUserPrompt(message.content)}
+              </ReactMarkdown>
+            )}
+          </div>
+        ))}
         {isLoading && (
           <div className="flex justify-start p-3">
-            <BouncingDots />
+            <div className="flex gap-1">
+              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+              <div
+                className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                style={{ animationDelay: "0.2s" }}
+              />
+              <div
+                className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                style={{ animationDelay: "0.4s" }}
+              />
+            </div>
           </div>
         )}
       </div>

@@ -243,7 +243,11 @@ export default function Home() {
               </div>
             </ResizablePanel>
             <ResizablePanel defaultSize={40}>
-              <ChatInterface files={files} />
+              {/* Pass handleBreakpointChange as onSetBreakpoint to ChatInterface */}
+              <ChatInterface
+                files={files}
+                onSetBreakpoint={handleBreakpointChange}
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>

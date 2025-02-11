@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { openai } from "@ai-sdk/openai";
 import { streamText } from "ai";
+import { setBreakpoint } from "@/tools/dapTools";
 
 // This endpoint accepts a POST with a JSON body containing "messages"
 // and returns a streaming response from OpenAI.
@@ -20,14 +21,16 @@ export default async function handler(
       return;
     }
 
-    // Call streamText from the AI SDK.
+    // Call streamText from the AI SDK with tools and multi-step support.
     const result = streamText({
-      model: openai("gpt-4-turbo"),
+      model: openai("o3-mini"),
       messages,
+      tools: { setBreakpoint },
+      maxSteps: 5,
+      // (Optional) you could enable toolCallStreaming: true,
     });
 
-    // If the result returns a Node.js stream (i.e. it exposes .pipe),
-    // set the proper headers and pipe the output.
+    // Stream the result.
     if (typeof (result as any).pipe === "function") {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -35,10 +38,7 @@ export default async function handler(
         Connection: "keep-alive",
       });
       (result as any).pipe(res);
-    }
-    // Otherwise, if the result provides a toDataStreamResponse method,
-    // convert its ReadableStream to chunks manually and stream them.
-    else if (typeof (result as any).toDataStreamResponse === "function") {
+    } else if (typeof (result as any).toDataStreamResponse === "function") {
       const response = (result as any).toDataStreamResponse();
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
@@ -58,9 +58,7 @@ export default async function handler(
         read();
       }
       read();
-    }
-    // Fallback: if not streaming, then wait for the full text and return it.
-    else {
+    } else {
       const text = await result;
       res.status(200).send(text);
     }
