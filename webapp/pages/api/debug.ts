@@ -3,13 +3,14 @@ import { spawn } from "child_process";
 import path from "path";
 import { DAPClient } from "../../lib/dapClient";
 
-// Declare globals so that the DAPClient, pythonProcess, and configuration flag
+// Declare globals so that the DAPClient, pythonProcess, configuration flag, and output buffer
 // persist between requests.
 declare global {
   // Use symbols on globalThis to avoid collisions.
   var dapClient: DAPClient | null | undefined;
   var pythonProcess: ReturnType<typeof spawn> | null | undefined;
   var configurationDoneSent: boolean | undefined;
+  var debugOutputBuffer: string[] | undefined;
 }
 
 // Initialize globals if they don’t exist
@@ -21,6 +22,9 @@ if (globalThis.pythonProcess === undefined) {
 }
 if (globalThis.configurationDoneSent === undefined) {
   globalThis.configurationDoneSent = false;
+}
+if (globalThis.debugOutputBuffer === undefined) {
+  globalThis.debugOutputBuffer = [];
 }
 
 let dapClient: DAPClient | null = globalThis.dapClient;
@@ -38,11 +42,10 @@ const targetScript = path.join(
 );
 
 // Helper function to send output to connected SSE clients.
-// This function should be integrated with your SSE endpoint implementation.
+// This version buffers output so that the client can pull the data from a separate endpoint.
 function sendOutput(data: string) {
-  // For demonstration, we're simply logging the output.
-  // In a complete implementation, you would push this data to your SSE stream.
-  console.log("Sending output to SSE clients:", data);
+  globalThis.debugOutputBuffer!.push(data);
+  console.log("Buffered output:", data);
 }
 
 export default async function handler(

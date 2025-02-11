@@ -6,6 +6,7 @@ import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
 import { DebugToolbar } from "@/components/DebugToolbar";
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { OutputViewer } from "@/components/OutputViewer";
 
 const aPy = {
   name: "a.py",
@@ -225,17 +226,22 @@ export default function Home() {
         {/* Left side: Now a nested vertical group with FileTree on top and DebugToolbar at the bottom */}
         <ResizablePanel defaultSize={20} minSize={15}>
           <ResizablePanelGroup direction="vertical">
-            <ResizablePanel defaultSize={50}>
+            <ResizablePanel defaultSize={40}>
               <div className="h-full border-b">
                 <FileTree files={files} onSelectFile={handleFileSelect} />
               </div>
             </ResizablePanel>
-            <ResizablePanel defaultSize={50}>
+            <ResizablePanel defaultSize={30}>
               <div className="h-full">
                 <DebugToolbar
                   onDebugSessionStart={handleDebugSessionStart}
                   debugStatus={debugStatus}
                 />
+              </div>
+            </ResizablePanel>
+            <ResizablePanel defaultSize={30}>
+              <div className="h-full">
+                <OutputViewer />
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
