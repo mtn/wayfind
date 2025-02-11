@@ -3,12 +3,13 @@ import { spawn } from "child_process";
 import path from "path";
 import { DAPClient } from "../../lib/dapClient";
 
-// Declare globals so that the DAPClient and pythonProcess persist between requests.
+// Declare globals so that the DAPClient, pythonProcess, and configuration flag
+// persist between requests.
 declare global {
-  // Use a symbol on globalThis to avoid collisions.
-  // In a persistent environment, these will remain available across API calls.
+  // Use symbols on globalThis to avoid collisions.
   var dapClient: DAPClient | null | undefined;
   var pythonProcess: ReturnType<typeof spawn> | null | undefined;
+  var configurationDoneSent: boolean | undefined;
 }
 
 // Initialize globals if they don’t exist
@@ -18,9 +19,13 @@ if (globalThis.dapClient === undefined) {
 if (globalThis.pythonProcess === undefined) {
   globalThis.pythonProcess = null;
 }
+if (globalThis.configurationDoneSent === undefined) {
+  globalThis.configurationDoneSent = false;
+}
 
 let dapClient: DAPClient | null = globalThis.dapClient;
 let pythonProcess: ReturnType<typeof spawn> | null = globalThis.pythonProcess;
+let configurationDoneSent: boolean = globalThis.configurationDoneSent;
 
 // Adjust to match your file structure.
 const targetScript = path.join(
@@ -53,6 +58,9 @@ export default async function handler(
       if (dapClient) {
         dapClient.close();
       }
+      // Reset our configurationDone flag for a new session.
+      configurationDoneSent = false;
+      globalThis.configurationDoneSent = false;
 
       const debugpyPort = 5678;
       pythonProcess = spawn("python", [
@@ -72,7 +80,7 @@ export default async function handler(
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
 
-      // Save these instances to the global context
+      // Save these instances to the global context.
       globalThis.dapClient = dapClient;
       globalThis.pythonProcess = pythonProcess;
 
@@ -91,7 +99,7 @@ export default async function handler(
       res.status(200).json({
         success: true,
         message:
-          "Debug session launched. Set breakpoints and then it will run.",
+          "Debug session launched. Set breakpoints if desired, or press continue to run the program.",
       });
     } else if (action === "setBreakpoints") {
       // -----------------------------------------------------------------
@@ -111,6 +119,8 @@ export default async function handler(
       console.log("Calling configurationDone so the script can run now...");
       const confResp = await dapClient.configurationDone();
       console.log("configurationDone response:", confResp);
+      configurationDoneSent = true;
+      globalThis.configurationDoneSent = true;
       res.status(200).json({
         breakpoints: bpResp.body?.breakpoints || [],
         confResp,
@@ -147,8 +157,33 @@ export default async function handler(
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
+      // If configurationDone has not been sent yet, try to send it.
+      // If we get an error indicating that configurationDone is only allowed during
+      // a launch/attach request, then assume configuration is already complete.
+      if (!configurationDoneSent) {
+        console.log("No configurationDone found; calling configurationDone...");
+        try {
+          const confResp = await dapClient.configurationDone();
+          console.log("configurationDone response:", confResp);
+          configurationDoneSent = true;
+          globalThis.configurationDoneSent = true;
+        } catch (err) {
+          if (
+            err instanceof Error &&
+            err.message.includes('"configurationDone" is only allowed')
+          ) {
+            console.log(
+              "ConfigurationDone was rejected because it is only allowed during launch/attach; proceeding.",
+            );
+            configurationDoneSent = true;
+            globalThis.configurationDoneSent = true;
+          } else {
+            throw err;
+          }
+        }
+      }
       const { threadId } = req.body;
-      const effectiveThreadId = threadId || 1; // Optionally, use stored threadId if available
+      const effectiveThreadId = threadId || 1;
       const contResp = await dapClient.continue(effectiveThreadId);
       res.status(200).json({ result: contResp.body });
     } else if (action === "status") {
