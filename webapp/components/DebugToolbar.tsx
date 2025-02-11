@@ -64,6 +64,8 @@ export function DebugToolbar({
       } else {
         addLogEntry(`Unknown error evaluating: ${err}`, "dap");
       }
+    } finally {
+      setExpression("");
     }
   }
 
@@ -115,6 +117,12 @@ export function DebugToolbar({
                 placeholder="Enter expression"
                 value={expression}
                 onChange={(e) => setExpression(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleEvaluate();
+                  }
+                }}
                 className="border rounded px-2 py-1"
               />
               <Button onClick={handleEvaluate}>Evaluate</Button>
