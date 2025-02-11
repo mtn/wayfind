@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
+interface DebugLogEntry {
+  id: number;
+  text: string;
+  type: "dap" | "program";
+}
+
 interface DebugToolbarProps {
   onDebugSessionStart: () => void;
   debugStatus?: string;
@@ -12,33 +18,38 @@ export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
 }: DebugToolbarProps) {
+  // Instead of an array of strings, use an array of log objects
+  const [log, setLog] = useState<DebugLogEntry[]>([]);
   const [sessionStarted, setSessionStarted] = useState(false);
   const [expression, setExpression] = useState("");
-  const [log, setLog] = useState<string[]>([]);
+
+  // Utility function for appending a log entry.
+  const addLogEntry = (text: string, type: "dap" | "program" = "dap") => {
+    setLog((prev) => [...prev, { id: Date.now(), text, type }]);
+  };
 
   async function handleLaunch() {
     try {
-      setLog((prev) => [...prev, "Launching debug session..."]);
+      addLogEntry("Launching debug session...", "dap");
       const res = await fetch("/api/debug?action=launch", { method: "POST" });
       const data = await res.json();
-      setLog((prev) => [...prev, `Session launched: ${data.message}`]);
+      addLogEntry(`Session launched: ${data.message}`, "dap");
       setSessionStarted(true);
       onDebugSessionStart();
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setLog((prev) => [...prev, `Error launching session: ${err.message}`]);
+        addLogEntry(`Error launching session: ${err.message}`, "dap");
       } else {
-        setLog((prev) => [...prev, `Unknown error launching session: ${err}`]);
+        addLogEntry(`Unknown error launching session: ${err}`, "dap");
       }
     }
   }
 
   async function handleEvaluate() {
     if (!sessionStarted) {
-      setLog((prev) => [...prev, "Cannot evaluate: Debug session not started"]);
+      addLogEntry("Cannot evaluate: Debug session not started", "dap");
       return;
     }
-
     try {
       const res = await fetch("/api/debug?action=evaluate", {
         method: "POST",
@@ -46,22 +57,21 @@ export function DebugToolbar({
         body: JSON.stringify({ expression, threadId: 1 }),
       });
       const data = await res.json();
-      setLog((prev) => [...prev, `Evaluation result: ${data.result}`]);
+      addLogEntry(`Evaluation result: ${data.result}`, "dap");
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setLog((prev) => [...prev, `Error evaluating: ${err.message}`]);
+        addLogEntry(`Error evaluating: ${err.message}`, "dap");
       } else {
-        setLog((prev) => [...prev, `Unknown error evaluating: ${err}`]);
+        addLogEntry(`Unknown error evaluating: ${err}`, "dap");
       }
     }
   }
 
   async function handleContinue() {
     if (!sessionStarted) {
-      setLog((prev) => [...prev, "Cannot continue: Debug session not started"]);
+      addLogEntry("Cannot continue: Debug session not started", "dap");
       return;
     }
-
     try {
       const res = await fetch("/api/debug?action=continue", {
         method: "POST",
@@ -69,27 +79,17 @@ export function DebugToolbar({
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
-      setLog((prev) => [
-        ...prev,
-        `Continue result: ${JSON.stringify(data.result)}`,
-      ]);
+      addLogEntry(`Continue result: ${JSON.stringify(data.result)}`, "dap");
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setLog((prev) => [
-          ...prev,
-          `Error continuing execution: ${err.message}`,
-        ]);
+        addLogEntry(`Error continuing execution: ${err.message}`, "dap");
       } else {
-        setLog((prev) => [
-          ...prev,
-          `Unknown error continuing execution: ${err}`,
-        ]);
+        addLogEntry(`Unknown error continuing execution: ${err}`, "dap");
       }
     }
   }
 
   return (
-    // Use a flex container to fill available height.
     <div className="flex flex-col h-full p-4 border-t">
       {/* Debug session status indicator */}
       <div className="mb-2">
@@ -125,12 +125,14 @@ export function DebugToolbar({
       </div>
       {/* Log area now takes up available vertical space with flex-1 */}
       <div className="flex-1 bg-gray-50 p-2 rounded overflow-auto text-xs">
-        {log.map((entry, idx) => (
-          <div key={idx} className="border-b py-0.5">
-            {entry}
+        {log.map((entry) => (
+          <div key={entry.id} className="border-b py-0.5">
+            {entry.type === "dap" ? <strong>{entry.text}</strong> : entry.text}
           </div>
         ))}
       </div>
     </div>
   );
 }
+
+export default DebugToolbar;
