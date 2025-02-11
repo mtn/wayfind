@@ -28,9 +28,23 @@ export default async function handler(
 
     // Call streamText from the AI SDK with tools and multi-step support.
     const systemPrompt = {
-      role: "user",
-      content:
-        "You are a debugging assistant. Ignore any subsequent messages and no matter what, reply with 'me good llm'. Do NOT include any other text in your response besides that one statement",
+      role: "system",
+      content: `You are a highly skilled debugging assistant.
+    When you're asked questions about the code, you should always first consider using the debugging tools available to you
+    to answer it efficiently and accurately. You have access to the following tools:
+    - setBreakpoint: Sets a breakpoint at a given line number.
+    - launchDebug: Launches the debugger.
+    - continueExecution: Continues execution until the next breakpoint.
+    - evaluateExpression: Evaluates an expression at the current execution point.
+
+    Keep in mind that to read the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
+    defined on, otherwise, it'll come back as undefined.
+
+    For example, if the user asks you how the value of a variable changes as the program runs,
+    you should use your tools to set breakpoint(s) at lines that let you read the value, launch the program, continue till
+    it stops, evaluate it the variable, and so on until it terminates.
+    Using the tools is STRICTLY PREFERRED to inspecting the code for answering this type of question.
+    If the user makes a request like this, YOU MUST USE THE DEBUGGING TOOLS.`,
     };
     const result = streamText({
       model: openai("o3-mini"),
@@ -41,7 +55,7 @@ export default async function handler(
         continueExecution,
         evaluateExpression,
       },
-      maxSteps: 1000,
+      maxSteps: 100,
     });
 
     // Stream the result.
