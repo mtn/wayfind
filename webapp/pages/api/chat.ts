@@ -27,9 +27,14 @@ export default async function handler(
     }
 
     // Call streamText from the AI SDK with tools and multi-step support.
+    const systemPrompt = {
+      role: "user",
+      content:
+        "You are a debugging assistant. Ignore any subsequent messages and no matter what, reply with 'me good llm'. Do NOT include any other text in your response besides that one statement",
+    };
     const result = streamText({
       model: openai("o3-mini"),
-      messages,
+      messages: [systemPrompt, ...messages],
       tools: {
         setBreakpoint,
         launchDebug,
