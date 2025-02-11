@@ -5,16 +5,22 @@ import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
 import { SendIcon } from "lucide-react";
 
+// Helper: if the content appears to be structured XML, extract the text inside <userPrompt>
+function extractUserPrompt(content: string): string {
+  const match = content.match(/<userPrompt>([\s\S]*?)<\/userPrompt>/);
+  return match ? match[1].trim() : content;
+}
+
 interface ChatInterfaceProps {
   files: { name: string; content: string }[];
 }
 
 export function ChatInterface({ files }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
-  // Use local loading state that’s set to true on submit
+  // Local loading state that’s set to true when submitting
   const [loading, setLoading] = useState(false);
 
-  // Initialize the useChat hook. We pass an onFinish callback which will set loading false
+  // Initialize useChat hook with an onFinish callback to clear our loading flag.
   const { messages, append, handleSubmit, handleInputChange } = useChat({
     onFinish: () => setLoading(false),
   });
@@ -23,8 +29,8 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
     e.preventDefault();
     if (!input.trim()) return;
 
-    // Build a structured XML block – file contents wrapped in <file> tags (with CDATA)
-    // and the user prompt wrapped in <userPrompt>
+    // Build a structured XML block with file contents (wrapped in <file> tags)
+    // and the actual user prompt wrapped in <userPrompt>
     const filesXML = `<files>${files
       .map(
         (file) =>
@@ -33,16 +39,17 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
       .join("")}</files>`;
     const structuredMessage = `${filesXML}\n<userPrompt>${input}</userPrompt>`;
 
-    // Append the structured message as the user’s chat message.
+    // Append the structured message to the conversation.
+    // (This is what is sent to the API.)
     append({
       role: "user",
       content: structuredMessage,
     });
 
-    // Set our local loading state to true so our spinner shows.
+    // Set our loading state so that a spinner shows in the UI.
     setLoading(true);
 
-    // Submit the conversation to the API (which streams the assistant’s response).
+    // Submit the conversation (the useChat hook sends the messages to /api/chat).
     handleSubmit(e);
 
     // Clear the input field.
@@ -68,18 +75,29 @@ export function ChatInterface({ files }: ChatInterfaceProps) {
     <div className="flex flex-col h-full border-t">
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, i) => (
-          <div
-            key={i}
-            className={`
-              p-3 rounded-lg text-sm
-              ${message.role === "user" ? "bg-primary/10 ml-auto max-w-[80%]" : "bg-muted mr-auto max-w-[80%]"}
-            `}
-          >
-            {message.content}
-          </div>
-        ))}
-        {/* Render the loading indicator, if loading; aligned left */}
+        {messages.map((message, i) => {
+          // For user messages, we display a cleaned version from the structured message.
+          const displayContent =
+            message.role === "user"
+              ? extractUserPrompt(message.content)
+              : message.content;
+          return (
+            <div
+              key={i}
+              className={`
+                p-3 rounded-lg text-sm
+                ${
+                  message.role === "user"
+                    ? "bg-primary/10 ml-auto max-w-[80%]"
+                    : "bg-muted mr-auto max-w-[80%]"
+                }
+              `}
+            >
+              {displayContent}
+            </div>
+          );
+        })}
+        {/* Render the loading indicator when loading is true */}
         {loading && (
           <div className="flex justify-start p-3">
             <BouncingDots />
