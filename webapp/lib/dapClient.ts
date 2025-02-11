@@ -25,6 +25,7 @@ export class DAPClient extends EventEmitter {
   // New fields to track paused status and location
   public currentPausedLocation: { file?: string; line?: number } | null = null;
   public isPaused: boolean = false;
+  public terminated: boolean = false;
   public currentThreadId: number | null = null;
 
   constructor() {
@@ -157,6 +158,7 @@ export class DAPClient extends EventEmitter {
       if (msg.type === "event") {
         if (msg.event === "stopped") {
           this.isPaused = true;
+          this.terminated = false;
           if (msg.body?.threadId) {
             this.currentThreadId = msg.body.threadId;
             this.stackTrace(msg.body.threadId, 0, 1)
@@ -173,14 +175,15 @@ export class DAPClient extends EventEmitter {
                 console.error("Error fetching stack trace on stop event:", err);
               });
           }
-        } else if (
-          msg.event === "continued" ||
-          msg.event === "terminated" ||
-          msg.event === "exited"
-        ) {
+        } else if (msg.event === "continued" || msg.event === "exited") {
           this.isPaused = false;
           this.currentPausedLocation = null;
           this.currentThreadId = null;
+        } else if (msg.event === "terminated") {
+          this.isPaused = false;
+          this.currentPausedLocation = null;
+          this.currentThreadId = null;
+          this.terminated = true;
         }
       }
 

@@ -55,6 +55,7 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState(files[0]);
   const [breakpoints, setBreakpoints] = useState<IBreakpoint[]>([]);
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
+  const [debugStatus, setDebugStatus] = useState("inactive");
 
   // NEW: Execution status state.
   const [executionLine, setExecutionLine] = useState<number | null>(null);
@@ -192,9 +193,19 @@ export default function Home() {
           if (data.status === "paused" && data.file && data.line) {
             setExecutionFile(data.file);
             setExecutionLine(data.line);
+            setDebugStatus("paused");
+          } else if (data.status === "terminated") {
+            setExecutionFile(null);
+            setExecutionLine(null);
+            setDebugStatus("terminated");
+          } else if (data.status === "running") {
+            setExecutionFile(null);
+            setExecutionLine(null);
+            setDebugStatus("running");
           } else {
             setExecutionFile(null);
             setExecutionLine(null);
+            setDebugStatus("inactive");
           }
         } catch (e) {
           console.error("Failed polling debug status:", e);
@@ -204,6 +215,7 @@ export default function Home() {
     } else {
       setExecutionFile(null);
       setExecutionLine(null);
+      setDebugStatus("inactive");
     }
   }, [isDebugSessionActive]);
 
@@ -220,7 +232,10 @@ export default function Home() {
             </ResizablePanel>
             <ResizablePanel defaultSize={50}>
               <div className="h-full">
-                <DebugToolbar onDebugSessionStart={handleDebugSessionStart} />
+                <DebugToolbar
+                  onDebugSessionStart={handleDebugSessionStart}
+                  debugStatus={debugStatus}
+                />
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>

@@ -194,6 +194,10 @@ export default async function handler(
         res.status(200).json({ status: "inactive" });
         return;
       }
+      if (dapClient.terminated) {
+        res.status(200).json({ status: "terminated" });
+        return;
+      }
       if (!dapClient.isPaused) {
         res.status(200).json({ status: "running" });
         return;

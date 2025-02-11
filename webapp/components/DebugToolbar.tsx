@@ -5,9 +5,13 @@ import { Button } from "@/components/ui/button";
 
 interface DebugToolbarProps {
   onDebugSessionStart: () => void;
+  debugStatus?: string;
 }
 
-export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
+export function DebugToolbar({
+  onDebugSessionStart,
+  debugStatus,
+}: DebugToolbarProps) {
   const [sessionStarted, setSessionStarted] = useState(false);
   const [expression, setExpression] = useState("");
   const [log, setLog] = useState<string[]>([]);
@@ -87,11 +91,23 @@ export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
   return (
     // Use a flex container to fill available height.
     <div className="flex flex-col h-full p-4 border-t">
+      {/* Debug session status indicator */}
+      <div className="mb-2">
+        <strong>Status:</strong>{" "}
+        {debugStatus === "terminated" ? (
+          <span className="text-red-600">Terminated</span>
+        ) : (
+          <span>{debugStatus}</span>
+        )}
+      </div>
       <div className="flex flex-wrap gap-4 mb-4">
-        <Button onClick={handleLaunch} disabled={sessionStarted}>
+        <Button
+          onClick={handleLaunch}
+          disabled={sessionStarted || debugStatus === "terminated"}
+        >
           Launch Debug Session
         </Button>
-        {sessionStarted && (
+        {sessionStarted && debugStatus !== "terminated" && (
           <>
             <div className="flex items-center gap-2">
               <input
@@ -107,7 +123,6 @@ export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
           </>
         )}
       </div>
-
       {/* Log area now takes up available vertical space with flex-1 */}
       <div className="flex-1 bg-gray-50 p-2 rounded overflow-auto text-xs">
         {log.map((entry, idx) => (
