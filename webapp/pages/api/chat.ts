@@ -1,7 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { openai } from "@ai-sdk/openai";
 import { streamText } from "ai";
-import { setBreakpoint } from "@/tools/dapTools";
+import {
+  setBreakpoint,
+  launchDebug,
+  continueExecution,
+  evaluateExpression,
+} from "@/tools/dapTools";
 
 // This endpoint accepts a POST with a JSON body containing "messages"
 // and returns a streaming response from OpenAI.
@@ -25,9 +30,13 @@ export default async function handler(
     const result = streamText({
       model: openai("o3-mini"),
       messages,
-      tools: { setBreakpoint },
-      maxSteps: 5,
-      // (Optional) you could enable toolCallStreaming: true,
+      tools: {
+        setBreakpoint,
+        launchDebug,
+        continueExecution,
+        evaluateExpression,
+      },
+      maxSteps: 1000,
     });
 
     // Stream the result.

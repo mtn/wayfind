@@ -25,6 +25,7 @@ export class DAPClient extends EventEmitter {
   // New fields to track paused status and location
   public currentPausedLocation: { file?: string; line?: number } | null = null;
   public isPaused: boolean = false;
+  public currentThreadId: number | null = null;
 
   constructor() {
     super();
@@ -152,13 +153,13 @@ export class DAPClient extends EventEmitter {
         continue;
       }
 
-      // NEW: Check for debug events to update paused state and current location
+      // Check for debug events to update paused state and current location
       if (msg.type === "event") {
         if (msg.event === "stopped") {
           this.isPaused = true;
-          const threadId = msg.body?.threadId;
-          if (threadId) {
-            this.stackTrace(threadId, 0, 1)
+          if (msg.body?.threadId) {
+            this.currentThreadId = msg.body.threadId;
+            this.stackTrace(msg.body.threadId, 0, 1)
               .then((stackResp) => {
                 const frames = stackResp.body?.stackFrames;
                 if (frames && frames.length > 0) {
@@ -179,6 +180,7 @@ export class DAPClient extends EventEmitter {
         ) {
           this.isPaused = false;
           this.currentPausedLocation = null;
+          this.currentThreadId = null;
         }
       }
 

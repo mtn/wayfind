@@ -6,45 +6,59 @@ import { Button } from "@/components/ui/button";
 import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-// Import our DAP tool(s) from the consolidated file.
-import { setBreakpoint } from "@/tools/dapTools";
-
 interface ChatInterfaceProps {
-  // Expect an array of files; each file has a name and content.
+  // An array of files that provide context.
   files: { name: string; content: string }[];
-  // New callback that should update the breakpoints (just as if the user clicked the gutter).
+  // Callback to update breakpoints (as if the user clicked the gutter).
   onSetBreakpoint: (line: number) => void;
+  // Callback to launch a debug session.
+  onLaunch: () => void;
+  // Callback to continue execution.
+  onContinue: () => void;
+  // Callback to evaluate an expression. Should return a promise resolving to a string.
+  onEvaluate: (expression: string) => Promise<string>;
 }
 
-// Helper function to extract user prompt if wrapped in a tag.
+// Helper function to extract a wrapped user prompt.
 function extractUserPrompt(content: string): string {
   const match = content.match(/<userPrompt>([\s\S]*?)<\/userPrompt>/);
   return match ? match[1].trim() : content;
 }
 
-export function ChatInterface({ files, onSetBreakpoint }: ChatInterfaceProps) {
+export function ChatInterface({
+  files,
+  onSetBreakpoint,
+  onLaunch,
+  onContinue,
+  onEvaluate,
+}: ChatInterfaceProps) {
   const [input, setInput] = useState("");
 
-  // Configure useChat with maxSteps.
-  // Note: We do not pass tools here—the API route sends them—but we do define
-  // an onToolCall to handle client-side tool calls.
+  // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
+  // Instead, intercept tool calls via onToolCall.
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     maxSteps: 5,
     async onToolCall({ toolCall }) {
       if (toolCall.toolName === "setBreakpoint") {
-        // Extract the line number from the tool call arguments.
         const { line } = toolCall.args;
-        // Call the onSetBreakpoint callback that was passed from the parent,
-        // simulating a gutter click (which toggles the breakpoint in page.tsx).
         onSetBreakpoint(line);
-        // Return a dummy tool result so the tool invocation is marked complete.
         return { message: "Breakpoint set." };
+      } else if (toolCall.toolName === "launchDebug") {
+        onLaunch();
+        return { message: "Debug session launched." };
+      } else if (toolCall.toolName === "continueExecution") {
+        onContinue();
+        return { message: "Continued execution." };
+      } else if (toolCall.toolName === "evaluateExpression") {
+        const { expression } = toolCall.args;
+        const result = await onEvaluate(expression);
+        return { message: `Evaluation result: ${result}` };
       }
-      // For any other tools, simply return undefined.
+      // For unknown tools, return nothing.
     },
   });
 
-  // Create attachments from files (if needed by your LLM).
+  // Create attachments from files (for additional context).
   const attachments = files.map(({ name, content }) => ({
     name,
     contentType: "text/plain",
@@ -54,7 +68,7 @@ export function ChatInterface({ files, onSetBreakpoint }: ChatInterfaceProps) {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    // Submit the user’s prompt (for example, "Set breakpoint on line 5 in a.py")
+    // Send the prompt (e.g.: "Launch debug" or "Set a breakpoint on line 5 in a.py")
     handleSubmit(e, {
       body: { content: input },
       experimental_attachments: attachments,
@@ -79,7 +93,6 @@ export function ChatInterface({ files, onSetBreakpoint }: ChatInterfaceProps) {
                 if (part.type === "text") {
                   return <ReactMarkdown key={idx}>{part.text}</ReactMarkdown>;
                 } else if (part.type === "tool-invocation") {
-                  // Render a summary of the tool invocation.
                   return (
                     <div
                       key={idx}

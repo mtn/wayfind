@@ -3,9 +3,24 @@ import { spawn } from "child_process";
 import path from "path";
 import { DAPClient } from "../../lib/dapClient";
 
-// Store globally so subsequent requests reuse them.
-let dapClient: DAPClient | null = null;
-let pythonProcess: ReturnType<typeof spawn> | null = null;
+// Declare globals so that the DAPClient and pythonProcess persist between requests.
+declare global {
+  // Use a symbol on globalThis to avoid collisions.
+  // In a persistent environment, these will remain available across API calls.
+  var dapClient: DAPClient | null | undefined;
+  var pythonProcess: ReturnType<typeof spawn> | null | undefined;
+}
+
+// Initialize globals if they don’t exist
+if (globalThis.dapClient === undefined) {
+  globalThis.dapClient = null;
+}
+if (globalThis.pythonProcess === undefined) {
+  globalThis.pythonProcess = null;
+}
+
+let dapClient: DAPClient | null = globalThis.dapClient;
+let pythonProcess: ReturnType<typeof spawn> | null = globalThis.pythonProcess;
 
 // Adjust to match your file structure.
 const targetScript = path.join(
@@ -57,8 +72,12 @@ export default async function handler(
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
 
+      // Save these instances to the global context
+      globalThis.dapClient = dapClient;
+      globalThis.pythonProcess = pythonProcess;
+
       // -----------------------------------------------------------------
-      // 2) Initialize
+      // 2) Initialize debugger adapter
       // -----------------------------------------------------------------
       const initResp = await dapClient.initialize();
       console.log("Initialize response:", initResp);
@@ -69,7 +88,6 @@ export default async function handler(
       await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach sent and initialized event received");
 
-      // Try to get attach response, but don't fail if we don't get it
       try {
         const attachResp = await dapClient.tryGetAttachResponse(2, 1000);
         if (attachResp) {
@@ -79,11 +97,6 @@ export default async function handler(
         console.log("No attach response received", err);
       }
 
-      // -----------------------------------------------------------------
-      // DO NOT call configurationDone here. We want to wait
-      // until after breakpoints are set.
-      // -----------------------------------------------------------------
-
       res.status(200).json({
         success: true,
         message:
@@ -91,32 +104,30 @@ export default async function handler(
       });
     } else if (action === "setBreakpoints") {
       // -----------------------------------------------------------------
-      // 4) Set breakpoints, THEN call configurationDone to let the script run
+      // 4) Set breakpoints, THEN call configurationDone so the script runs
       // -----------------------------------------------------------------
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
-
       const { breakpoints } = req.body;
       if (!breakpoints) {
         res.status(400).json({ error: "Missing breakpoints in request body" });
         return;
       }
-
-      // 4a) setBreakpoints
       console.log("Setting breakpoints for script:", targetScript);
       const bpResp = await dapClient.setBreakpoints(targetScript, breakpoints);
       console.log("Breakpoint response:", bpResp);
-
-      // 4b) configurationDone
       console.log("Calling configurationDone so the script can run now...");
       const confResp = await dapClient.configurationDone();
       console.log("configurationDone response:", confResp);
-
-      res
-        .status(200)
-        .json({ breakpoints: bpResp.body?.breakpoints || [], confResp });
+      res.status(200).json({
+        breakpoints: bpResp.body?.breakpoints || [],
+        confResp,
+      });
     } else if (action === "evaluate") {
+      // -----------------------------------------------------------------
+      // Evaluate an expression
+      // -----------------------------------------------------------------
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
@@ -125,7 +136,9 @@ export default async function handler(
         res.status(400).json({ error: "Missing expression in request body" });
         return;
       }
-      const stackResp = await dapClient.stackTrace(threadId || 1);
+      const effectiveThreadId =
+        threadId || (dapClient.currentPausedLocation ? 1 : 1);
+      const stackResp = await dapClient.stackTrace(effectiveThreadId);
       let frameId: number | undefined;
       if (
         stackResp.body &&
@@ -137,13 +150,20 @@ export default async function handler(
       const evalResp = await dapClient.evaluate(expression, frameId);
       res.status(200).json({ result: evalResp.body?.result });
     } else if (action === "continue") {
+      // -----------------------------------------------------------------
+      // Continue execution
+      // -----------------------------------------------------------------
       if (!dapClient) {
         throw new Error("No active DAP session; launch first.");
       }
       const { threadId } = req.body;
-      const contResp = await dapClient.continue(threadId || 1);
+      const effectiveThreadId = threadId || 1; // Optionally, use stored threadId if available
+      const contResp = await dapClient.continue(effectiveThreadId);
       res.status(200).json({ result: contResp.body });
     } else if (action === "status") {
+      // -----------------------------------------------------------------
+      // Return the status of the debug session
+      // -----------------------------------------------------------------
       if (!dapClient) {
         res.status(200).json({ status: "inactive" });
         return;

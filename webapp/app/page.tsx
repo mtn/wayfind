@@ -243,10 +243,31 @@ export default function Home() {
               </div>
             </ResizablePanel>
             <ResizablePanel defaultSize={40}>
-              {/* Pass handleBreakpointChange as onSetBreakpoint to ChatInterface */}
               <ChatInterface
                 files={files}
                 onSetBreakpoint={handleBreakpointChange}
+                onLaunch={handleDebugSessionStart}
+                onContinue={() => {
+                  // For "continue", re-use your existing functionality:
+                  fetch("/api/debug?action=continue", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ threadId: 1 }),
+                  })
+                    .then((res) => res.json())
+                    .then((data) => console.log("Continue result:", data))
+                    .catch((err) => console.error("Continue failed:", err));
+                }}
+                onEvaluate={async (expression: string) => {
+                  // For evaluation, call your debug API and return the result.
+                  const res = await fetch("/api/debug?action=evaluate", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ expression, threadId: 1 }),
+                  });
+                  const data = await res.json();
+                  return data.result;
+                }}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
