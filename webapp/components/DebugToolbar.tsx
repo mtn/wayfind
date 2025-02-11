@@ -12,7 +12,6 @@ export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
   const [log, setLog] = useState<string[]>([]);
 
-  // Handler to launch the debug session.
   async function handleLaunch() {
     try {
       setLog((prev) => [...prev, "Launching debug session..."]);
@@ -30,7 +29,6 @@ export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
     }
   }
 
-  // Handler to evaluate an expression.
   async function handleEvaluate() {
     if (!sessionStarted) {
       setLog((prev) => [...prev, "Cannot evaluate: Debug session not started"]);
@@ -54,7 +52,6 @@ export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
     }
   }
 
-  // Handler to continue execution.
   async function handleContinue() {
     if (!sessionStarted) {
       setLog((prev) => [...prev, "Cannot continue: Debug session not started"]);
@@ -88,7 +85,8 @@ export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
   }
 
   return (
-    <div className="p-4 border-t">
+    // Use a flex container to fill available height.
+    <div className="flex flex-col h-full p-4 border-t">
       <div className="flex flex-wrap gap-4 mb-4">
         <Button onClick={handleLaunch} disabled={sessionStarted}>
           Launch Debug Session
@@ -109,7 +107,9 @@ export function DebugToolbar({ onDebugSessionStart }: DebugToolbarProps) {
           </>
         )}
       </div>
-      <div className="bg-gray-50 p-2 rounded h-40 overflow-auto text-xs">
+
+      {/* Log area now takes up available vertical space with flex-1 */}
+      <div className="flex-1 bg-gray-50 p-2 rounded overflow-auto text-xs">
         {log.map((entry, idx) => (
           <div key={idx} className="border-b py-0.5">
             {entry}

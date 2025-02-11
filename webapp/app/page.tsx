@@ -56,7 +56,7 @@ export default function Home() {
   const [breakpoints, setBreakpoints] = useState<IBreakpoint[]>([]);
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
 
-  // NEW: Add execution status state
+  // NEW: Execution status state.
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
@@ -210,11 +210,23 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
+        {/* Left side: Now a nested vertical group with FileTree on top and DebugToolbar at the bottom */}
         <ResizablePanel defaultSize={20} minSize={15}>
-          <div className="h-full border-r">
-            <FileTree files={files} onSelectFile={handleFileSelect} />
-          </div>
+          <ResizablePanelGroup direction="vertical">
+            <ResizablePanel defaultSize={50}>
+              <div className="h-full border-b">
+                <FileTree files={files} onSelectFile={handleFileSelect} />
+              </div>
+            </ResizablePanel>
+            <ResizablePanel defaultSize={50}>
+              <div className="h-full">
+                <DebugToolbar onDebugSessionStart={handleDebugSessionStart} />
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </ResizablePanel>
+
+        {/* Right side: Editor and ChatInterface */}
         <ResizablePanel defaultSize={80}>
           <ResizablePanelGroup direction="vertical">
             <ResizablePanel defaultSize={60}>
@@ -230,11 +242,8 @@ export default function Home() {
                 />
               </div>
             </ResizablePanel>
-            <ResizablePanel defaultSize={20}>
+            <ResizablePanel defaultSize={40}>
               <ChatInterface files={files} />
-            </ResizablePanel>
-            <ResizablePanel defaultSize={20}>
-              <DebugToolbar onDebugSessionStart={handleDebugSessionStart} />
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>

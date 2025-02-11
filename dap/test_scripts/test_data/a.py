@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 
 def add_numbers(a, b):
-    total = a + b
-    return total
+  total = a + b
+  return total
 
 def compute_fibonacci(n):
-    if n <= 0:
-        return []
-    elif n == 1:
-        return [0]
-    fib_sequence = [0, 1]
-    for i in range(2, n):
-        next_val = fib_sequence[i - 1] + fib_sequence[i - 2]
-        fib_sequence.append(next_val)
-    return fib_sequence
+  if n <= 0:
+      return []
+  elif n == 1:
+      return [0]
+  fib_sequence = [0, 1]
+  for i in range(2, n):
+      next_val = fib_sequence[i - 1] + fib_sequence[i - 2]
+      fib_sequence.append(next_val)
+  return fib_sequence
 
 def main():
     print("Starting test script for debugger step-through...")
@@ -28,4 +28,4 @@ def main():
     print("Test script finished.")
 
 if __name__ == '__main__':
-    main()
+  main()
