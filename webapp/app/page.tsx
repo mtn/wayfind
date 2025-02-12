@@ -142,40 +142,43 @@ export default function Home() {
     setIsDebugSessionActive(true);
     fetch("/api/debug?action=launch", { method: "POST" })
       .then((resp) => resp.json())
-      .then((data) => {
-        console.log("Launch response from server:", data);
-        if (breakpoints.length > 0) {
-          console.log(
-            "Sending pre-existing breakpoints to /api/debug?action=setBreakpoints",
-          );
-          fetch("/api/debug?action=setBreakpoints", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              breakpoints,
-              filePath: selectedFile.name,
-            }),
-          })
-            .then((resp) => resp.json())
-            .then((setData) => {
-              console.log("Set breakpoints after launch response:", setData);
-              if (setData.breakpoints) {
-                setBreakpoints((current) =>
-                  current.map((bp) => {
-                    const verifiedBp = setData.breakpoints.find(
-                      (vbp: IBreakpoint) => vbp.line === bp.line,
-                    );
-                    return verifiedBp
-                      ? { ...bp, verified: verifiedBp.verified }
-                      : bp;
-                  }),
-                );
-              }
-            })
-            .catch((error) =>
-              console.error("Failed to set breakpoints:", error),
+      .then((_) => {
+        setBreakpoints((bp) => {
+          console.log("CURRENT BREAKPOINTS!!", bp);
+          if (bp.length > 0) {
+            console.log(
+              "Sending pre-existing breakpoints to /api/debug?action=setBreakpoints",
             );
-        }
+            fetch("/api/debug?action=setBreakpoints", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                breakpoints: bp,
+                filePath: selectedFile.name,
+              }),
+            })
+              .then((resp) => resp.json())
+              .then((setData) => {
+                console.log("Set breakpoints after launch response:", setData);
+                if (setData.breakpoints) {
+                  setBreakpoints((current) =>
+                    current.map((bp) => {
+                      const verifiedBp = setData.breakpoints.find(
+                        (vbp: IBreakpoint) => vbp.line === bp.line,
+                      );
+                      return verifiedBp
+                        ? { ...bp, verified: verifiedBp.verified }
+                        : bp;
+                    }),
+                  );
+                }
+              })
+              .catch((error) =>
+                console.error("Failed to set breakpoints:", error),
+              );
+          }
+          return bp;
+        });
       })
       .catch((error) =>
         console.error("Failed launching debug session:", error),

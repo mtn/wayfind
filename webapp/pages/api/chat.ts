@@ -43,7 +43,8 @@ export default async function handler(
             you should use your tools to set breakpoint(s) at lines that let you read the value, launch the program, continue till
             it stops, evaluate it the variable, and so on until it terminates.
             Using the tools is STRICTLY PREFERRED to inspecting the code for answering this type of question.
-            If the user makes a request like this, YOU MUST USE THE DEBUGGING TOOLS.`,
+            If the user makes a request like this, YOU MUST USE THE DEBUGGING TOOLS.
+            NOTE: in the example code next_val is defined on line 12, so to be able to evaluate it's value, you should set a breakpoint on line 13.`,
     };
     const result = streamText({
       model: anthropic("claude-3-5-sonnet-latest"),
