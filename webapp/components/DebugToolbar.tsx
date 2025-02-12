@@ -18,12 +18,14 @@ export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
 }: DebugToolbarProps) {
-  // Instead of an array of strings, use an array of log objects
   const [log, setLog] = useState<DebugLogEntry[]>([]);
-  const [sessionStarted, setSessionStarted] = useState(false);
   const [expression, setExpression] = useState("");
 
-  // Utility function for appending a log entry.
+  // Compute if session is active based on debugStatus
+  const isSessionActive =
+    debugStatus !== "inactive" && debugStatus !== "terminated";
+  const isPaused = debugStatus === "paused";
+
   const addLogEntry = (text: string, type: "dap" | "program" = "dap") => {
     setLog((prev) => [...prev, { id: Date.now(), text, type }]);
   };
@@ -34,7 +36,6 @@ export function DebugToolbar({
       const res = await fetch("/api/debug?action=launch", { method: "POST" });
       const data = await res.json();
       addLogEntry(`Session launched: ${data.message}`, "dap");
-      setSessionStarted(true);
       onDebugSessionStart();
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -46,7 +47,7 @@ export function DebugToolbar({
   }
 
   async function handleEvaluate() {
-    if (!sessionStarted) {
+    if (!isSessionActive) {
       addLogEntry("Cannot evaluate: Debug session not started", "dap");
       return;
     }
@@ -70,7 +71,7 @@ export function DebugToolbar({
   }
 
   async function handleContinue() {
-    if (!sessionStarted) {
+    if (!isSessionActive) {
       addLogEntry("Cannot continue: Debug session not started", "dap");
       return;
     }
@@ -103,13 +104,10 @@ export function DebugToolbar({
         )}
       </div>
       <div className="flex flex-wrap gap-4 mb-4">
-        <Button
-          onClick={handleLaunch}
-          disabled={sessionStarted || debugStatus === "terminated"}
-        >
+        <Button onClick={handleLaunch} disabled={isSessionActive}>
           Launch Debug Session
         </Button>
-        {sessionStarted && debugStatus !== "terminated" && (
+        {isSessionActive && (
           <>
             <div className="flex items-center gap-2">
               <input
@@ -124,14 +122,18 @@ export function DebugToolbar({
                   }
                 }}
                 className="border rounded px-2 py-1"
+                disabled={!isPaused}
               />
-              <Button onClick={handleEvaluate}>Evaluate</Button>
+              <Button onClick={handleEvaluate} disabled={!isPaused}>
+                Evaluate
+              </Button>
             </div>
-            <Button onClick={handleContinue}>Continue</Button>
+            <Button onClick={handleContinue} disabled={!isPaused}>
+              Continue
+            </Button>
           </>
         )}
       </div>
-      {/* Log area now takes up available vertical space with flex-1 */}
       <div className="flex-1 bg-gray-50 p-2 rounded overflow-auto text-xs">
         {log.map((entry) => (
           <div key={entry.id} className="border-b py-0.5">
