@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { flushSync } from "react-dom";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -58,7 +59,7 @@ export default function Home() {
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   const [debugStatus, setDebugStatus] = useState("inactive");
 
-  // NEW: Execution status state.
+  // Execution status
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
@@ -74,97 +75,64 @@ export default function Home() {
     setSelectedFile({ ...selectedFile, content: newContent });
   };
 
+  // Toggle a breakpoint
   const handleBreakpointChange = (lineNumber: number) => {
     console.log(
-      "handleBreakpointChange: toggling breakpoint at line",
+      "[handleBreakpointChange] Toggling breakpoint at line:",
       lineNumber,
+      "| isDebugSessionActive:",
+      isDebugSessionActive,
     );
-    setBreakpoints((currentBreakpoints) => {
-      const existingBp = currentBreakpoints.find(
-        (bp) => bp.line === lineNumber,
-      );
-      let newBreakpoints: IBreakpoint[];
-      if (!existingBp) {
-        newBreakpoints = [...currentBreakpoints, { line: lineNumber }];
-      } else {
-        newBreakpoints = currentBreakpoints.filter(
-          (bp) => bp.line !== lineNumber,
-        );
-      }
-      console.log("New breakpoints array:", newBreakpoints);
-      if (isDebugSessionActive) {
-        console.log(
-          "Debug session is active. Sending breakpoints to /api/debug?action=setBreakpoints for file:",
-          selectedFile.name,
-        );
-        fetch("/api/debug?action=setBreakpoints", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            breakpoints: newBreakpoints,
-            filePath: selectedFile.name,
-          }),
-        })
-          .then((response) => {
-            console.log(
-              "Received response from setBreakpoints endpoint",
-              response,
-            );
-            return response.json();
-          })
-          .then((data) => {
-            console.log("Breakpoint update response data:", data);
-            if (data.breakpoints) {
-              setBreakpoints((current) =>
-                current.map((bp) => {
-                  const verifiedBp = data.breakpoints.find(
-                    (vbp: IBreakpoint) => vbp.line === bp.line,
-                  );
-                  return verifiedBp
-                    ? { ...bp, verified: verifiedBp.verified }
-                    : bp;
-                }),
-              );
-            }
-          })
-          .catch((error) =>
-            console.error("Failed to update breakpoints:", error),
-          );
-      } else {
-        console.log(
-          "Debug session is not active; breakpoints update not sent.",
-        );
-      }
-      return newBreakpoints;
-    });
-  };
 
-  const handleDebugSessionStart = () => {
-    console.log("handleDebugSessionStart: Starting debug session");
-    setIsDebugSessionActive(true);
-    fetch("/api/debug?action=launch", { method: "POST" })
-      .then((resp) => resp.json())
-      .then((data) => {
-        console.log("Launch response from server:", data);
-        if (breakpoints.length > 0) {
+    // flushSync ensures breakpoints updates immediately
+    flushSync(() => {
+      setBreakpoints((currentBreakpoints) => {
+        const existingBp = currentBreakpoints.find(
+          (bp) => bp.line === lineNumber,
+        );
+        let newBreakpoints: IBreakpoint[];
+        if (!existingBp) {
+          newBreakpoints = [...currentBreakpoints, { line: lineNumber }];
+        } else {
+          newBreakpoints = currentBreakpoints.filter(
+            (bp) => bp.line !== lineNumber,
+          );
+        }
+
+        console.log(
+          "[handleBreakpointChange] Updated breakpoints array (client state):",
+          newBreakpoints,
+        );
+
+        // If debug session is active, send them immediately
+        if (isDebugSessionActive) {
           console.log(
-            "Sending pre-existing breakpoints to /api/debug?action=setBreakpoints",
+            "[handleBreakpointChange] Debug session active, sending breakpoints to /api/debug...",
           );
           fetch("/api/debug?action=setBreakpoints", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              breakpoints,
+              breakpoints: newBreakpoints,
               filePath: selectedFile.name,
             }),
           })
-            .then((resp) => resp.json())
-            .then((setData) => {
-              console.log("Set breakpoints after launch response:", setData);
-              if (setData.breakpoints) {
+            .then((response) => {
+              console.log(
+                "[handleBreakpointChange] setBreakpoints response:",
+                response,
+              );
+              return response.json();
+            })
+            .then((data) => {
+              console.log(
+                "[handleBreakpointChange] setBreakpoints JSON body:",
+                data,
+              );
+              if (data.breakpoints) {
                 setBreakpoints((current) =>
                   current.map((bp) => {
-                    const verifiedBp = setData.breakpoints.find(
+                    const verifiedBp = data.breakpoints.find(
                       (vbp: IBreakpoint) => vbp.line === bp.line,
                     );
                     return verifiedBp
@@ -175,16 +143,92 @@ export default function Home() {
               }
             })
             .catch((error) =>
-              console.error("Failed to set breakpoints:", error),
+              console.error(
+                "[handleBreakpointChange] Failed to set breakpoints on the server:",
+                error,
+              ),
             );
+        } else {
+          console.log(
+            "[handleBreakpointChange] Debug session not active; breakpoints not sent to server yet.",
+          );
         }
+        return newBreakpoints;
+      });
+    });
+  };
+
+  // Start debug session (only launches / does not set breakpoints)
+  const handleDebugSessionStart = () => {
+    console.log("[handleDebugSessionStart] Starting debug session...");
+    setIsDebugSessionActive(true);
+
+    // Launch debug session
+    fetch("/api/debug?action=launch", { method: "POST" })
+      .then((resp) => {
+        console.log(
+          "[handleDebugSessionStart] /api/debug?action=launch responded:",
+          resp,
+        );
+        return resp.json();
+      })
+      .then((data) => {
+        console.log("[handleDebugSessionStart] Launch response data:", data);
       })
       .catch((error) =>
-        console.error("Failed launching debug session:", error),
+        console.error(
+          "[handleDebugSessionStart] Failed launching debug session:",
+          error,
+        ),
       );
   };
 
-  // NEW: Poll debug status if a debug session is active.
+  // This effect runs each time breakpoints or isDebugSessionActive changes.
+  // If session is active and we have breakpoints, we'll send them up.
+  useEffect(() => {
+    if (isDebugSessionActive && breakpoints.length > 0) {
+      console.log(
+        "[breakpoints/useEffect] Session is active with > 0 breakpoints, sending to server...",
+        breakpoints,
+      );
+      fetch("/api/debug?action=setBreakpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          breakpoints,
+          filePath: selectedFile.name,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          console.log(
+            "[breakpoints/useEffect] setBreakpoints response data:",
+            data,
+          );
+          if (data.breakpoints) {
+            // Update verified flags
+            setBreakpoints((current) =>
+              current.map((bp) => {
+                const verifiedBp = data.breakpoints.find(
+                  (vbp: IBreakpoint) => vbp.line === bp.line,
+                );
+                return verifiedBp
+                  ? { ...bp, verified: verifiedBp.verified }
+                  : bp;
+              }),
+            );
+          }
+        })
+        .catch((err) => {
+          console.error(
+            "[breakpoints/useEffect] Error setting breakpoints:",
+            err,
+          );
+        });
+    }
+  }, [isDebugSessionActive, breakpoints, selectedFile.name]);
+
+  // Poll debug status if a debug session is active
   useEffect(() => {
     if (isDebugSessionActive) {
       const pollInterval = setInterval(async () => {
@@ -204,6 +248,7 @@ export default function Home() {
             setExecutionLine(null);
             setDebugStatus("running");
           } else {
+            // "inactive" or some unknown state
             setExecutionFile(null);
             setExecutionLine(null);
             setDebugStatus("inactive");
@@ -214,6 +259,7 @@ export default function Home() {
       }, 1500);
       return () => clearInterval(pollInterval);
     } else {
+      // Reset when inactive
       setExecutionFile(null);
       setExecutionLine(null);
       setDebugStatus("inactive");
@@ -223,7 +269,7 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
-        {/* Left side: Now a nested vertical group with FileTree on top and DebugToolbar at the bottom */}
+        {/* Left side: vertical group with FileTree, DebugToolbar, and OutputViewer */}
         <ResizablePanel defaultSize={20} minSize={15}>
           <ResizablePanelGroup direction="vertical">
             <ResizablePanel defaultSize={40}>
@@ -269,7 +315,7 @@ export default function Home() {
                 onSetBreakpoint={handleBreakpointChange}
                 onLaunch={handleDebugSessionStart}
                 onContinue={() => {
-                  // For "continue", re-use your existing functionality:
+                  // For "continue", re-use your existing functionality
                   fetch("/api/debug?action=continue", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -280,7 +326,7 @@ export default function Home() {
                     .catch((err) => console.error("Continue failed:", err));
                 }}
                 onEvaluate={async (expression: string) => {
-                  // For evaluation, call your debug API and return the result.
+                  // For evaluation, call your debug API and return the result
                   const res = await fetch("/api/debug?action=evaluate", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
