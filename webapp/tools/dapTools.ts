@@ -11,7 +11,8 @@ export const setBreakpoint = tool({
 });
 
 export const launchDebug = tool({
-  description: "Launch a new debug session. This is a client‑side tool.",
+  description:
+    "Launch a new debug session. If you have set breakpoints, launching will start the program and it will run up until any breakpoints are hit (or terminate if none are). This is a client‑side tool.",
   parameters: z.object({}), // no parameters
 });
 

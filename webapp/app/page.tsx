@@ -10,9 +10,7 @@ import { OutputViewer } from "@/components/OutputViewer";
 
 const aPy = {
   name: "a.py",
-  content: `#!/usr/bin/env python3
-
-def add_numbers(a, b):
+  content: `def add_numbers(a, b):
     total = a + b
     return total
 
