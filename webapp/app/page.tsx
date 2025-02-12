@@ -52,13 +52,34 @@ export interface IBreakpoint {
 export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFile, setSelectedFile] = useState(files[0]);
-  const [breakpoints, setBreakpoints] = useState<IBreakpoint[]>([]);
+
+  // Breakpoint handling: keep separate queued vs. active sets
+  const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
+  const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
+
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   const [debugStatus, setDebugStatus] = useState("inactive");
 
-  // NEW: Execution status state.
+  // Execution status state
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
+
+  // Helper: merge queued + active so Monaco shows all of them
+  function mergeBreakpoints(
+    queued: IBreakpoint[],
+    active: IBreakpoint[],
+  ): IBreakpoint[] {
+    const merged = new Map<number, IBreakpoint>();
+    // Add queued first
+    for (const bp of queued) {
+      merged.set(bp.line, bp);
+    }
+    // Overwrite with active (in case of duplication)
+    for (const bp of active) {
+      merged.set(bp.line, bp);
+    }
+    return Array.from(merged.values());
+  }
 
   const handleFileSelect = (file: { name: string; content: string }) => {
     setSelectedFile(file);
@@ -72,29 +93,28 @@ export default function Home() {
     setSelectedFile({ ...selectedFile, content: newContent });
   };
 
+  // Toggle a breakpoint
   const handleBreakpointChange = (lineNumber: number) => {
-    console.log(
-      "handleBreakpointChange: toggling breakpoint at line",
-      lineNumber,
-    );
-    setBreakpoints((currentBreakpoints) => {
-      const existingBp = currentBreakpoints.find(
-        (bp) => bp.line === lineNumber,
-      );
-      let newBreakpoints: IBreakpoint[];
-      if (!existingBp) {
-        newBreakpoints = [...currentBreakpoints, { line: lineNumber }];
-      } else {
-        newBreakpoints = currentBreakpoints.filter(
-          (bp) => bp.line !== lineNumber,
-        );
-      }
-      console.log("New breakpoints array:", newBreakpoints);
-      if (isDebugSessionActive) {
-        console.log(
-          "Debug session is active. Sending breakpoints to /api/debug?action=setBreakpoints for file:",
-          selectedFile.name,
-        );
+    if (!isDebugSessionActive) {
+      // If debug session is NOT active, modify the queuedBreakpoints only
+      setQueuedBreakpoints((currentQueued) => {
+        const existingBp = currentQueued.find((bp) => bp.line === lineNumber);
+        if (!existingBp) {
+          return [...currentQueued, { line: lineNumber }];
+        }
+        return currentQueued.filter((bp) => bp.line !== lineNumber);
+      });
+    } else {
+      // If debug session is active, we update activeBreakpoints AND call the API
+      setActiveBreakpoints((currentActive) => {
+        const existingBp = currentActive.find((bp) => bp.line === lineNumber);
+        let newBreakpoints: IBreakpoint[];
+        if (!existingBp) {
+          newBreakpoints = [...currentActive, { line: lineNumber }];
+        } else {
+          newBreakpoints = currentActive.filter((bp) => bp.line !== lineNumber);
+        }
+
         fetch("/api/debug?action=setBreakpoints", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -103,17 +123,11 @@ export default function Home() {
             filePath: selectedFile.name,
           }),
         })
-          .then((response) => {
-            console.log(
-              "Received response from setBreakpoints endpoint",
-              response,
-            );
-            return response.json();
-          })
+          .then((response) => response.json())
           .then((data) => {
-            console.log("Breakpoint update response data:", data);
             if (data.breakpoints) {
-              setBreakpoints((current) =>
+              // Update verified states
+              setActiveBreakpoints((current) =>
                 current.map((bp) => {
                   const verifiedBp = data.breakpoints.find(
                     (vbp: IBreakpoint) => vbp.line === bp.line,
@@ -126,66 +140,58 @@ export default function Home() {
             }
           })
           .catch((error) =>
-            console.error("Failed to update breakpoints:", error),
+            console.error("Failed to update active breakpoints:", error),
           );
-      } else {
-        console.log(
-          "Debug session is not active; breakpoints update not sent.",
-        );
-      }
-      return newBreakpoints;
-    });
+
+        return newBreakpoints;
+      });
+    }
   };
 
+  // Called when user presses "Launch Debug Session"
   const handleDebugSessionStart = () => {
-    console.log("handleDebugSessionStart: Starting debug session");
     setIsDebugSessionActive(true);
+
     fetch("/api/debug?action=launch", { method: "POST" })
       .then((resp) => resp.json())
-      .then((_) => {
-        setBreakpoints((bp) => {
-          console.log("CURRENT BREAKPOINTS!!", bp);
-          if (bp.length > 0) {
-            console.log(
-              "Sending pre-existing breakpoints to /api/debug?action=setBreakpoints",
-            );
-            fetch("/api/debug?action=setBreakpoints", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                breakpoints: bp,
-                filePath: selectedFile.name,
-              }),
+      .then(() => {
+        // Now that we are active, send queued breakpoints if any
+        if (queuedBreakpoints.length > 0) {
+          setActiveBreakpoints(queuedBreakpoints);
+          fetch("/api/debug?action=setBreakpoints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              breakpoints: queuedBreakpoints,
+              filePath: selectedFile.name,
+            }),
+          })
+            .then((resp) => resp.json())
+            .then((data) => {
+              if (data.breakpoints) {
+                setActiveBreakpoints((current) =>
+                  current.map((bp) => {
+                    const verified = data.breakpoints.find(
+                      (vbp: IBreakpoint) => vbp.line === bp.line,
+                    )?.verified;
+                    return { ...bp, verified };
+                  }),
+                );
+              }
             })
-              .then((resp) => resp.json())
-              .then((setData) => {
-                console.log("Set breakpoints after launch response:", setData);
-                if (setData.breakpoints) {
-                  setBreakpoints((current) =>
-                    current.map((bp) => {
-                      const verifiedBp = setData.breakpoints.find(
-                        (vbp: IBreakpoint) => vbp.line === bp.line,
-                      );
-                      return verifiedBp
-                        ? { ...bp, verified: verifiedBp.verified }
-                        : bp;
-                    }),
-                  );
-                }
-              })
-              .catch((error) =>
-                console.error("Failed to set breakpoints:", error),
-              );
-          }
-          return bp;
-        });
+            .catch((err) =>
+              console.error("Failed to set queued breakpoints:", err),
+            );
+          // Clear the queue
+          setQueuedBreakpoints([]);
+        }
       })
       .catch((error) =>
         console.error("Failed launching debug session:", error),
       );
   };
 
-  // NEW: Poll debug status if a debug session is active.
+  // Poll debug status if a debug session is active
   useEffect(() => {
     if (isDebugSessionActive) {
       const pollInterval = setInterval(async () => {
@@ -224,14 +230,16 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
-        {/* Left side: Now a nested vertical group with FileTree on top and DebugToolbar at the bottom */}
+        {/* Left side: file tree, debug toolbar, output */}
         <ResizablePanel defaultSize={20} minSize={15}>
           <ResizablePanelGroup direction="vertical">
+            {/* FileTree */}
             <ResizablePanel defaultSize={40}>
               <div className="h-full border-b">
                 <FileTree files={files} onSelectFile={handleFileSelect} />
               </div>
             </ResizablePanel>
+            {/* DebugToolbar */}
             <ResizablePanel defaultSize={30}>
               <div className="h-full">
                 <DebugToolbar
@@ -240,6 +248,7 @@ export default function Home() {
                 />
               </div>
             </ResizablePanel>
+            {/* OutputViewer */}
             <ResizablePanel defaultSize={30}>
               <div className="h-full">
                 <OutputViewer />
@@ -257,20 +266,24 @@ export default function Home() {
                   content={selectedFile.content}
                   language="python"
                   onChange={handleFileChange}
-                  breakpoints={breakpoints}
+                  // Important: pass the merged breakpoints
+                  breakpoints={mergeBreakpoints(
+                    queuedBreakpoints,
+                    activeBreakpoints,
+                  )}
                   onBreakpointChange={handleBreakpointChange}
                   executionFile={executionFile}
                   executionLine={executionLine}
                 />
               </div>
             </ResizablePanel>
+            {/* ChatInterface */}
             <ResizablePanel defaultSize={40}>
               <ChatInterface
                 files={files}
                 onSetBreakpoint={handleBreakpointChange}
                 onLaunch={handleDebugSessionStart}
                 onContinue={() => {
-                  // For "continue", re-use your existing functionality:
                   fetch("/api/debug?action=continue", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -281,7 +294,6 @@ export default function Home() {
                     .catch((err) => console.error("Continue failed:", err));
                 }}
                 onEvaluate={async (expression: string) => {
-                  // For evaluation, call your debug API and return the result.
                   const res = await fetch("/api/debug?action=evaluate", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
