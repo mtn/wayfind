@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -150,41 +150,48 @@ export default function Home() {
 
   // Called when user presses "Launch Debug Session"
   const handleDebugSessionStart = () => {
+    if (isDebugSessionActive) {
+      console.log("Debug session is already launching or active, skipping");
+      return;
+    }
     setIsDebugSessionActive(true);
 
     fetch("/api/debug?action=launch", { method: "POST" })
       .then((resp) => resp.json())
       .then(() => {
         // Now that we are active, send queued breakpoints if any
-        if (queuedBreakpoints.length > 0) {
-          setActiveBreakpoints(queuedBreakpoints);
-          fetch("/api/debug?action=setBreakpoints", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              breakpoints: queuedBreakpoints,
-              filePath: selectedFile.name,
-            }),
-          })
-            .then((resp) => resp.json())
-            .then((data) => {
-              if (data.breakpoints) {
-                setActiveBreakpoints((current) =>
-                  current.map((bp) => {
-                    const verified = data.breakpoints.find(
-                      (vbp: IBreakpoint) => vbp.line === bp.line,
-                    )?.verified;
-                    return { ...bp, verified };
-                  }),
-                );
-              }
+        setQueuedBreakpoints((qbp) => {
+          if (qbp.length > 0) {
+            setActiveBreakpoints(qbp);
+            console.log("SET BREAKPOINTS FROM HERE 2");
+            fetch("/api/debug?action=setBreakpoints", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                breakpoints: qbp,
+                filePath: selectedFile.name,
+              }),
             })
-            .catch((err) =>
-              console.error("Failed to set queued breakpoints:", err),
-            );
-          // Clear the queue
-          setQueuedBreakpoints([]);
-        }
+              .then((resp) => resp.json())
+              .then((data) => {
+                if (data.breakpoints) {
+                  setActiveBreakpoints((current) =>
+                    current.map((bp) => {
+                      const verified = data.breakpoints.find(
+                        (vbp: IBreakpoint) => vbp.line === bp.line,
+                      )?.verified;
+                      return { ...bp, verified };
+                    }),
+                  );
+                }
+              })
+              .catch((err) =>
+                console.error("Failed to set queued breakpoints:", err),
+              );
+          }
+
+          return [];
+        });
       })
       .catch((error) =>
         console.error("Failed launching debug session:", error),
