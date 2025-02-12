@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { flushSync } from "react-dom";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -82,77 +81,74 @@ export default function Home() {
       isDebugSessionActive,
     );
 
-    // flushSync ensures breakpoints updates immediately
-    flushSync(() => {
-      setBreakpoints((currentBreakpoints) => {
-        const existingBp = currentBreakpoints.find(
-          (bp) => bp.line === lineNumber,
+    setBreakpoints((currentBreakpoints) => {
+      const existingBp = currentBreakpoints.find(
+        (bp) => bp.line === lineNumber,
+      );
+      let newBreakpoints: IBreakpoint[];
+      if (!existingBp) {
+        newBreakpoints = [...currentBreakpoints, { line: lineNumber }];
+      } else {
+        newBreakpoints = currentBreakpoints.filter(
+          (bp) => bp.line !== lineNumber,
         );
-        let newBreakpoints: IBreakpoint[];
-        if (!existingBp) {
-          newBreakpoints = [...currentBreakpoints, { line: lineNumber }];
-        } else {
-          newBreakpoints = currentBreakpoints.filter(
-            (bp) => bp.line !== lineNumber,
-          );
-        }
+      }
 
+      console.log(
+        "[handleBreakpointChange] Updated breakpoints array (client state):",
+        newBreakpoints,
+      );
+
+      // If debug session is active, send them immediately
+      if (isDebugSessionActive) {
         console.log(
-          "[handleBreakpointChange] Updated breakpoints array (client state):",
-          newBreakpoints,
+          "[handleBreakpointChange] Debug session active, sending breakpoints to /api/debug...",
         );
-
-        // If debug session is active, send them immediately
-        if (isDebugSessionActive) {
-          console.log(
-            "[handleBreakpointChange] Debug session active, sending breakpoints to /api/debug...",
-          );
-          fetch("/api/debug?action=setBreakpoints", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              breakpoints: newBreakpoints,
-              filePath: selectedFile.name,
-            }),
-          })
-            .then((response) => {
-              console.log(
-                "[handleBreakpointChange] setBreakpoints response:",
-                response,
-              );
-              return response.json();
-            })
-            .then((data) => {
-              console.log(
-                "[handleBreakpointChange] setBreakpoints JSON body:",
-                data,
-              );
-              if (data.breakpoints) {
-                setBreakpoints((current) =>
-                  current.map((bp) => {
-                    const verifiedBp = data.breakpoints.find(
-                      (vbp: IBreakpoint) => vbp.line === bp.line,
-                    );
-                    return verifiedBp
-                      ? { ...bp, verified: verifiedBp.verified }
-                      : bp;
-                  }),
-                );
-              }
-            })
-            .catch((error) =>
-              console.error(
-                "[handleBreakpointChange] Failed to set breakpoints on the server:",
-                error,
-              ),
+        fetch("/api/debug?action=setBreakpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            breakpoints: newBreakpoints,
+            filePath: selectedFile.name,
+          }),
+        })
+          .then((response) => {
+            console.log(
+              "[handleBreakpointChange] setBreakpoints response:",
+              response,
             );
-        } else {
-          console.log(
-            "[handleBreakpointChange] Debug session not active; breakpoints not sent to server yet.",
+            return response.json();
+          })
+          .then((data) => {
+            console.log(
+              "[handleBreakpointChange] setBreakpoints JSON body:",
+              data,
+            );
+            if (data.breakpoints) {
+              setBreakpoints((current) =>
+                current.map((bp) => {
+                  const verifiedBp = data.breakpoints.find(
+                    (vbp: IBreakpoint) => vbp.line === bp.line,
+                  );
+                  return verifiedBp
+                    ? { ...bp, verified: verifiedBp.verified }
+                    : bp;
+                }),
+              );
+            }
+          })
+          .catch((error) =>
+            console.error(
+              "[handleBreakpointChange] Failed to set breakpoints on the server:",
+              error,
+            ),
           );
-        }
-        return newBreakpoints;
-      });
+      } else {
+        console.log(
+          "[handleBreakpointChange] Debug session not active; breakpoints not sent to server yet.",
+        );
+      }
+      return newBreakpoints;
     });
   };
 
