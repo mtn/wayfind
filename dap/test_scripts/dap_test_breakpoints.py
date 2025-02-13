@@ -95,7 +95,18 @@ def wait_for_response(seq, timeout=10):
         time.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for response to seq {seq}")
 
+def stream_output(proc, buffer):
+    """Continuously read lines from proc.stdout and append them to buffer."""
+    for line in iter(proc.stdout.readline, ''):
+        if not line:
+            break
+        buffer.append(line.rstrip())
+    proc.stdout.close()
+
 def main():
+    # Buffer to capture the output of the target script
+    output_buffer = []
+
     # Adjust the target path (a.py should be in test_data subfolder).
     target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data", "a.py"))
     debugpy_port = 5678
@@ -108,7 +119,13 @@ def main():
          target_script
     ]
     print("Launching target script with debugpy:", " ".join(launcher_cmd))
-    proc = subprocess.Popen(launcher_cmd)
+    proc = subprocess.Popen(launcher_cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            universal_newlines=True,
+                            bufsize=1)
+    output_thread = threading.Thread(target=stream_output, args=(proc, output_buffer), daemon=True)
+    output_thread.start()
     time.sleep(1)
 
     # Step 2: Connect to debugpy.
@@ -274,6 +291,11 @@ def main():
     print("Target process terminated.")
 
     sock.close()
+
+    output_thread.join(timeout=1.0)
+    print("\n----- Captured Target Output -----")
+    for line in output_buffer:
+        print(line)
 
 if __name__ == "__main__":
     try:
