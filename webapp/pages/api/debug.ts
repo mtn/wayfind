@@ -75,6 +75,7 @@ export default async function handler(
 
       const debugpyPort = 5678;
       pythonProcess = spawn("python", [
+        "-u",
         "-m",
         "debugpy",
         "--listen",
