@@ -149,53 +149,57 @@ export default function Home() {
   };
 
   // Called when user presses "Launch Debug Session"
-  const handleDebugSessionStart = () => {
+  const handleDebugSessionStart = async () => {
     if (isDebugSessionActive) {
       console.log("Debug session is already launching or active, skipping");
       return;
     }
     setIsDebugSessionActive(true);
 
-    fetch("/api/debug?action=launch", { method: "POST" })
-      .then((resp) => resp.json())
-      .then(() => {
-        // Now that we are active, send queued breakpoints if any
-        setQueuedBreakpoints((qbp) => {
-          if (qbp.length > 0) {
-            setActiveBreakpoints(qbp);
-            console.log("SET BREAKPOINTS FROM HERE 2");
-            fetch("/api/debug?action=setBreakpoints", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                breakpoints: qbp,
-                filePath: selectedFile.name,
-              }),
-            })
-              .then((resp) => resp.json())
-              .then((data) => {
-                if (data.breakpoints) {
-                  setActiveBreakpoints((current) =>
-                    current.map((bp) => {
-                      const verified = data.breakpoints.find(
-                        (vbp: IBreakpoint) => vbp.line === bp.line,
-                      )?.verified;
-                      return { ...bp, verified };
-                    }),
-                  );
-                }
-              })
-              .catch((err) =>
-                console.error("Failed to set queued breakpoints:", err),
-              );
-          }
+    try {
+      // 1. Send launch request
+      const launchResp = await fetch("/api/debug?action=launch", {
+        method: "POST",
+      });
+      const launchData = await launchResp.json();
+      console.log("Launch response:", launchData);
 
-          return [];
+      // 2. If there are any queued breakpoints, send them
+      if (queuedBreakpoints.length > 0) {
+        setActiveBreakpoints(queuedBreakpoints);
+        console.log("Setting queued breakpoints...", queuedBreakpoints);
+        const bpResp = await fetch("/api/debug?action=setBreakpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            breakpoints: queuedBreakpoints,
+            filePath: selectedFile.name,
+          }),
         });
-      })
-      .catch((error) =>
-        console.error("Failed launching debug session:", error),
-      );
+        const bpData = await bpResp.json();
+        console.log("Breakpoint response:", bpData);
+        if (bpData.breakpoints) {
+          setActiveBreakpoints((current) =>
+            current.map((bp) => {
+              const verified = bpData.breakpoints.find(
+                (vbp: IBreakpoint) => vbp.line === bp.line,
+              )?.verified;
+              return { ...bp, verified };
+            }),
+          );
+        }
+        setQueuedBreakpoints([]);
+      }
+
+      // 3. Send configurationDone request to start program execution
+      const confResp = await fetch("/api/debug?action=configurationDone", {
+        method: "POST",
+      });
+      const confData = await confResp.json();
+      console.log("configurationDone response:", confData);
+    } catch (error) {
+      console.error("Failed launching debug session:", error);
+    }
   };
 
   // Poll debug status if a debug session is active

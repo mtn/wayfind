@@ -104,18 +104,11 @@ export default async function handler(
       globalThis.dapClient = dapClient;
       globalThis.pythonProcess = pythonProcess;
 
-      // DAP: initialize, attach, configurationDone
       const initResp = await dapClient.initialize();
       console.log("Initialize response:", initResp);
 
       await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach sent and initialized event received");
-
-      // Now we tell the debugger "config is complete, run the script"
-      const confResp = await dapClient.configurationDone();
-      console.log("configurationDone response:", confResp);
-      configurationDoneSent = true;
-      globalThis.configurationDoneSent = true;
 
       res.status(200).json({
         success: true,
@@ -154,6 +147,7 @@ export default async function handler(
       // Note: We do NOT call configurationDone here, because that would prematurely run the script if it isn't launched.
       // So if you want the script to run, do /api/debug?action=launch afterward.
 
+      // TODO update this message
       res.status(200).json({
         breakpoints: bpResp.body?.breakpoints || [],
         message: configurationDoneSent
@@ -217,7 +211,30 @@ export default async function handler(
           line: location.line,
         });
       }
-
+      // ------------------------------------------------------------------------
+      // ACTION: CONFIGURATION DONE -- starts program execution
+      // ------------------------------------------------------------------------
+    } else if (action === "configurationDone") {
+      if (!dapClient) {
+        throw new Error("No DAP session. Please launch first.");
+      }
+      if (!configurationDoneSent) {
+        // Send configurationDone so the target script continues running.
+        const confResp = await dapClient.configurationDone();
+        configurationDoneSent = true;
+        globalThis.configurationDoneSent = true;
+        console.log("configurationDone response:", confResp);
+        res.status(200).json({
+          success: true,
+          message: "configurationDone sent; target program is now running.",
+          response: confResp,
+        });
+      } else {
+        res.status(200).json({
+          success: true,
+          message: "configurationDone has already been sent.",
+        });
+      }
       // ------------------------------------------------------------------------
       // UNKNOWN ACTION
       // ------------------------------------------------------------------------
