@@ -3,17 +3,16 @@ import { spawn } from "child_process";
 import path from "path";
 import { DAPClient } from "../../lib/dapClient";
 
-// Declare globals so that the DAPClient, pythonProcess, configuration flag, and output buffer
-// persist between requests.
+// --------------------------------------------------------------------------
+// GLOBALS
+// --------------------------------------------------------------------------
 declare global {
-  // Use symbols on globalThis to avoid collisions.
   var dapClient: DAPClient | null | undefined;
   var pythonProcess: ReturnType<typeof spawn> | null | undefined;
   var configurationDoneSent: boolean | undefined;
   var debugOutputBuffer: string[] | undefined;
 }
 
-// Initialize globals if they don’t exist
 if (globalThis.dapClient === undefined) {
   globalThis.dapClient = null;
 }
@@ -31,7 +30,6 @@ let dapClient: DAPClient | null = globalThis.dapClient;
 let pythonProcess: ReturnType<typeof spawn> | null = globalThis.pythonProcess;
 let configurationDoneSent: boolean = globalThis.configurationDoneSent;
 
-// Adjust to match your file structure.
 const targetScript = path.join(
   process.cwd(),
   "..",
@@ -41,8 +39,9 @@ const targetScript = path.join(
   "a.py",
 );
 
-// Helper function to send output to connected SSE clients.
-// This version buffers output so that the client can pull the data from a separate endpoint.
+// --------------------------------------------------------------------------
+// HELPER: Send output to SSE consumers.
+// --------------------------------------------------------------------------
 function sendOutput(data: string) {
   globalThis.debugOutputBuffer!.push(data);
   console.log("Buffered output:", data);
@@ -59,21 +58,25 @@ export default async function handler(
   }
 
   try {
+    // ------------------------------------------------------------------------
+    // ACTION: LAUNCH
+    // ------------------------------------------------------------------------
     if (action === "launch") {
-      // -----------------------------------------------------------------
-      // 1) Cleanup any existing session
-      // -----------------------------------------------------------------
+      // If we already have a running pythonProcess, kill it
       if (pythonProcess) {
         pythonProcess.kill();
+        pythonProcess = null;
       }
       if (dapClient) {
         dapClient.close();
+        dapClient = null;
       }
-      // Reset our configurationDone flag for a new session.
       configurationDoneSent = false;
       globalThis.configurationDoneSent = false;
 
       const debugpyPort = 5678;
+
+      // Start the python script with debugpy
       pythonProcess = spawn("python", [
         "-u",
         "-m",
@@ -85,71 +88,85 @@ export default async function handler(
       ]);
       console.log("Launched Python process with PID:", pythonProcess.pid);
 
-      // Attach listeners to capture the program's output and stream it to the frontend.
-      if (pythonProcess && pythonProcess.stdout) {
-        pythonProcess.stdout.on("data", (data: Buffer) => {
-          sendOutput(data.toString());
-        });
-      }
+      // Capture stdout for streaming to the SSE
+      pythonProcess.stdout?.on("data", (data: Buffer) => {
+        sendOutput(data.toString());
+      });
 
       // Wait for debugpy to start up
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
+      // Create new DAPClient
       dapClient = new DAPClient();
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
 
-      // Save these instances to the global context.
       globalThis.dapClient = dapClient;
       globalThis.pythonProcess = pythonProcess;
 
-      // -----------------------------------------------------------------
-      // 2) Initialize debugger adapter
-      // -----------------------------------------------------------------
+      // DAP: initialize, attach, configurationDone
       const initResp = await dapClient.initialize();
       console.log("Initialize response:", initResp);
 
-      // -----------------------------------------------------------------
-      // 3) Attach (but do NOT call configurationDone yet!)
-      // -----------------------------------------------------------------
       await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach sent and initialized event received");
 
-      res.status(200).json({
-        success: true,
-        message:
-          "Debug session launched. Set breakpoints if desired, or press continue to run the program.",
-      });
-    } else if (action === "setBreakpoints") {
-      // -----------------------------------------------------------------
-      // 4) Set breakpoints, THEN call configurationDone so the script runs
-      // -----------------------------------------------------------------
-      if (!dapClient) {
-        throw new Error("No active DAP session; launch first.");
-      }
-      const { breakpoints } = req.body;
-      if (!breakpoints) {
-        res.status(400).json({ error: "Missing breakpoints in request body" });
-        return;
-      }
-      console.log("Setting breakpoints for script:", targetScript);
-      const bpResp = await dapClient.setBreakpoints(targetScript, breakpoints);
-      console.log("Breakpoint response:", bpResp);
-      console.log("Calling configurationDone so the script can run now...");
+      // Now we tell the debugger "config is complete, run the script"
       const confResp = await dapClient.configurationDone();
       console.log("configurationDone response:", confResp);
       configurationDoneSent = true;
       globalThis.configurationDoneSent = true;
+
+      res.status(200).json({
+        success: true,
+        message:
+          "Debug session launched. The script is running. Any breakpoints that were set before launch are active.",
+      });
+
+      // ------------------------------------------------------------------------
+      // ACTION: SET BREAKPOINTS
+      // ------------------------------------------------------------------------
+    } else if (action === "setBreakpoints") {
+      if (!dapClient) {
+        throw new Error("No DAP session. Please launch first.");
+      }
+      if (configurationDoneSent) {
+        // Program is already running / started, so this breakpoint might not do anything
+        // (or might only apply if you pause, set breakpoints, then continue).
+        // We'll still set them in DAP so they're recognized if the program is paused.
+        console.log(
+          "Warning: Program already launched; new breakpoints may not be hit unless paused.",
+        );
+      }
+
+      const { breakpoints } = req.body;
+      if (!Array.isArray(breakpoints)) {
+        res
+          .status(400)
+          .json({ error: "Missing or malformed breakpoints array" });
+        return;
+      }
+
+      console.log("Setting breakpoints for script:", targetScript);
+      const bpResp = await dapClient.setBreakpoints(targetScript, breakpoints);
+      console.log("Breakpoint response:", bpResp);
+
+      // Note: We do NOT call configurationDone here, because that would prematurely run the script if it isn't launched.
+      // So if you want the script to run, do /api/debug?action=launch afterward.
+
       res.status(200).json({
         breakpoints: bpResp.body?.breakpoints || [],
-        confResp,
+        message: configurationDoneSent
+          ? "Set breakpoints after program started; might only matter if you pause now."
+          : "Breakpoints set – they will take effect once you launch the program.",
       });
+
+      // ------------------------------------------------------------------------
+      // ACTION: EVALUATE
+      // ------------------------------------------------------------------------
     } else if (action === "evaluate") {
-      // -----------------------------------------------------------------
-      // Evaluate an expression
-      // -----------------------------------------------------------------
       if (!dapClient) {
-        throw new Error("No active DAP session; launch first.");
+        throw new Error("No DAP session. Please launch first.");
       }
       const { expression, threadId } = req.body;
       if (!expression) {
@@ -158,77 +175,54 @@ export default async function handler(
       }
       const effectiveThreadId =
         threadId || (dapClient.currentPausedLocation ? 1 : 1);
+
+      // get top frame
       const stackResp = await dapClient.stackTrace(effectiveThreadId);
       let frameId: number | undefined;
-      if (
-        stackResp.body &&
-        stackResp.body.stackFrames &&
-        stackResp.body.stackFrames.length > 0
-      ) {
+      if (stackResp.body?.stackFrames?.length) {
         frameId = stackResp.body.stackFrames[0].id;
       }
+
       const evalResp = await dapClient.evaluate(expression, frameId);
       res.status(200).json({ result: evalResp.body?.result });
+
+      // ------------------------------------------------------------------------
+      // ACTION: CONTINUE
+      // ------------------------------------------------------------------------
     } else if (action === "continue") {
-      // -----------------------------------------------------------------
-      // Continue execution
-      // -----------------------------------------------------------------
       if (!dapClient) {
-        throw new Error("No active DAP session; launch first.");
-      }
-      // If configurationDone has not been sent yet, try to send it.
-      // If we get an error indicating that configurationDone is only allowed during
-      // a launch/attach request, then assume configuration is already complete.
-      if (!configurationDoneSent) {
-        console.log("No configurationDone found; calling configurationDone...");
-        try {
-          const confResp = await dapClient.configurationDone();
-          console.log("configurationDone response:", confResp);
-          configurationDoneSent = true;
-          globalThis.configurationDoneSent = true;
-        } catch (err) {
-          if (
-            err instanceof Error &&
-            err.message.includes('"configurationDone" is only allowed')
-          ) {
-            console.log(
-              "ConfigurationDone was rejected because it is only allowed during launch/attach; proceeding.",
-            );
-            configurationDoneSent = true;
-            globalThis.configurationDoneSent = true;
-          } else {
-            throw err;
-          }
-        }
+        throw new Error("No DAP session. Please launch first.");
       }
       const { threadId } = req.body;
       const effectiveThreadId = threadId || 1;
+
       const contResp = await dapClient.continue(effectiveThreadId);
       res.status(200).json({ result: contResp.body });
+
+      // ------------------------------------------------------------------------
+      // ACTION: STATUS
+      // ------------------------------------------------------------------------
     } else if (action === "status") {
-      // -----------------------------------------------------------------
-      // Return the status of the debug session
-      // -----------------------------------------------------------------
       if (!dapClient) {
         res.status(200).json({ status: "inactive" });
-        return;
-      }
-      if (dapClient.terminated) {
+      } else if (dapClient.terminated) {
         res.status(200).json({ status: "terminated" });
-        return;
-      }
-      if (!dapClient.isPaused) {
+      } else if (!dapClient.isPaused) {
         res.status(200).json({ status: "running" });
-        return;
+      } else {
+        const location = dapClient.currentPausedLocation || {};
+        res.status(200).json({
+          status: "paused",
+          file: location.file,
+          line: location.line,
+        });
       }
-      const location = dapClient.currentPausedLocation || {};
-      res.status(200).json({
-        status: "paused",
-        file: location.file,
-        line: location.line,
-      });
+
+      // ------------------------------------------------------------------------
+      // UNKNOWN ACTION
+      // ------------------------------------------------------------------------
     } else {
-      res.status(400).json({ error: "Unknown action" });
+      res.status(400).json({ error: `Unknown action: ${action}` });
     }
   } catch (error: unknown) {
     console.error("Error in debug API:", error);

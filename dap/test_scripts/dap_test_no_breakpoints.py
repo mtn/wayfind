@@ -59,8 +59,8 @@ def dap_receiver(sock):
     while True:
         try:
             msg = read_dap_message(sock)
-        except Exception as e:
-            print(f"Receiver terminating: {e}")
+        except:
+            print("Receiver terminating.")
             break
         msg_type = msg.get("type")
         if msg_type == "response":
