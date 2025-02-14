@@ -1,3 +1,5 @@
+"use strict";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import { spawn } from "child_process";
 import path from "path";
@@ -30,6 +32,7 @@ let dapClient: DAPClient | null = globalThis.dapClient;
 let pythonProcess: ReturnType<typeof spawn> | null = globalThis.pythonProcess;
 let configurationDoneSent: boolean = globalThis.configurationDoneSent;
 
+// Adjust target script below as needed.
 const targetScript = path.join(
   process.cwd(),
   "..",
@@ -51,6 +54,7 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  // Only allow POST for most actions. "status" may be GET.
   const { action } = req.query;
   if (req.method !== "POST" && action !== "status") {
     res.status(405).json({ error: "Method not allowed" });
@@ -88,32 +92,38 @@ export default async function handler(
       ]);
       console.log("Launched Python process with PID:", pythonProcess.pid);
 
-      // Capture stdout for streaming to the SSE
+      // Capture stdout for streaming to SSE, if needed.
       pythonProcess.stdout?.on("data", (data: Buffer) => {
         sendOutput(data.toString());
       });
 
-      // Wait for debugpy to start up
+      // Wait a bit for debugpy to start.
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Create new DAPClient
+      // Create new DAPClient and connect.
       dapClient = new DAPClient();
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
-
       globalThis.dapClient = dapClient;
       globalThis.pythonProcess = pythonProcess;
 
+      // Send initialize request
       const initResp = await dapClient.initialize();
       console.log("Initialize response:", initResp);
 
+      // Send attach request
+      const attachReq = {
+        action: "attach",
+        host: "127.0.0.1",
+        port: debugpyPort,
+      };
       await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach sent and initialized event received");
 
       res.status(200).json({
         success: true,
         message:
-          "Debug session launched. The script is running. Any breakpoints that were set before launch are active.",
+          "Debug session launched. The script is running. Breakpoints set before launch are active.",
       });
 
       // ------------------------------------------------------------------------
@@ -124,14 +134,10 @@ export default async function handler(
         throw new Error("No DAP session. Please launch first.");
       }
       if (configurationDoneSent) {
-        // Program is already running / started, so this breakpoint might not do anything
-        // (or might only apply if you pause, set breakpoints, then continue).
-        // We'll still set them in DAP so they're recognized if the program is paused.
         console.log(
           "Warning: Program already launched; new breakpoints may not be hit unless paused.",
         );
       }
-
       const { breakpoints } = req.body;
       if (!Array.isArray(breakpoints)) {
         res
@@ -139,19 +145,14 @@ export default async function handler(
           .json({ error: "Missing or malformed breakpoints array" });
         return;
       }
-
       console.log("Setting breakpoints for script:", targetScript);
       const bpResp = await dapClient.setBreakpoints(targetScript, breakpoints);
       console.log("Breakpoint response:", bpResp);
 
-      // Note: We do NOT call configurationDone here, because that would prematurely run the script if it isn't launched.
-      // So if you want the script to run, do /api/debug?action=launch afterward.
-
-      // TODO update this message
       res.status(200).json({
         breakpoints: bpResp.body?.breakpoints || [],
         message: configurationDoneSent
-          ? "Set breakpoints after program started; might only matter if you pause now."
+          ? "Set breakpoints after program started; might only matter if you pause."
           : "Breakpoints set – they will take effect once you launch the program.",
       });
 
@@ -167,16 +168,13 @@ export default async function handler(
         res.status(400).json({ error: "Missing expression in request body" });
         return;
       }
-      const effectiveThreadId =
-        threadId || (dapClient.currentPausedLocation ? 1 : 1);
-
-      // get top frame
+      // Get a frame id from stackTrace if necessary.
+      const effectiveThreadId = threadId || 1;
       const stackResp = await dapClient.stackTrace(effectiveThreadId);
       let frameId: number | undefined;
       if (stackResp.body?.stackFrames?.length) {
         frameId = stackResp.body.stackFrames[0].id;
       }
-
       const evalResp = await dapClient.evaluate(expression, frameId);
       res.status(200).json({ result: evalResp.body?.result });
 
@@ -189,9 +187,45 @@ export default async function handler(
       }
       const { threadId } = req.body;
       const effectiveThreadId = threadId || 1;
-
       const contResp = await dapClient.continue(effectiveThreadId);
       res.status(200).json({ result: contResp.body });
+
+      // ------------------------------------------------------------------------
+      // ACTION: STEP OVER
+      // ------------------------------------------------------------------------
+    } else if (action === "stepOver") {
+      if (!dapClient) {
+        throw new Error("No DAP session. Please launch first.");
+      }
+      const { threadId } = req.body;
+      const effectiveThreadId = threadId || 1;
+      // Call the next() request, which implements step over.
+      const nextResp = await dapClient.next(effectiveThreadId);
+      res.status(200).json({ result: nextResp.body });
+
+      // ------------------------------------------------------------------------
+      // ACTION: CONFIGURATION DONE
+      // ------------------------------------------------------------------------
+    } else if (action === "configurationDone") {
+      if (!dapClient) {
+        throw new Error("No DAP session. Please launch first.");
+      }
+      if (!configurationDoneSent) {
+        const confResp = await dapClient.configurationDone();
+        configurationDoneSent = true;
+        globalThis.configurationDoneSent = true;
+        console.log("configurationDone response:", confResp);
+        res.status(200).json({
+          success: true,
+          message: "configurationDone sent; target program is now running.",
+          response: confResp,
+        });
+      } else {
+        res.status(200).json({
+          success: true,
+          message: "configurationDone has already been sent.",
+        });
+      }
 
       // ------------------------------------------------------------------------
       // ACTION: STATUS
@@ -209,32 +243,10 @@ export default async function handler(
           status: "paused",
           file: location.file,
           line: location.line,
+          threadId: dapClient.currentThreadId || 1,
         });
       }
-      // ------------------------------------------------------------------------
-      // ACTION: CONFIGURATION DONE -- starts program execution
-      // ------------------------------------------------------------------------
-    } else if (action === "configurationDone") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
-      }
-      if (!configurationDoneSent) {
-        // Send configurationDone so the target script continues running.
-        const confResp = await dapClient.configurationDone();
-        configurationDoneSent = true;
-        globalThis.configurationDoneSent = true;
-        console.log("configurationDone response:", confResp);
-        res.status(200).json({
-          success: true,
-          message: "configurationDone sent; target program is now running.",
-          response: confResp,
-        });
-      } else {
-        res.status(200).json({
-          success: true,
-          message: "configurationDone has already been sent.",
-        });
-      }
+
       // ------------------------------------------------------------------------
       // UNKNOWN ACTION
       // ------------------------------------------------------------------------

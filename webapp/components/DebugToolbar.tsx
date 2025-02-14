@@ -94,6 +94,7 @@ export function DebugToolbar({
   // New handlers for additional debugging actions.
   async function handleStepOver() {
     try {
+      // Send threadId: 1 as required for step over support.
       const res = await fetch("/api/debug?action=stepOver", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -1,3 +1,5 @@
+"use strict";
+
 import net from "net";
 import { EventEmitter } from "events";
 import path from "path";
@@ -192,7 +194,7 @@ export class DAPClient extends EventEmitter {
         this.pendingResponses.set(msg.request_seq, msg);
       }
 
-      // NEW: If it's an event, push it into eventQueue so we don't lose it if no listener is registered yet.
+      // If it's an event, push it into eventQueue so we don't lose it if no listener is registered.
       if (msg.type === "event" && msg.event) {
         if (!this.eventQueue.has(msg.event)) {
           this.eventQueue.set(msg.event, []);
@@ -243,10 +245,10 @@ export class DAPClient extends EventEmitter {
     };
     this.sendMessage(req);
 
-    // Sleep a bit to mimic python script logic
+    // Sleep a bit to mimic python script logic.
     await this.sleep(200);
 
-    // Wait for "initialized" to appear in our queue, whether it arrived before or after we started waiting.
+    // Wait for "initialized" to appear in our queue.
     await this.waitForEvent("initialized");
   }
 
@@ -328,7 +330,20 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(evalSeq);
   }
 
-  // Close the TCP socket
+  // New "next" method for step over support.
+  async next(threadId: number): Promise<DAPMessage> {
+    const nextReqSeq = this.nextSeq;
+    const req: DAPMessage = {
+      seq: SEQ_UNASSIGNED,
+      type: "request",
+      command: "next",
+      arguments: { threadId },
+    };
+    this.sendMessage(req);
+    return this.waitForResponse(nextReqSeq);
+  }
+
+  // Close the TCP socket.
   close(): void {
     this.socket.end();
   }
