@@ -94,8 +94,12 @@ export default function Home() {
   };
 
   // Toggle a breakpoint
+  const isDebugSessionActiveRef = useRef(isDebugSessionActive);
+  useEffect(() => {
+    isDebugSessionActiveRef.current = isDebugSessionActive;
+  }, [isDebugSessionActive]);
   const handleBreakpointChange = (lineNumber: number) => {
-    if (!isDebugSessionActive) {
+    if (!isDebugSessionActiveRef.current) {
       // If debug session is NOT active, modify the queuedBreakpoints only
       setQueuedBreakpoints((currentQueued) => {
         const existingBp = currentQueued.find((bp) => bp.line === lineNumber);
@@ -105,7 +109,7 @@ export default function Home() {
         return currentQueued.filter((bp) => bp.line !== lineNumber);
       });
     } else {
-      // If debug session is active, we update activeBreakpoints AND call the API
+      // If debug session is active, update activeBreakpoints AND call the API
       setActiveBreakpoints((currentActive) => {
         const existingBp = currentActive.find((bp) => bp.line === lineNumber);
         let newBreakpoints: IBreakpoint[];
