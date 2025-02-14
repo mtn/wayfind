@@ -2,6 +2,14 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Play,
+  ArrowRightCircle,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  RotateCcw,
+  Square,
+} from "lucide-react";
 
 interface DebugLogEntry {
   id: number;
@@ -21,7 +29,7 @@ export function DebugToolbar({
   const [log, setLog] = useState<DebugLogEntry[]>([]);
   const [expression, setExpression] = useState("");
 
-  // Compute if session is active based on debugStatus
+  // Compute session status based on debugStatus
   const isSessionActive =
     debugStatus !== "inactive" && debugStatus !== "terminated";
   const isPaused = debugStatus === "paused";
@@ -38,11 +46,8 @@ export function DebugToolbar({
       addLogEntry(`Session launched: ${data.message}`, "dap");
       onDebugSessionStart();
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        addLogEntry(`Error launching session: ${err.message}`, "dap");
-      } else {
-        addLogEntry(`Unknown error launching session: ${err}`, "dap");
-      }
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLogEntry(`Error launching session: ${errMsg}`, "dap");
     }
   }
 
@@ -60,11 +65,8 @@ export function DebugToolbar({
       const data = await res.json();
       addLogEntry(`Evaluation result: ${data.result}`, "dap");
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        addLogEntry(`Error evaluating: ${err.message}`, "dap");
-      } else {
-        addLogEntry(`Unknown error evaluating: ${err}`, "dap");
-      }
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLogEntry(`Error evaluating: ${errMsg}`, "dap");
     } finally {
       setExpression("");
     }
@@ -84,11 +86,82 @@ export function DebugToolbar({
       const data = await res.json();
       addLogEntry(`Continue result: ${JSON.stringify(data.result)}`, "dap");
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        addLogEntry(`Error continuing execution: ${err.message}`, "dap");
-      } else {
-        addLogEntry(`Unknown error continuing execution: ${err}`, "dap");
-      }
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLogEntry(`Error continuing execution: ${errMsg}`, "dap");
+    }
+  }
+
+  // New handlers for additional debugging actions.
+  async function handleStepOver() {
+    try {
+      const res = await fetch("/api/debug?action=stepOver", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: 1 }),
+      });
+      const data = await res.json();
+      addLogEntry(`Step Over result: ${JSON.stringify(data.result)}`, "dap");
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLogEntry(`Error stepping over: ${errMsg}`, "dap");
+    }
+  }
+
+  async function handleStepInto() {
+    try {
+      const res = await fetch("/api/debug?action=stepInto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: 1 }),
+      });
+      const data = await res.json();
+      addLogEntry(`Step Into result: ${JSON.stringify(data.result)}`, "dap");
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLogEntry(`Error stepping into: ${errMsg}`, "dap");
+    }
+  }
+
+  async function handleStepOut() {
+    try {
+      const res = await fetch("/api/debug?action=stepOut", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: 1 }),
+      });
+      const data = await res.json();
+      addLogEntry(`Step Out result: ${JSON.stringify(data.result)}`, "dap");
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLogEntry(`Error stepping out: ${errMsg}`, "dap");
+    }
+  }
+
+  async function handleRestart() {
+    try {
+      const res = await fetch("/api/debug?action=restart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      addLogEntry(`Restart result: ${JSON.stringify(data.result)}`, "dap");
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLogEntry(`Error restarting: ${errMsg}`, "dap");
+    }
+  }
+
+  async function handleStop() {
+    try {
+      const res = await fetch("/api/debug?action=stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      addLogEntry(`Stop result: ${JSON.stringify(data.result)}`, "dap");
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addLogEntry(`Error stopping: ${errMsg}`, "dap");
     }
   }
 
@@ -104,12 +177,13 @@ export function DebugToolbar({
         )}
       </div>
       <div className="flex flex-wrap gap-4 mb-4">
-        <Button onClick={handleLaunch} disabled={isSessionActive}>
-          Launch Debug Session
-        </Button>
+        {!isSessionActive && (
+          <Button onClick={handleLaunch}>Launch Debug Session</Button>
+        )}
         {isSessionActive && (
           <>
             <div className="flex items-center gap-2">
+              {/* Expression input/evaluate remains as desired */}
               <input
                 type="text"
                 placeholder="Enter expression"
@@ -128,9 +202,47 @@ export function DebugToolbar({
                 Evaluate
               </Button>
             </div>
-            <Button onClick={handleContinue} disabled={!isPaused}>
-              Continue
-            </Button>
+            {/* New icon‑based debugger controls */}
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleContinue}
+                disabled={!isPaused}
+                title="Continue"
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={handleStepOver}
+                disabled={!isPaused}
+                title="Step Over"
+              >
+                <ArrowRightCircle className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={handleStepInto}
+                disabled={!isPaused}
+                title="Step Into"
+              >
+                <ArrowDownCircle className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={handleStepOut}
+                disabled={!isPaused}
+                title="Step Out"
+              >
+                <ArrowUpCircle className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={handleRestart}
+                disabled={!isPaused}
+                title="Restart"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+              <Button onClick={handleStop} disabled={!isPaused} title="Stop">
+                <Square className="h-4 w-4" />
+              </Button>
+            </div>
           </>
         )}
       </div>
