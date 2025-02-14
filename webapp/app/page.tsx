@@ -5,6 +5,7 @@ import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
 import { DebugToolbar } from "@/components/DebugToolbar";
+import WatchExpressions from "@/components/WatchExpressions";
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { OutputViewer } from "@/components/OutputViewer";
 
@@ -70,11 +71,9 @@ export default function Home() {
     active: IBreakpoint[],
   ): IBreakpoint[] {
     const merged = new Map<number, IBreakpoint>();
-    // Add queued first
     for (const bp of queued) {
       merged.set(bp.line, bp);
     }
-    // Overwrite with active (in case of duplication)
     for (const bp of active) {
       merged.set(bp.line, bp);
     }
@@ -100,7 +99,6 @@ export default function Home() {
   }, [isDebugSessionActive]);
   const handleBreakpointChange = (lineNumber: number) => {
     if (!isDebugSessionActiveRef.current) {
-      // If debug session is NOT active, modify the queuedBreakpoints only
       setQueuedBreakpoints((currentQueued) => {
         const existingBp = currentQueued.find((bp) => bp.line === lineNumber);
         if (!existingBp) {
@@ -109,7 +107,6 @@ export default function Home() {
         return currentQueued.filter((bp) => bp.line !== lineNumber);
       });
     } else {
-      // If debug session is active, update activeBreakpoints AND call the API
       setActiveBreakpoints((currentActive) => {
         const existingBp = currentActive.find((bp) => bp.line === lineNumber);
         let newBreakpoints: IBreakpoint[];
@@ -118,7 +115,6 @@ export default function Home() {
         } else {
           newBreakpoints = currentActive.filter((bp) => bp.line !== lineNumber);
         }
-
         fetch("/api/debug?action=setBreakpoints", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -130,7 +126,6 @@ export default function Home() {
           .then((response) => response.json())
           .then((data) => {
             if (data.breakpoints) {
-              // Update verified states
               setActiveBreakpoints((current) =>
                 current.map((bp) => {
                   const verifiedBp = data.breakpoints.find(
@@ -146,7 +141,6 @@ export default function Home() {
           .catch((error) =>
             console.error("Failed to update active breakpoints:", error),
           );
-
         return newBreakpoints;
       });
     }
@@ -159,16 +153,12 @@ export default function Home() {
       return;
     }
     setIsDebugSessionActive(true);
-
     try {
-      // 1. Send launch request
       const launchResp = await fetch("/api/debug?action=launch", {
         method: "POST",
       });
       const launchData = await launchResp.json();
       console.log("Launch response:", launchData);
-
-      // 2. If there are any queued breakpoints, send them
       if (queuedBreakpoints.length > 0) {
         setActiveBreakpoints(queuedBreakpoints);
         console.log("Setting queued breakpoints...", queuedBreakpoints);
@@ -194,8 +184,6 @@ export default function Home() {
         }
         setQueuedBreakpoints([]);
       }
-
-      // 3. Send configurationDone request to start program execution
       const confResp = await fetch("/api/debug?action=configurationDone", {
         method: "POST",
       });
@@ -242,34 +230,49 @@ export default function Home() {
     }
   }, [isDebugSessionActive]);
 
+  // Return the UI layout. We define two main vertical sections in the left side:
+  // 1. FileTree (small) at the top.
+  // 2. DebugPanel (large) that now contains, in vertical order: DebugToolbar,
+  // WatchExpressions, and OutputViewer.
+  // The right side remains the editor and chat.
+  const evaluateExpression = async (expression: string) => {
+    const res = await fetch("/api/debug?action=evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expression, threadId: 1 }),
+    });
+    const data = await res.json();
+    return data.result;
+  };
+
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
-        {/* Left side: file tree, debug toolbar, output */}
-        <ResizablePanel defaultSize={20} minSize={15}>
-          <ResizablePanelGroup direction="vertical">
-            {/* FileTree */}
-            <ResizablePanel defaultSize={40}>
-              <div className="h-full border-b">
-                <FileTree files={files} onSelectFile={handleFileSelect} />
-              </div>
-            </ResizablePanel>
-            {/* DebugToolbar */}
-            <ResizablePanel defaultSize={30}>
-              <div className="h-full">
-                <DebugToolbar
-                  onDebugSessionStart={handleDebugSessionStart}
-                  debugStatus={debugStatus}
-                />
-              </div>
-            </ResizablePanel>
-            {/* OutputViewer */}
-            <ResizablePanel defaultSize={30}>
-              <div className="h-full">
-                <OutputViewer />
-              </div>
-            </ResizablePanel>
-          </ResizablePanelGroup>
+        {/* Left side: File tree on top and Debug Panel below */}
+        <ResizablePanel defaultSize={15} minSize={10}>
+          <div className="h-full border-b">
+            <FileTree files={files} onSelectFile={handleFileSelect} />
+          </div>
+        </ResizablePanel>
+        <ResizablePanel defaultSize={85}>
+          {/* Debug Panel: contains DebugToolbar, WatchExpressions, and OutputViewer */}
+          <div className="h-full flex flex-col">
+            <div className="flex-none">
+              <DebugToolbar
+                onDebugSessionStart={handleDebugSessionStart}
+                debugStatus={debugStatus}
+              />
+            </div>
+            <div className="flex-none">
+              <WatchExpressions
+                isPaused={debugStatus === "paused"}
+                onEvaluate={evaluateExpression}
+              />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <OutputViewer />
+            </div>
+          </div>
         </ResizablePanel>
 
         {/* Right side: Editor and ChatInterface */}
@@ -281,7 +284,6 @@ export default function Home() {
                   content={selectedFile.content}
                   language="python"
                   onChange={handleFileChange}
-                  // Important: pass the merged breakpoints
                   breakpoints={mergeBreakpoints(
                     queuedBreakpoints,
                     activeBreakpoints,
@@ -292,7 +294,6 @@ export default function Home() {
                 />
               </div>
             </ResizablePanel>
-            {/* ChatInterface */}
             <ResizablePanel defaultSize={40}>
               <ChatInterface
                 files={files}
@@ -308,15 +309,7 @@ export default function Home() {
                     .then((data) => console.log("Continue result:", data))
                     .catch((err) => console.error("Continue failed:", err));
                 }}
-                onEvaluate={async (expression: string) => {
-                  const res = await fetch("/api/debug?action=evaluate", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ expression, threadId: 1 }),
-                  });
-                  const data = await res.json();
-                  return data.result;
-                }}
+                onEvaluate={evaluateExpression}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
