@@ -69,7 +69,7 @@ export class DAPClient extends EventEmitter {
     );
   }
 
-  // Wait for a DAP "response" matching request_seq
+  // Wait for a DAP "response" matching request_seq.
   waitForResponse(seq: number, timeout = 10000): Promise<DAPMessage> {
     return new Promise((resolve, reject) => {
       const start = Date.now();
@@ -87,7 +87,7 @@ export class DAPClient extends EventEmitter {
     });
   }
 
-  // Wait for a DAP "event" by name, checking our local queue
+  // Wait for a DAP "event" by name, checking our local queue.
   waitForEvent(eventName: string, timeout = 10000): Promise<DAPMessage> {
     return new Promise((resolve, reject) => {
       let timer: NodeJS.Timeout | null = null;
@@ -106,17 +106,16 @@ export class DAPClient extends EventEmitter {
       // 2) Start by checking if there's already an event queued.
       checkQueue();
 
-      // 3) If not found, we listen for further events
+      // 3) If not found, we listen for further events.
       if (!timer) {
         // We'll also set a once-listener for the event.
-        // But we must push incoming events into the queue in handleData, so:
         const onEvent = () => {
           checkQueue();
         };
 
         this.on(eventName, onEvent);
 
-        // 4) Timeout if not found soon
+        // 4) Timeout if not found soon.
         timer = setTimeout(() => {
           this.off(eventName, onEvent);
           reject(new Error(`Timeout waiting for event ${eventName}`));
@@ -125,7 +124,7 @@ export class DAPClient extends EventEmitter {
     });
   }
 
-  // The main data handler for receiving DAP messages over the socket
+  // The main data handler for receiving DAP messages over the socket.
   private handleData(data: Buffer): void {
     this.buffer += data.toString("utf8");
 
@@ -156,7 +155,7 @@ export class DAPClient extends EventEmitter {
         continue;
       }
 
-      // Check for debug events to update paused state and current location
+      // Check for debug events to update paused state and current location.
       if (msg.type === "event") {
         if (msg.event === "stopped") {
           this.isPaused = true;
@@ -194,18 +193,17 @@ export class DAPClient extends EventEmitter {
         this.pendingResponses.set(msg.request_seq, msg);
       }
 
-      // If it's an event, push it into eventQueue so we don't lose it if no listener is registered.
+      // If it's an event push into eventQueue.
       if (msg.type === "event" && msg.event) {
         if (!this.eventQueue.has(msg.event)) {
           this.eventQueue.set(msg.event, []);
         }
         this.eventQueue.get(msg.event)!.push(msg);
-
-        // Also emit it in case someone is actively listening "live".
+        // Also emit the event live.
         this.emit(msg.event, msg);
       }
 
-      // For debugging/logging
+      // Emit message event for logging.
       this.emit("message", msg);
       console.log("<-- Received:", msg);
     }
@@ -244,11 +242,9 @@ export class DAPClient extends EventEmitter {
       arguments: { host, port },
     };
     this.sendMessage(req);
-
     // Sleep a bit to mimic python script logic.
     await this.sleep(200);
-
-    // Wait for "initialized" to appear in our queue.
+    // Wait for "initialized" event.
     await this.waitForEvent("initialized");
   }
 
@@ -344,7 +340,7 @@ export class DAPClient extends EventEmitter {
   }
 
   async stepIn(threadId: number): Promise<DAPMessage> {
-    const reqSeq = this.nextSeq; // capture the current sequence number
+    const reqSeq = this.nextSeq;
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
@@ -353,6 +349,32 @@ export class DAPClient extends EventEmitter {
     };
     this.sendMessage(req);
     return this.waitForResponse(reqSeq);
+  }
+
+  // NEW: stepOut – resume execution until the current function returns.
+  async stepOut(threadId: number): Promise<DAPMessage> {
+    const reqSeq = this.nextSeq;
+    const req: DAPMessage = {
+      seq: SEQ_UNASSIGNED,
+      type: "request",
+      command: "stepOut",
+      arguments: { threadId },
+    };
+    this.sendMessage(req);
+    return this.waitForResponse(reqSeq);
+  }
+
+  // NEW: terminate – gracefully end the debug session.
+  async terminate(): Promise<DAPMessage> {
+    const termSeq = this.nextSeq;
+    const req: DAPMessage = {
+      seq: SEQ_UNASSIGNED,
+      type: "request",
+      command: "terminate",
+      arguments: { restart: false },
+    };
+    this.sendMessage(req);
+    return this.waitForResponse(termSeq);
   }
 
   // Close the TCP socket.

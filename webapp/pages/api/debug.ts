@@ -72,7 +72,7 @@ export default async function handler(
         pythonProcess = null;
       }
       if (dapClient) {
-        dapClient.close();
+        await dapClient.close();
         dapClient = null;
       }
       configurationDoneSent = false;
@@ -163,7 +163,6 @@ export default async function handler(
         res.status(400).json({ error: "Missing expression in request body" });
         return;
       }
-      // Get a frame id from stackTrace if necessary.
       const effectiveThreadId = threadId || 1;
       const stackResp = await dapClient.stackTrace(effectiveThreadId);
       let frameId: number | undefined;
@@ -194,7 +193,6 @@ export default async function handler(
       }
       const { threadId } = req.body;
       const effectiveThreadId = threadId || 1;
-      // Call the next() request, which implements step over.
       const nextResp = await dapClient.next(effectiveThreadId);
       res.status(200).json({ result: nextResp.body });
 
@@ -207,10 +205,31 @@ export default async function handler(
       }
       const { threadId, targetId } = req.body;
       const effectiveThreadId = threadId || 1;
-      // Call the stepIn() method (which should send a "stepIn" request).
-      // Optionally, if targetId is provided, include it in the arguments.
       const stepInResp = await dapClient.stepIn(effectiveThreadId, targetId);
       res.status(200).json({ result: stepInResp.body });
+
+      // ------------------------------------------------------------------------
+      // ACTION: STEP OUT
+      // ------------------------------------------------------------------------
+    } else if (action === "stepOut") {
+      if (!dapClient) {
+        throw new Error("No DAP session. Please launch first.");
+      }
+      const { threadId } = req.body;
+      const effectiveThreadId = threadId || 1;
+      const stepOutResp = await dapClient.stepOut(effectiveThreadId);
+      res.status(200).json({ result: stepOutResp.body });
+
+      // ------------------------------------------------------------------------
+      // ACTION: TERMINATE
+      // ------------------------------------------------------------------------
+    } else if (action === "terminate") {
+      if (!dapClient) {
+        throw new Error("No DAP session. Please launch first.");
+      }
+      // Send a terminate request (with restart false)
+      const termResp = await dapClient.terminate();
+      res.status(200).json({ result: termResp.body });
 
       // ------------------------------------------------------------------------
       // ACTION: CONFIGURATION DONE
@@ -222,7 +241,6 @@ export default async function handler(
       if (!configurationDoneSent) {
         const confResp = await dapClient.configurationDone();
         configurationDoneSent = true;
-        globalThis.configurationDoneSent = true;
         console.log("configurationDone response:", confResp);
         res.status(200).json({
           success: true,
@@ -257,7 +275,7 @@ export default async function handler(
       }
 
       // ------------------------------------------------------------------------
-      // UNKNOWN ACTION
+      // ACTION: UNKNOWN
       // ------------------------------------------------------------------------
     } else {
       res.status(400).json({ error: `Unknown action: ${action}` });

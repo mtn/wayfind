@@ -152,9 +152,9 @@ export function DebugToolbar({
     }
   }
 
-  async function handleStop() {
+  async function handleTerminate() {
     try {
-      const res = await fetch("/api/debug?action=stop", {
+      const res = await fetch("/api/debug?action=terminate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -240,7 +240,11 @@ export function DebugToolbar({
               >
                 <RotateCcw className="h-4 w-4" />
               </Button>
-              <Button onClick={handleStop} disabled={!isPaused} title="Stop">
+              <Button
+                onClick={handleTerminate}
+                disabled={!isPaused}
+                title="Stop"
+              >
                 <Square className="h-4 w-4" />
               </Button>
             </div>
