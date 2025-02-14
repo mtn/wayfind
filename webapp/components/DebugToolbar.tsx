@@ -108,9 +108,9 @@ export function DebugToolbar({
     }
   }
 
-  async function handleStepInto() {
+  async function handleStepIn() {
     try {
-      const res = await fetch("/api/debug?action=stepInto", {
+      const res = await fetch("/api/debug?action=stepIn", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: 1 }),
@@ -220,7 +220,7 @@ export function DebugToolbar({
                 <ArrowRightCircle className="h-4 w-4" />
               </Button>
               <Button
-                onClick={handleStepInto}
+                onClick={handleStepIn}
                 disabled={!isPaused}
                 title="Step Into"
               >

@@ -330,7 +330,7 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(evalSeq);
   }
 
-  // New "next" method for step over support.
+  // Next == step over
   async next(threadId: number): Promise<DAPMessage> {
     const nextReqSeq = this.nextSeq;
     const req: DAPMessage = {
@@ -341,6 +341,18 @@ export class DAPClient extends EventEmitter {
     };
     this.sendMessage(req);
     return this.waitForResponse(nextReqSeq);
+  }
+
+  async stepIn(threadId: number): Promise<DAPMessage> {
+    const reqSeq = this.nextSeq; // capture the current sequence number
+    const req: DAPMessage = {
+      seq: SEQ_UNASSIGNED,
+      type: "request",
+      command: "stepIn",
+      arguments: { threadId },
+    };
+    this.sendMessage(req);
+    return this.waitForResponse(reqSeq);
   }
 
   // Close the TCP socket.

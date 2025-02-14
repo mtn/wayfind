@@ -112,11 +112,6 @@ export default async function handler(
       console.log("Initialize response:", initResp);
 
       // Send attach request
-      const attachReq = {
-        action: "attach",
-        host: "127.0.0.1",
-        port: debugpyPort,
-      };
       await dapClient.attach("127.0.0.1", debugpyPort);
       console.log("Attach sent and initialized event received");
 
@@ -202,6 +197,20 @@ export default async function handler(
       // Call the next() request, which implements step over.
       const nextResp = await dapClient.next(effectiveThreadId);
       res.status(200).json({ result: nextResp.body });
+
+      // ------------------------------------------------------------------------
+      // ACTION: STEP IN
+      // ------------------------------------------------------------------------
+    } else if (action === "stepIn") {
+      if (!dapClient) {
+        throw new Error("No DAP session. Please launch first.");
+      }
+      const { threadId, targetId } = req.body;
+      const effectiveThreadId = threadId || 1;
+      // Call the stepIn() method (which should send a "stepIn" request).
+      // Optionally, if targetId is provided, include it in the arguments.
+      const stepInResp = await dapClient.stepIn(effectiveThreadId, targetId);
+      res.status(200).json({ result: stepInResp.body });
 
       // ------------------------------------------------------------------------
       // ACTION: CONFIGURATION DONE
