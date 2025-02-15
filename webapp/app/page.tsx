@@ -54,7 +54,7 @@ export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFile, setSelectedFile] = useState(files[0]);
 
-  // Breakpoint handling: keep separate queued vs. active sets
+  // Breakpoint handling: separate queued vs. active sets
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
 
@@ -230,11 +230,6 @@ export default function Home() {
     }
   }, [isDebugSessionActive]);
 
-  // Return the UI layout. We define two main vertical sections in the left side:
-  // 1. FileTree (small) at the top.
-  // 2. DebugPanel (large) that now contains, in vertical order: DebugToolbar,
-  // WatchExpressions, and OutputViewer.
-  // The right side remains the editor and chat.
   const evaluateExpression = async (expression: string) => {
     const res = await fetch("/api/debug?action=evaluate", {
       method: "POST",
@@ -248,35 +243,43 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
-        {/* Left side: File tree on top and Debug Panel below */}
-        <ResizablePanel defaultSize={15} minSize={10}>
-          <div className="h-full border-b">
-            <FileTree files={files} onSelectFile={handleFileSelect} />
-          </div>
-        </ResizablePanel>
-        <ResizablePanel defaultSize={85}>
-          {/* Debug Panel: contains DebugToolbar, WatchExpressions, and OutputViewer */}
-          <div className="h-full flex flex-col">
-            <div className="flex-none">
-              <DebugToolbar
-                onDebugSessionStart={handleDebugSessionStart}
-                debugStatus={debugStatus}
-              />
-            </div>
-            <div className="flex-none">
-              <WatchExpressions
-                isPaused={debugStatus === "paused"}
-                onEvaluate={evaluateExpression}
-              />
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <OutputViewer />
-            </div>
-          </div>
+        {/* Left side: contains three vertical sections (each 1/3 of height) */}
+        <ResizablePanel defaultSize={33} minSize={10}>
+          <ResizablePanelGroup direction="vertical">
+            {/* Section 1: FileTree */}
+            <ResizablePanel defaultSize={40} minSize={10}>
+              <div className="h-full border-b">
+                <FileTree files={files} onSelectFile={handleFileSelect} />
+              </div>
+            </ResizablePanel>
+            {/* Section 2: Debug Panel (DebugToolbar + WatchExpressions) */}
+            <ResizablePanel defaultSize={40} minSize={10}>
+              <div className="h-full border-b flex flex-col">
+                <div className="flex-none">
+                  <DebugToolbar
+                    onDebugSessionStart={handleDebugSessionStart}
+                    debugStatus={debugStatus}
+                  />
+                </div>
+                <div className="flex-none">
+                  <WatchExpressions
+                    isPaused={debugStatus === "paused"}
+                    onEvaluate={evaluateExpression}
+                  />
+                </div>
+              </div>
+            </ResizablePanel>
+            {/* Section 3: Outputs */}
+            <ResizablePanel defaultSize={20} minSize={10}>
+              <div className="h-full">
+                <OutputViewer />
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </ResizablePanel>
 
         {/* Right side: Editor and ChatInterface */}
-        <ResizablePanel defaultSize={80}>
+        <ResizablePanel defaultSize={67}>
           <ResizablePanelGroup direction="vertical">
             <ResizablePanel defaultSize={60}>
               <div className="h-full">
