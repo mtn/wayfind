@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 
 interface WatchExpression {
   id: number;
@@ -8,22 +14,31 @@ interface WatchExpression {
   result?: string;
 }
 
-interface WatchExpressionsProps {
+export interface WatchExpressionsProps {
   // onEvaluate should take an expression and return a promise that resolves to its evaluated value
   onEvaluate: (expression: string) => Promise<string>;
   // isPaused is true when the debugger is stopped (so you want to update the watch values)
   isPaused: boolean;
 }
 
-export function WatchExpressions({
-  onEvaluate,
-  isPaused,
-}: WatchExpressionsProps) {
+export interface WatchExpressionsHandle {
+  reevaluate: () => void;
+}
+
+const WatchExpressions = forwardRef<
+  WatchExpressionsHandle,
+  WatchExpressionsProps
+>(({ onEvaluate, isPaused }, ref) => {
   const [expressions, setExpressions] = useState<WatchExpression[]>([]);
   const [inputValue, setInputValue] = useState("");
 
-  // When the debugger is paused, re‑evaluate all existing watch expressions.
+  // Optional logging for isPaused changes.
   useEffect(() => {
+    console.log("isPaused changed:", isPaused);
+  }, [isPaused]);
+
+  // Wrap evaluateAll in useCallback so it doesn't change on every render.
+  const evaluateAll = useCallback(() => {
     if (isPaused) {
       expressions.forEach(async (expr) => {
         try {
@@ -42,8 +57,28 @@ export function WatchExpressions({
         }
       });
     }
-  }, [isPaused, expressions, onEvaluate]);
+  }, [expressions, isPaused, onEvaluate]);
 
+  // Expose the reevaluate method to the parent.
+  useImperativeHandle(
+    ref,
+    () => ({
+      reevaluate() {
+        evaluateAll();
+      },
+    }),
+    [evaluateAll],
+  );
+
+  // This will mostly not fire, but should cover the case where the code takes awhile to run, so the
+  // status change is actually picked up.
+  useEffect(() => {
+    if (isPaused) {
+      evaluateAll();
+    }
+  }, [isPaused]);
+
+  // Handler for adding a new expression.
   const handleAddExpression = () => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
@@ -92,6 +127,8 @@ export function WatchExpressions({
       </ul>
     </div>
   );
-}
+});
+
+WatchExpressions.displayName = "WatchExpressions";
 
 export default WatchExpressions;

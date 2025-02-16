@@ -4,8 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
-import { DebugToolbar } from "@/components/DebugToolbar";
-import WatchExpressions from "@/components/WatchExpressions";
+import DebugToolbar from "@/components/DebugToolbar";
+import WatchExpressions, {
+  WatchExpressionsHandle,
+} from "@/components/WatchExpressions";
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { OutputViewer } from "@/components/OutputViewer";
 
@@ -64,6 +66,16 @@ export default function Home() {
   // Execution status state
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
+
+  // Create a ref for WatchExpressions (using the handle we exported)
+  const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
+
+  // Function to force evaluation: called by debug actions
+  const forceWatchEvaluation = () => {
+    if (watchExpressionsRef.current) {
+      watchExpressionsRef.current.reevaluate();
+    }
+  };
 
   // Helper: merge queued + active so Monaco shows all of them
   function mergeBreakpoints(
@@ -259,10 +271,14 @@ export default function Home() {
                   <DebugToolbar
                     onDebugSessionStart={handleDebugSessionStart}
                     debugStatus={debugStatus}
+                    // Pass in the force evaluation callback so that each debug action
+                    // will trigger a re‑evaluation of watch expressions.
+                    onForceEvaluation={forceWatchEvaluation}
                   />
                 </div>
                 <div className="flex-none">
                   <WatchExpressions
+                    ref={watchExpressionsRef}
                     isPaused={debugStatus === "paused"}
                     onEvaluate={evaluateExpression}
                   />

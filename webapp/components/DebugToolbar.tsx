@@ -20,11 +20,15 @@ interface DebugLogEntry {
 interface DebugToolbarProps {
   onDebugSessionStart: () => void;
   debugStatus?: string;
+  // New callback: after a debugging action (like continue, step etc.)
+  // call this to force re‑evaluation of watch expressions.
+  onForceEvaluation?: () => void;
 }
 
 export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
+  onForceEvaluation,
 }: DebugToolbarProps) {
   const [log, setLog] = useState<DebugLogEntry[]>([]);
   const [expression, setExpression] = useState("");
@@ -88,13 +92,14 @@ export function DebugToolbar({
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       addLogEntry(`Error continuing execution: ${errMsg}`, "dap");
+    } finally {
+      if (onForceEvaluation) onForceEvaluation();
     }
   }
 
   // New handlers for additional debugging actions.
   async function handleStepOver() {
     try {
-      // Send threadId: 1 as required for step over support.
       const res = await fetch("/api/debug?action=stepOver", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -105,6 +110,8 @@ export function DebugToolbar({
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       addLogEntry(`Error stepping over: ${errMsg}`, "dap");
+    } finally {
+      if (onForceEvaluation) onForceEvaluation();
     }
   }
 
@@ -120,6 +127,8 @@ export function DebugToolbar({
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       addLogEntry(`Error stepping into: ${errMsg}`, "dap");
+    } finally {
+      if (onForceEvaluation) onForceEvaluation();
     }
   }
 
@@ -135,6 +144,8 @@ export function DebugToolbar({
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       addLogEntry(`Error stepping out: ${errMsg}`, "dap");
+    } finally {
+      if (onForceEvaluation) onForceEvaluation();
     }
   }
 
