@@ -30,7 +30,6 @@ export function DebugToolbar({
   debugStatus,
   onForceEvaluation,
 }: DebugToolbarProps) {
-  const [log, setLog] = useState<DebugLogEntry[]>([]);
   const [expression, setExpression] = useState("");
 
   // Compute session status based on debugStatus
@@ -38,26 +37,19 @@ export function DebugToolbar({
     debugStatus !== "inactive" && debugStatus !== "terminated";
   const isPaused = debugStatus === "paused";
 
-  const addLogEntry = (text: string, type: "dap" | "program" = "dap") => {
-    setLog((prev) => [...prev, { id: Date.now(), text, type }]);
-  };
-
   async function handleLaunch() {
     try {
-      addLogEntry("Launching debug session...", "dap");
-      const res = await fetch("/api/debug?action=launch", { method: "POST" });
-      const data = await res.json();
-      addLogEntry(`Session launched: ${data.message}`, "dap");
+      // Removed logging from DebugToolbar
+      await fetch("/api/debug?action=launch", { method: "POST" });
       onDebugSessionStart();
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      addLogEntry(`Error launching session: ${errMsg}`, "dap");
+      console.error("Error launching session:", err);
     }
   }
 
   async function handleEvaluate() {
     if (!isSessionActive) {
-      addLogEntry("Cannot evaluate: Debug session not started", "dap");
+      console.error("Cannot evaluate: Debug session not started");
       return;
     }
     try {
@@ -67,10 +59,10 @@ export function DebugToolbar({
         body: JSON.stringify({ expression, threadId: 1 }),
       });
       const data = await res.json();
-      addLogEntry(`Evaluation result: ${data.result}`, "dap");
+      console.log("Evaluation result:", data.result);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      addLogEntry(`Error evaluating: ${errMsg}`, "dap");
+      console.error("Error evaluating:", errMsg);
     } finally {
       setExpression("");
     }
@@ -78,7 +70,7 @@ export function DebugToolbar({
 
   async function handleContinue() {
     if (!isSessionActive) {
-      addLogEntry("Cannot continue: Debug session not started", "dap");
+      console.error("Cannot continue: Debug session not started");
       return;
     }
     try {
@@ -88,10 +80,10 @@ export function DebugToolbar({
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
-      addLogEntry(`Continue result: ${JSON.stringify(data.result)}`, "dap");
+      console.log("Continue result:", JSON.stringify(data.result));
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      addLogEntry(`Error continuing execution: ${errMsg}`, "dap");
+      console.error("Error continuing execution:", errMsg);
     } finally {
       if (onForceEvaluation) onForceEvaluation();
     }
@@ -106,10 +98,10 @@ export function DebugToolbar({
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
-      addLogEntry(`Step Over result: ${JSON.stringify(data.result)}`, "dap");
+      console.log("Step Over result:", JSON.stringify(data.result));
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      addLogEntry(`Error stepping over: ${errMsg}`, "dap");
+      console.error("Error stepping over:", errMsg);
     } finally {
       if (onForceEvaluation) onForceEvaluation();
     }
@@ -123,10 +115,10 @@ export function DebugToolbar({
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
-      addLogEntry(`Step Into result: ${JSON.stringify(data.result)}`, "dap");
+      console.log("Step Into result:", JSON.stringify(data.result));
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      addLogEntry(`Error stepping into: ${errMsg}`, "dap");
+      console.error("Error stepping into:", errMsg);
     } finally {
       if (onForceEvaluation) onForceEvaluation();
     }
@@ -140,10 +132,10 @@ export function DebugToolbar({
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
-      addLogEntry(`Step Out result: ${JSON.stringify(data.result)}`, "dap");
+      console.log("Step Out result:", JSON.stringify(data.result));
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      addLogEntry(`Error stepping out: ${errMsg}`, "dap");
+      console.error("Error stepping out:", errMsg);
     } finally {
       if (onForceEvaluation) onForceEvaluation();
     }
@@ -156,10 +148,10 @@ export function DebugToolbar({
         headers: { "Content-Type": "application/json" },
       });
       const data = await res.json();
-      addLogEntry(`Restart result: ${JSON.stringify(data.result)}`, "dap");
+      console.log("Restart result:", JSON.stringify(data.result));
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      addLogEntry(`Error restarting: ${errMsg}`, "dap");
+      console.error("Error restarting:", errMsg);
     }
   }
 
@@ -170,10 +162,10 @@ export function DebugToolbar({
         headers: { "Content-Type": "application/json" },
       });
       const data = await res.json();
-      addLogEntry(`Stop result: ${JSON.stringify(data.result)}`, "dap");
+      console.log("Stop result:", JSON.stringify(data.result));
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      addLogEntry(`Error stopping: ${errMsg}`, "dap");
+      console.error("Error stopping:", errMsg);
     }
   }
 
@@ -214,7 +206,7 @@ export function DebugToolbar({
                 Evaluate
               </Button>
             </div>
-            {/* New icon‑based debugger controls */}
+            {/* Icon‑based debugger controls */}
             <div className="flex items-center gap-2">
               <Button
                 onClick={handleContinue}
@@ -261,13 +253,6 @@ export function DebugToolbar({
             </div>
           </>
         )}
-      </div>
-      <div className="flex-1 bg-gray-50 p-2 rounded overflow-auto text-xs">
-        {log.map((entry) => (
-          <div key={entry.id} className="border-b py-0.5">
-            {entry.type === "dap" ? <strong>{entry.text}</strong> : entry.text}
-          </div>
-        ))}
       </div>
     </div>
   );

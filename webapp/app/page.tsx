@@ -10,6 +10,7 @@ import WatchExpressions, {
 } from "@/components/WatchExpressions";
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { OutputViewer } from "@/components/OutputViewer";
+import { CallStack } from "@/components/CallStack";
 
 const aPy = {
   name: "a.py",
@@ -56,28 +57,36 @@ export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFile, setSelectedFile] = useState(files[0]);
 
-  // Breakpoint handling: separate queued vs. active sets
+  // Breakpoint handling: separate queued vs. active sets.
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
 
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   const [debugStatus, setDebugStatus] = useState("inactive");
 
-  // Execution status state
+  // Execution status state.
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
-  // Create a ref for WatchExpressions (using the handle we exported)
+  // A state to accumulate debug log messages, which will display only in the Status tab.
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const addLog = (msg: string) => setDebugLog((prev) => [...prev, msg]);
+
+  // Create a ref for WatchExpressions.
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
 
-  // Function to force evaluation: called by debug actions
+  // State to manage the selected tab in the debug panel.
+  // We offer three tabs: Status, Watches, and Call Stack.
+  const [selectedTab, setSelectedTab] = useState("status");
+
+  // Function to force evaluation: called by debug actions.
   const forceWatchEvaluation = () => {
     if (watchExpressionsRef.current) {
       watchExpressionsRef.current.reevaluate();
     }
   };
 
-  // Helper: merge queued + active so Monaco shows all of them
+  // Helper: merge queued + active so Monaco shows all breakpoints.
   function mergeBreakpoints(
     queued: IBreakpoint[],
     active: IBreakpoint[],
@@ -104,11 +113,12 @@ export default function Home() {
     setSelectedFile({ ...selectedFile, content: newContent });
   };
 
-  // Toggle a breakpoint
+  // Toggle a breakpoint.
   const isDebugSessionActiveRef = useRef(isDebugSessionActive);
   useEffect(() => {
     isDebugSessionActiveRef.current = isDebugSessionActive;
   }, [isDebugSessionActive]);
+
   const handleBreakpointChange = (lineNumber: number) => {
     if (!isDebugSessionActiveRef.current) {
       setQueuedBreakpoints((currentQueued) => {
@@ -158,22 +168,25 @@ export default function Home() {
     }
   };
 
-  // Called when user presses "Launch Debug Session"
+  // Called when the user presses "Launch Debug Session".
   const handleDebugSessionStart = async () => {
     if (isDebugSessionActive) {
-      console.log("Debug session is already launching or active, skipping");
+      addLog("Debug session is already launching or active, skipping");
       return;
     }
     setIsDebugSessionActive(true);
+    addLog("Launching debug session...");
     try {
       const launchResp = await fetch("/api/debug?action=launch", {
         method: "POST",
       });
       const launchData = await launchResp.json();
-      console.log("Launch response:", launchData);
+      addLog(`Session launched: ${launchData.message}`);
       if (queuedBreakpoints.length > 0) {
         setActiveBreakpoints(queuedBreakpoints);
-        console.log("Setting queued breakpoints...", queuedBreakpoints);
+        addLog(
+          `Setting queued breakpoints: ${JSON.stringify(queuedBreakpoints)}`,
+        );
         const bpResp = await fetch("/api/debug?action=setBreakpoints", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -183,7 +196,7 @@ export default function Home() {
           }),
         });
         const bpData = await bpResp.json();
-        console.log("Breakpoint response:", bpData);
+        addLog(`Breakpoint response: ${JSON.stringify(bpData)}`);
         if (bpData.breakpoints) {
           setActiveBreakpoints((current) =>
             current.map((bp) => {
@@ -200,13 +213,15 @@ export default function Home() {
         method: "POST",
       });
       const confData = await confResp.json();
-      console.log("configurationDone response:", confData);
+      addLog(`configurationDone response: ${JSON.stringify(confData)}`);
     } catch (error) {
-      console.error("Failed launching debug session:", error);
+      addLog(
+        `Failed launching debug session: ${error instanceof Error ? error.message : error}`,
+      );
     }
   };
 
-  // Poll debug status if a debug session is active
+  // Poll debug status if a debug session is active.
   useEffect(() => {
     if (isDebugSessionActive) {
       const pollInterval = setInterval(async () => {
@@ -231,7 +246,9 @@ export default function Home() {
             setDebugStatus("inactive");
           }
         } catch (e) {
-          console.error("Failed polling debug status:", e);
+          addLog(
+            `Failed polling debug status: ${e instanceof Error ? e.message : e}`,
+          );
         }
       }, 1500);
       return () => clearInterval(pollInterval);
@@ -243,19 +260,41 @@ export default function Home() {
   }, [isDebugSessionActive]);
 
   const evaluateExpression = async (expression: string) => {
-    const res = await fetch("/api/debug?action=evaluate", {
+    try {
+      const res = await fetch("/api/debug?action=evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expression, threadId: 1 }),
+      });
+      const data = await res.json();
+      return data.result;
+    } catch (e) {
+      addLog(`Evaluation error: ${e instanceof Error ? e.message : e}`);
+      return "";
+    }
+  };
+
+  // onContinue callback for ChatInterface.
+  const handleContinue = () => {
+    fetch("/api/debug?action=continue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ expression, threadId: 1 }),
-    });
-    const data = await res.json();
-    return data.result;
+      body: JSON.stringify({ threadId: 1 }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        addLog(`Continue result: ${JSON.stringify(data.result)}`);
+      })
+      .catch((err) => {
+        addLog(`Continue failed: ${err}`);
+        console.error("Continue failed:", err);
+      });
   };
 
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
-        {/* Left side: contains three vertical sections (each 1/3 of height) */}
+        {/* Left side: three vertical sections (40:40:20) */}
         <ResizablePanel defaultSize={33} minSize={10}>
           <ResizablePanelGroup direction="vertical">
             {/* Section 1: FileTree */}
@@ -264,24 +303,69 @@ export default function Home() {
                 <FileTree files={files} onSelectFile={handleFileSelect} />
               </div>
             </ResizablePanel>
-            {/* Section 2: Debug Panel (DebugToolbar + WatchExpressions) */}
+            {/* Section 2: Debug Panel – Controls always visible with tabs below */}
             <ResizablePanel defaultSize={40} minSize={10}>
               <div className="h-full border-b flex flex-col">
+                {/* Always-visible debugger controls */}
                 <div className="flex-none">
                   <DebugToolbar
                     onDebugSessionStart={handleDebugSessionStart}
                     debugStatus={debugStatus}
-                    // Pass in the force evaluation callback so that each debug action
-                    // will trigger a re‑evaluation of watch expressions.
                     onForceEvaluation={forceWatchEvaluation}
                   />
                 </div>
-                <div className="flex-none">
-                  <WatchExpressions
-                    ref={watchExpressionsRef}
-                    isPaused={debugStatus === "paused"}
-                    onEvaluate={evaluateExpression}
-                  />
+                {/* Tab Header */}
+                <div className="flex-none border-b">
+                  <div className="flex">
+                    <button
+                      onClick={() => setSelectedTab("status")}
+                      className={`flex-1 py-2 text-sm ${
+                        selectedTab === "status"
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/50"
+                      }`}
+                    >
+                      Status
+                    </button>
+                    <button
+                      onClick={() => setSelectedTab("watches")}
+                      className={`flex-1 py-2 text-sm ${
+                        selectedTab === "watches"
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/50"
+                      }`}
+                    >
+                      Watches
+                    </button>
+                    <button
+                      onClick={() => setSelectedTab("callstack")}
+                      className={`flex-1 py-2 text-sm ${
+                        selectedTab === "callstack"
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/50"
+                      }`}
+                    >
+                      Call Stack
+                    </button>
+                  </div>
+                </div>
+                {/* Tab Content – for the Status tab, display only the log messages */}
+                <div className="flex-1 overflow-auto p-2">
+                  {selectedTab === "status" && (
+                    <div className="max-h-40 overflow-auto border p-2 text-sm">
+                      {debugLog.map((msg, i) => (
+                        <div key={i}>{msg}</div>
+                      ))}
+                    </div>
+                  )}
+                  {selectedTab === "watches" && (
+                    <WatchExpressions
+                      ref={watchExpressionsRef}
+                      isPaused={debugStatus === "paused"}
+                      onEvaluate={evaluateExpression}
+                    />
+                  )}
+                  {selectedTab === "callstack" && <CallStack />}
                 </div>
               </div>
             </ResizablePanel>
@@ -293,7 +377,6 @@ export default function Home() {
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>
-
         {/* Right side: Editor and ChatInterface */}
         <ResizablePanel defaultSize={67}>
           <ResizablePanelGroup direction="vertical">
@@ -318,16 +401,7 @@ export default function Home() {
                 files={files}
                 onSetBreakpoint={handleBreakpointChange}
                 onLaunch={handleDebugSessionStart}
-                onContinue={() => {
-                  fetch("/api/debug?action=continue", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ threadId: 1 }),
-                  })
-                    .then((res) => res.json())
-                    .then((data) => console.log("Continue result:", data))
-                    .catch((err) => console.error("Continue failed:", err));
-                }}
+                onContinue={handleContinue}
                 onEvaluate={evaluateExpression}
               />
             </ResizablePanel>
