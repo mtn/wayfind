@@ -203,9 +203,9 @@ export default async function handler(
       if (!dapClient) {
         throw new Error("No DAP session. Please launch first.");
       }
-      const { threadId, targetId } = req.body;
+      const { threadId } = req.body;
       const effectiveThreadId = threadId || 1;
-      const stepInResp = await dapClient.stepIn(effectiveThreadId, targetId);
+      const stepInResp = await dapClient.stepIn(effectiveThreadId);
       res.status(200).json({ result: stepInResp.body });
 
       // ------------------------------------------------------------------------
@@ -253,6 +253,20 @@ export default async function handler(
           message: "configurationDone has already been sent.",
         });
       }
+
+      // ------------------------------------------------------------------------
+      // ACTION: STACK TRACE (added to support CallStack component)
+      // ------------------------------------------------------------------------
+    } else if (action === "stackTrace") {
+      if (!dapClient) {
+        res.status(400).json({ error: "No DAP session. Please launch first." });
+        return;
+      }
+      const { threadId } = req.body;
+      const effectiveThreadId = threadId || 1;
+      // Adjust the number of levels as needed (here we request 20 frames)
+      const stResp = await dapClient.stackTrace(effectiveThreadId, 0, 20);
+      res.status(200).json({ stackFrames: stResp.body?.stackFrames || [] });
 
       // ------------------------------------------------------------------------
       // ACTION: STATUS
