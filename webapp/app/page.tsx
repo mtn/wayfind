@@ -221,13 +221,13 @@ export default function Home() {
     }
   };
 
-  // Poll debug status if a debug session is active.
+  // Listen for debug status updates using Server-Sent Events (SSE) if a debug session is active.
   useEffect(() => {
     if (isDebugSessionActive) {
-      const pollInterval = setInterval(async () => {
+      const eventSource = new EventSource("/api/debug?action=status");
+      eventSource.onmessage = (event) => {
         try {
-          const res = await fetch("/api/debug?action=status");
-          const data = await res.json();
+          const data = JSON.parse(event.data);
           if (data.status === "paused" && data.file && data.line) {
             setExecutionFile(data.file);
             setExecutionLine(data.line);
@@ -245,13 +245,17 @@ export default function Home() {
             setExecutionLine(null);
             setDebugStatus("inactive");
           }
-        } catch (e) {
-          addLog(
-            `Failed polling debug status: ${e instanceof Error ? e.message : e}`,
-          );
+        } catch (error) {
+          console.error("Error parsing status event data:", error);
         }
-      }, 1500);
-      return () => clearInterval(pollInterval);
+      };
+      eventSource.onerror = (e) => {
+        console.error("Status SSE encountered an error:", e);
+        eventSource.close();
+      };
+      return () => {
+        eventSource.close();
+      };
     } else {
       setExecutionFile(null);
       setExecutionLine(null);

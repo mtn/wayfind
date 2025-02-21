@@ -4,6 +4,8 @@ import net from "net";
 import { EventEmitter } from "events";
 import path from "path";
 
+let instanceCounter = 0;
+
 export interface DAPMessage {
   seq: number;
   type: "request" | "response" | "event";
@@ -18,6 +20,7 @@ export interface DAPMessage {
 const SEQ_UNASSIGNED = -1;
 
 export class DAPClient extends EventEmitter {
+  public id: number;
   private socket: net.Socket;
   private buffer: string;
   private nextSeq: number;
@@ -32,6 +35,8 @@ export class DAPClient extends EventEmitter {
 
   constructor() {
     super();
+    this.id = ++instanceCounter;
+    console.log(`[DAPClient] New instance created. ID: ${this.id}`);
     this.socket = new net.Socket();
     this.buffer = "";
     this.nextSeq = 1;
@@ -64,9 +69,9 @@ export class DAPClient extends EventEmitter {
     const data = header + json;
     this.socket.write(data);
 
-    console.log(
-      `--> Sent (seq ${message.seq}, cmd: ${message.command}): ${json}`,
-    );
+    // console.log(
+    //   `--> Sent (seq ${message.seq}, cmd: ${message.command}): ${json}`,
+    // );
   }
 
   // Wait for a DAP "response" matching request_seq.
@@ -157,11 +162,28 @@ export class DAPClient extends EventEmitter {
 
       // Check for debug events to update paused state and current location.
       if (msg.type === "event") {
+        console.log(
+          "[DAPClient] Event received:",
+          msg.event,
+          "with payload:",
+          msg.body,
+        );
         if (msg.event === "stopped") {
           this.isPaused = true;
           this.terminated = false;
+          console.log(
+            "[DAPClient] Processing 'stopped' event. isPaused:",
+            this.isPaused,
+            "terminated:",
+            this.terminated,
+          );
           if (msg.body?.threadId) {
             this.currentThreadId = msg.body.threadId;
+            console.log(
+              "[DAPClient] Got threadId:",
+              this.currentThreadId,
+              " - fetching stack trace...",
+            );
             this.stackTrace(msg.body.threadId, 0, 1)
               .then((stackResp) => {
                 const frames = stackResp.body?.stackFrames;
@@ -170,6 +192,14 @@ export class DAPClient extends EventEmitter {
                   const file = topFrame.source?.path;
                   const line = topFrame.line;
                   this.currentPausedLocation = { file, line };
+                  console.log(
+                    "[DAPClient] Updated currentPausedLocation:",
+                    this.currentPausedLocation,
+                  );
+                } else {
+                  console.log(
+                    "[DAPClient] No stack frames received on 'stopped' event.",
+                  );
                 }
               })
               .catch((err) => {
@@ -180,11 +210,19 @@ export class DAPClient extends EventEmitter {
           this.isPaused = false;
           this.currentPausedLocation = null;
           this.currentThreadId = null;
+          console.log(
+            "[DAPClient] Processing '" + msg.event + "' event. isPaused set to",
+            this.isPaused,
+          );
         } else if (msg.event === "terminated") {
           this.isPaused = false;
           this.currentPausedLocation = null;
           this.currentThreadId = null;
           this.terminated = true;
+          console.log(
+            "[DAPClient] Processing 'terminated' event. terminated set to",
+            this.terminated,
+          );
         }
       }
 
@@ -201,11 +239,12 @@ export class DAPClient extends EventEmitter {
         this.eventQueue.get(msg.event)!.push(msg);
         // Also emit the event live.
         this.emit(msg.event, msg);
+        console.log("Emitted event:", msg.event);
       }
 
       // Emit message event for logging.
       this.emit("message", msg);
-      console.log("<-- Received:", msg);
+      // console.log("<-- Received:", msg);
     }
   }
 
@@ -351,7 +390,6 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(reqSeq);
   }
 
-  // NEW: stepOut – resume execution until the current function returns.
   async stepOut(threadId: number): Promise<DAPMessage> {
     const reqSeq = this.nextSeq;
     const req: DAPMessage = {
@@ -364,7 +402,6 @@ export class DAPClient extends EventEmitter {
     return this.waitForResponse(reqSeq);
   }
 
-  // NEW: terminate – gracefully end the debug session.
   async terminate(): Promise<DAPMessage> {
     const termSeq = this.nextSeq;
     const req: DAPMessage = {

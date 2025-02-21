@@ -39,8 +39,6 @@ export function DebugToolbar({
 
   async function handleLaunch() {
     try {
-      // Removed logging from DebugToolbar
-      await fetch("/api/debug?action=launch", { method: "POST" });
       onDebugSessionStart();
     } catch (err: unknown) {
       console.error("Error launching session:", err);

@@ -72,7 +72,8 @@ export default async function handler(
         pythonProcess = null;
       }
       if (dapClient) {
-        await dapClient.close();
+        console.log("Closing DAP client");
+        dapClient.close();
         dapClient = null;
       }
       configurationDoneSent = false;
@@ -227,7 +228,6 @@ export default async function handler(
       if (!dapClient) {
         throw new Error("No DAP session. Please launch first.");
       }
-      // Send a terminate request (with restart false)
       const termResp = await dapClient.terminate();
       res.status(200).json({ result: termResp.body });
 
@@ -264,7 +264,6 @@ export default async function handler(
       }
       const { threadId } = req.body;
       const effectiveThreadId = threadId || 1;
-      // Adjust the number of levels as needed (here we request 20 frames)
       const stResp = await dapClient.stackTrace(effectiveThreadId, 0, 20);
       res.status(200).json({ stackFrames: stResp.body?.stackFrames || [] });
 
@@ -272,21 +271,98 @@ export default async function handler(
       // ACTION: STATUS
       // ------------------------------------------------------------------------
     } else if (action === "status") {
-      if (!dapClient) {
-        res.status(200).json({ status: "inactive" });
-      } else if (dapClient.terminated) {
-        res.status(200).json({ status: "terminated" });
-      } else if (!dapClient.isPaused) {
-        res.status(200).json({ status: "running" });
-      } else {
-        const location = dapClient.currentPausedLocation || {};
-        res.status(200).json({
-          status: "paused",
-          file: location.file,
-          line: location.line,
-          threadId: dapClient.currentThreadId || 1,
+      if (req.method !== "GET") {
+        res.setHeader("Allow", "GET");
+        res.status(405).json({
+          error: "Method not allowed. Use GET for SSE status updates.",
         });
+        return;
       }
+
+      console.log(
+        `[SSE ${new Date().toISOString()}] Setting up SSE connection for status updates.`,
+      );
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+      // Function to compute and send the current status.
+      function sendStatus() {
+        const client = globalThis.dapClient;
+        let payload;
+        if (!client) {
+          payload = { status: "inactive" };
+        } else if (client.terminated) {
+          payload = { status: "terminated" };
+        } else if (!client.isPaused) {
+          payload = { status: "running" };
+        } else {
+          const location = client.currentPausedLocation || {};
+          payload = {
+            status: "paused",
+            file: location.file || null,
+            line: location.line || null,
+            threadId: client.currentThreadId || 1,
+          };
+        }
+        console.log(
+          `[SSE ${new Date().toISOString()}] Sending status:`,
+          payload,
+        );
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      }
+
+      // Dynamic registration of event listeners on the latest DAPClient.
+      let currentClient = globalThis.dapClient;
+      const eventListener = (msg: any) => {
+        sendStatus();
+      };
+      const registrationInterval = setInterval(() => {
+        if (globalThis.dapClient && globalThis.dapClient !== currentClient) {
+          if (currentClient) {
+            currentClient.off("stopped", eventListener);
+            currentClient.off("continued", eventListener);
+            currentClient.off("terminated", eventListener);
+          }
+          currentClient = globalThis.dapClient;
+          console.log(
+            `[SSE ${new Date().toISOString()}] Registering listeners on new DAPClient instance.`,
+          );
+          currentClient.on("stopped", eventListener);
+          currentClient.on("continued", eventListener);
+          currentClient.on("terminated", eventListener);
+          sendStatus();
+        }
+      }, 500);
+
+      // Send the initial status.
+      console.log(`[SSE ${new Date().toISOString()}] Sending initial status.`);
+      sendStatus();
+
+      // Heartbeat: send a heartbeat message every 15 seconds.
+      const heartbeat = setInterval(() => {
+        console.log(`[SSE ${new Date().toISOString()}] Sending heartbeat.`);
+        res.write(":\n\n");
+      }, 15000);
+
+      // Cleanup on client disconnect.
+      req.on("close", () => {
+        console.log(
+          `[SSE ${new Date().toISOString()}] Client disconnected. Cleaning up listeners and heartbeat.`,
+        );
+        clearInterval(heartbeat);
+        clearInterval(registrationInterval);
+        if (currentClient) {
+          currentClient.off("stopped", eventListener);
+          currentClient.off("continued", eventListener);
+          currentClient.off("terminated", eventListener);
+        }
+        res.end();
+      });
 
       // ------------------------------------------------------------------------
       // ACTION: UNKNOWN
