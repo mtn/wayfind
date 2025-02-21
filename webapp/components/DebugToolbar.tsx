@@ -20,11 +20,13 @@ interface DebugLogEntry {
 interface DebugToolbarProps {
   onDebugSessionStart: () => void;
   debugStatus?: string;
+  sessionToken?: string;
 }
 
 export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
+  sessionToken,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
 
@@ -32,6 +34,9 @@ export function DebugToolbar({
   const isSessionActive =
     debugStatus !== "inactive" && debugStatus !== "terminated";
   const isPaused = debugStatus === "paused";
+
+  // Build token query if available
+  const tokenQuery = sessionToken ? `&token=${sessionToken}` : "";
 
   async function handleLaunch() {
     try {
@@ -47,7 +52,7 @@ export function DebugToolbar({
       return;
     }
     try {
-      const res = await fetch("/api/debug?action=evaluate", {
+      const res = await fetch("/api/debug?action=evaluate" + tokenQuery, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expression, threadId: 1 }),
@@ -68,7 +73,7 @@ export function DebugToolbar({
       return;
     }
     try {
-      const res = await fetch("/api/debug?action=continue", {
+      const res = await fetch("/api/debug?action=continue" + tokenQuery, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: 1 }),
@@ -84,7 +89,7 @@ export function DebugToolbar({
   // New handlers for additional debugging actions.
   async function handleStepOver() {
     try {
-      const res = await fetch("/api/debug?action=stepOver", {
+      const res = await fetch("/api/debug?action=stepOver" + tokenQuery, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: 1 }),
@@ -99,7 +104,7 @@ export function DebugToolbar({
 
   async function handleStepIn() {
     try {
-      const res = await fetch("/api/debug?action=stepIn", {
+      const res = await fetch("/api/debug?action=stepIn" + tokenQuery, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: 1 }),
@@ -114,7 +119,7 @@ export function DebugToolbar({
 
   async function handleStepOut() {
     try {
-      const res = await fetch("/api/debug?action=stepOut", {
+      const res = await fetch("/api/debug?action=stepOut" + tokenQuery, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: 1 }),
@@ -129,7 +134,7 @@ export function DebugToolbar({
 
   async function handleRestart() {
     try {
-      const res = await fetch("/api/debug?action=restart", {
+      const res = await fetch("/api/debug?action=restart" + tokenQuery, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -143,7 +148,7 @@ export function DebugToolbar({
 
   async function handleTerminate() {
     try {
-      const res = await fetch("/api/debug?action=terminate", {
+      const res = await fetch("/api/debug?action=terminate" + tokenQuery, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });

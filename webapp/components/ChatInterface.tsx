@@ -17,6 +17,8 @@ interface ChatInterfaceProps {
   onContinue: () => void;
   // Callback to evaluate an expression. Should return a promise resolving to a string.
   onEvaluate: (expression: string) => Promise<string>;
+  // The session token to be sent with API calls for session management.
+  sessionToken: string;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -31,6 +33,7 @@ export function ChatInterface({
   onLaunch,
   onContinue,
   onEvaluate,
+  sessionToken,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
 
@@ -40,7 +43,7 @@ export function ChatInterface({
     maxSteps: 5,
     async onToolCall({ toolCall }) {
       if (toolCall.toolName === "setBreakpoint") {
-        const { line } = toolCall.args;
+        const { line } = toolCall.args as { line: number };
         onSetBreakpoint(line);
         return { message: "Breakpoint set." };
       } else if (toolCall.toolName === "launchDebug") {
@@ -50,7 +53,7 @@ export function ChatInterface({
         onContinue();
         return { message: "Continued execution." };
       } else if (toolCall.toolName === "evaluateExpression") {
-        const { expression } = toolCall.args;
+        const { expression } = toolCall.args as { expression: string };
         const result = await onEvaluate(expression);
         return { message: `Evaluation result: ${result}` };
       }
@@ -68,9 +71,9 @@ export function ChatInterface({
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    // Send the prompt (e.g.: "Launch debug" or "Set a breakpoint on line 5 in a.py")
+    // Send the prompt along with the session token
     handleSubmit(e, {
-      body: { content: input },
+      body: { content: input, token: sessionToken },
       experimental_attachments: attachments,
     });
     setInput("");

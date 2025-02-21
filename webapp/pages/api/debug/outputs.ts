@@ -4,11 +4,26 @@ export const config = {
   api: { bodyParser: false },
 };
 
-if (!globalThis.debugOutputBuffer) {
-  globalThis.debugOutputBuffer = [];
+// Initialize a per-session output buffers container on globalThis.
+if (!globalThis.debugOutputBuffers) {
+  globalThis.debugOutputBuffers = {};
 }
 
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  // Expect a token query parameter to identify the session.
+  const token =
+    typeof req.query.token === "string" ? req.query.token : undefined;
+  if (!token) {
+    res.status(400).json({ error: "Missing session token" });
+    return;
+  }
+
+  // Ensure an output buffer exists for this session.
+  if (!globalThis.debugOutputBuffers[token]) {
+    globalThis.debugOutputBuffers[token] = [];
+  }
+  const outputBuffer = globalThis.debugOutputBuffers[token];
+
   if (req.method !== "GET") {
     res.status(405).json({ error: "Method not allowed" });
     return;
@@ -38,13 +53,10 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     res.write(":\n\n"); // SSE comment heartbeat line
   }, 15000);
 
-  // An interval that drains the output buffer (if there were any writes).
+  // An interval that drains the output buffer (if there were any writes) specific to this session.
   const intervalId = setInterval(() => {
-    while (
-      globalThis.debugOutputBuffer &&
-      globalThis.debugOutputBuffer.length > 0
-    ) {
-      const output = globalThis.debugOutputBuffer.shift();
+    while (outputBuffer && outputBuffer.length > 0) {
+      const output = outputBuffer.shift();
       res.write(`data: ${JSON.stringify(output)}\n\n`);
     }
   }, 100);
