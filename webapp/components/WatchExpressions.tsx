@@ -6,6 +6,7 @@ import React, {
   useCallback,
   forwardRef,
   useImperativeHandle,
+  useRef,
 } from "react";
 
 interface WatchExpression {
@@ -58,6 +59,15 @@ const WatchExpressions = forwardRef<
       });
     }
   }, [expressions, isPaused, onEvaluate]);
+
+  // When the number of expressions changes, re-evaluate all expressions.
+  const prevExpressionCountRef = useRef(expressions.length);
+  useEffect(() => {
+    if (expressions.length > prevExpressionCountRef.current && isPaused) {
+      evaluateAll();
+    }
+    prevExpressionCountRef.current = expressions.length;
+  }, [expressions.length, isPaused, evaluateAll]);
 
   // Expose the reevaluate method to the parent.
   useImperativeHandle(
