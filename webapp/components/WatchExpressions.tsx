@@ -41,29 +41,35 @@ const WatchExpressions = forwardRef<
   // Wrap evaluateAll in useCallback so it doesn't change on every render.
   const evaluateAll = useCallback(() => {
     if (isPaused) {
-      expressions.forEach(async (expr) => {
-        try {
-          const result = await onEvaluate(expr.expression);
-          setExpressions((prev) =>
-            prev.map((item) =>
-              item.id === expr.id ? { ...item, result } : item,
-            ),
-          );
-        } catch (error) {
-          setExpressions((prev) =>
-            prev.map((item) =>
-              item.id === expr.id ? { ...item, result: "Error" } : item,
-            ),
-          );
-        }
+      // Use functional updates to get the latest expressions
+      setExpressions((prevExpressions) => {
+        // For each expression in the current state,
+        // call onEvaluate and eventually update it if needed.
+        prevExpressions.forEach(async (expr) => {
+          try {
+            const result = await onEvaluate(expr.expression);
+            setExpressions((current) =>
+              current.map((item) =>
+                item.id === expr.id ? { ...item, result } : item,
+              ),
+            );
+          } catch (error) {
+            setExpressions((current) =>
+              current.map((item) =>
+                item.id === expr.id ? { ...item, result: "Error" } : item,
+              ),
+            );
+          }
+        });
+        return prevExpressions;
       });
     }
-  }, [expressions, isPaused, onEvaluate]);
+  }, [isPaused, onEvaluate]);
 
   // When the number of expressions changes, re-evaluate all expressions.
   const prevExpressionCountRef = useRef(expressions.length);
   useEffect(() => {
-    if (expressions.length > prevExpressionCountRef.current && isPaused) {
+    if (isPaused) {
       evaluateAll();
     }
     prevExpressionCountRef.current = expressions.length;
@@ -79,15 +85,6 @@ const WatchExpressions = forwardRef<
     }),
     [evaluateAll],
   );
-
-  // This will mostly not fire, but should cover the case where the code takes awhile to run, so the
-  // status change is actually picked up.
-  // TODO Should probably find a better solution
-  useEffect(() => {
-    if (isPaused) {
-      evaluateAll();
-    }
-  }, [isPaused, evaluateAll]);
 
   // Handler for adding a new expression.
   const handleAddExpression = () => {
