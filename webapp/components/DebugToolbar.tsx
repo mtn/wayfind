@@ -20,15 +20,11 @@ interface DebugLogEntry {
 interface DebugToolbarProps {
   onDebugSessionStart: () => void;
   debugStatus?: string;
-  // New callback: after a debugging action (like continue, step etc.)
-  // call this to force re‑evaluation of watch expressions.
-  onForceEvaluation?: () => void;
 }
 
 export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
-  onForceEvaluation,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
 
@@ -82,8 +78,6 @@ export function DebugToolbar({
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error continuing execution:", errMsg);
-    } finally {
-      if (onForceEvaluation) onForceEvaluation();
     }
   }
 
@@ -100,8 +94,6 @@ export function DebugToolbar({
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error stepping over:", errMsg);
-    } finally {
-      if (onForceEvaluation) onForceEvaluation();
     }
   }
 
@@ -117,8 +109,6 @@ export function DebugToolbar({
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error stepping into:", errMsg);
-    } finally {
-      if (onForceEvaluation) onForceEvaluation();
     }
   }
 
@@ -134,8 +124,6 @@ export function DebugToolbar({
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error stepping out:", errMsg);
-    } finally {
-      if (onForceEvaluation) onForceEvaluation();
     }
   }
 

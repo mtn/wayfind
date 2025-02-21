@@ -79,7 +79,7 @@ export default function Home() {
   // We offer three tabs: Status, Watches, and Call Stack.
   const [selectedTab, setSelectedTab] = useState("status");
 
-  // Function to force evaluation: called by debug actions.
+  // Function to force evaluation: called by status updates.
   const forceWatchEvaluation = () => {
     if (watchExpressionsRef.current) {
       watchExpressionsRef.current.reevaluate();
@@ -232,6 +232,7 @@ export default function Home() {
             setExecutionFile(data.file);
             setExecutionLine(data.line);
             setDebugStatus("paused");
+            forceWatchEvaluation();
           } else if (data.status === "terminated") {
             setExecutionFile(null);
             setExecutionLine(null);
@@ -315,7 +316,6 @@ export default function Home() {
                   <DebugToolbar
                     onDebugSessionStart={handleDebugSessionStart}
                     debugStatus={debugStatus}
-                    onForceEvaluation={forceWatchEvaluation}
                   />
                 </div>
                 {/* Tab Header */}
