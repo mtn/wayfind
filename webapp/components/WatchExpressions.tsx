@@ -49,7 +49,7 @@ const WatchExpressions = forwardRef<
               item.id === expr.id ? { ...item, result } : item,
             ),
           );
-        } catch (e) {
+        } catch (error) {
           setExpressions((prev) =>
             prev.map((item) =>
               item.id === expr.id ? { ...item, result: "Error" } : item,
@@ -87,7 +87,7 @@ const WatchExpressions = forwardRef<
     if (isPaused) {
       evaluateAll();
     }
-  }, [isPaused]);
+  }, [isPaused, evaluateAll]);
 
   // Handler for adding a new expression.
   const handleAddExpression = () => {
@@ -125,7 +125,11 @@ const WatchExpressions = forwardRef<
           <li key={expr.id} className="mb-1 flex justify-between items-center">
             <span>
               <strong>{expr.expression}</strong>:{" "}
-              {isPaused ? (expr.result ?? "Evaluating...") : "Not evaluated"}
+              {expr.result !== undefined
+                ? expr.result
+                : isPaused
+                  ? "Evaluating..."
+                  : "Not evaluated"}
             </span>
             <button
               onClick={() => handleRemoveExpression(expr.id)}
