@@ -69,7 +69,6 @@ const WatchExpressions = forwardRef<
   // When the number of expressions changes, re-evaluate all expressions.
   const prevExpressionCountRef = useRef(expressions.length);
   useEffect(() => {
-    console.log(expressions.length, isPaused, evaluateAll);
     if (isPaused) {
       evaluateAll();
     }
