@@ -41,29 +41,36 @@ const WatchExpressions = forwardRef<
   // Wrap evaluateAll in useCallback so it doesn't change on every render.
   const evaluateAll = useCallback(() => {
     if (isPaused) {
-      expressions.forEach(async (expr) => {
-        try {
-          const result = await onEvaluate(expr.expression);
-          setExpressions((prev) =>
-            prev.map((item) =>
-              item.id === expr.id ? { ...item, result } : item,
-            ),
-          );
-        } catch (error) {
-          setExpressions((prev) =>
-            prev.map((item) =>
-              item.id === expr.id ? { ...item, result: "Error" } : item,
-            ),
-          );
-        }
+      // Use functional updates to get the latest expressions
+      setExpressions((prevExpressions) => {
+        // For each expression in the current state,
+        // call onEvaluate and eventually update it if needed.
+        prevExpressions.forEach(async (expr) => {
+          try {
+            const result = await onEvaluate(expr.expression);
+            setExpressions((current) =>
+              current.map((item) =>
+                item.id === expr.id ? { ...item, result } : item,
+              ),
+            );
+          } catch (error) {
+            setExpressions((current) =>
+              current.map((item) =>
+                item.id === expr.id ? { ...item, result: "Error" } : item,
+              ),
+            );
+          }
+        });
+        return prevExpressions;
       });
     }
-  }, [expressions, isPaused, onEvaluate]);
+  }, [isPaused, onEvaluate]);
 
   // When the number of expressions changes, re-evaluate all expressions.
   const prevExpressionCountRef = useRef(expressions.length);
   useEffect(() => {
-    if (expressions.length > prevExpressionCountRef.current && isPaused) {
+    console.log(expressions.length, isPaused, evaluateAll);
+    if (isPaused) {
       evaluateAll();
     }
     prevExpressionCountRef.current = expressions.length;
