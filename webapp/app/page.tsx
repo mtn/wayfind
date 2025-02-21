@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -264,20 +264,23 @@ export default function Home() {
     }
   }, [isDebugSessionActive]);
 
-  const evaluateExpression = async (expression: string) => {
-    try {
-      const res = await fetch("/api/debug?action=evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expression, threadId: 1 }),
-      });
-      const data = await res.json();
-      return data.result;
-    } catch (e) {
-      addLog(`Evaluation error: ${e instanceof Error ? e.message : e}`);
-      return "";
-    }
-  };
+  const evaluateExpression = useCallback(
+    async (expression: string) => {
+      try {
+        const res = await fetch("/api/debug?action=evaluate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expression, threadId: 1 }),
+        });
+        const data = await res.json();
+        return data.result;
+      } catch (e) {
+        addLog(`Evaluation error: ${e instanceof Error ? e.message : e}`);
+        return "";
+      }
+    },
+    [addLog],
+  );
 
   // onContinue callback for ChatInterface.
   const handleContinue = () => {

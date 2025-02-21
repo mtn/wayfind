@@ -80,15 +80,6 @@ const WatchExpressions = forwardRef<
     [evaluateAll],
   );
 
-  // This will mostly not fire, but should cover the case where the code takes awhile to run, so the
-  // status change is actually picked up.
-  // TODO Should probably find a better solution
-  useEffect(() => {
-    if (isPaused) {
-      evaluateAll();
-    }
-  }, [isPaused, evaluateAll]);
-
   // Handler for adding a new expression.
   const handleAddExpression = () => {
     const trimmed = inputValue.trim();
