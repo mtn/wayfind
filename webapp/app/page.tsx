@@ -56,6 +56,7 @@ export interface IBreakpoint {
 export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFile, setSelectedFile] = useState(files[0]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Breakpoint handling: separate queued vs. active sets.
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
@@ -76,8 +77,35 @@ export default function Home() {
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
 
   // State to manage the selected tab in the debug panel.
-  // We offer three tabs: Status, Watches, and Call Stack.
   const [selectedTab, setSelectedTab] = useState("status");
+
+  // Initialize session on component mount
+  useEffect(() => {
+    async function initSession() {
+      try {
+        const response = await fetch("/api/debug?action=create-session", {
+          method: "POST",
+        });
+        const data = await response.json();
+        setSessionId(data.sessionId);
+      } catch (error) {
+        console.error("Failed to create session:", error);
+      }
+    }
+
+    initSession();
+
+    return () => {
+      if (sessionId) {
+        fetch("/api/debug?action=cleanup", {
+          method: "POST",
+          headers: {
+            "X-Session-Id": sessionId,
+          },
+        }).catch(console.error);
+      }
+    };
+  }, [sessionId]);
 
   // Function to force evaluation: called by status updates.
   const forceWatchEvaluation = () => {
@@ -139,7 +167,10 @@ export default function Home() {
         }
         fetch("/api/debug?action=setBreakpoints", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Session-Id": sessionId!,
+          },
           body: JSON.stringify({
             breakpoints: newBreakpoints,
             filePath: selectedFile.name,
@@ -179,6 +210,9 @@ export default function Home() {
     try {
       const launchResp = await fetch("/api/debug?action=launch", {
         method: "POST",
+        headers: {
+          "X-Session-Id": sessionId!,
+        },
       });
       const launchData = await launchResp.json();
       addLog(`Session launched: ${launchData.message}`);
@@ -189,7 +223,10 @@ export default function Home() {
         );
         const bpResp = await fetch("/api/debug?action=setBreakpoints", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Session-Id": sessionId!,
+          },
           body: JSON.stringify({
             breakpoints: queuedBreakpoints,
             filePath: selectedFile.name,
@@ -211,6 +248,9 @@ export default function Home() {
       }
       const confResp = await fetch("/api/debug?action=configurationDone", {
         method: "POST",
+        headers: {
+          "X-Session-Id": sessionId!,
+        },
       });
       const confData = await confResp.json();
       addLog(`configurationDone response: ${JSON.stringify(confData)}`);
@@ -223,8 +263,10 @@ export default function Home() {
 
   // Listen for debug status updates using Server-Sent Events (SSE) if a debug session is active.
   useEffect(() => {
-    if (isDebugSessionActive) {
-      const eventSource = new EventSource("/api/debug?action=status");
+    if (isDebugSessionActive && sessionId) {
+      const eventSource = new EventSource(
+        `/api/debug?action=status&sessionId=${sessionId}`,
+      );
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -262,13 +304,18 @@ export default function Home() {
       setExecutionLine(null);
       setDebugStatus("inactive");
     }
-  }, [isDebugSessionActive]);
+  }, [isDebugSessionActive, sessionId]);
 
   const evaluateExpression = async (expression: string) => {
+    if (!sessionId) return "";
+
     try {
       const res = await fetch("/api/debug?action=evaluate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
         body: JSON.stringify({ expression, threadId: 1 }),
       });
       const data = await res.json();
@@ -281,9 +328,14 @@ export default function Home() {
 
   // onContinue callback for ChatInterface.
   const handleContinue = () => {
+    if (!sessionId) return;
+
     fetch("/api/debug?action=continue", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Id": sessionId,
+      },
       body: JSON.stringify({ threadId: 1 }),
     })
       .then((res) => res.json())
@@ -316,6 +368,7 @@ export default function Home() {
                   <DebugToolbar
                     onDebugSessionStart={handleDebugSessionStart}
                     debugStatus={debugStatus}
+                    sessionId={sessionId}
                   />
                 </div>
                 {/* Tab Header */}
@@ -369,14 +422,16 @@ export default function Home() {
                       onEvaluate={evaluateExpression}
                     />
                   )}
-                  {selectedTab === "callstack" && <CallStack />}
+                  {selectedTab === "callstack" && (
+                    <CallStack sessionId={sessionId} />
+                  )}
                 </div>
               </div>
             </ResizablePanel>
             {/* Section 3: Outputs */}
             <ResizablePanel defaultSize={20} minSize={10}>
               <div className="h-full">
-                <OutputViewer />
+                <OutputViewer sessionId={sessionId} />
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -407,6 +462,7 @@ export default function Home() {
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}
                 onEvaluate={evaluateExpression}
+                sessionId={sessionId}
               />
             </ResizablePanel>
           </ResizablePanelGroup>

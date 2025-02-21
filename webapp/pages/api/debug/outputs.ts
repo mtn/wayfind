@@ -1,16 +1,26 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { sessionManager } from "@/lib/SessionManager";
 
 export const config = {
   api: { bodyParser: false },
 };
 
-if (!globalThis.debugOutputBuffer) {
-  globalThis.debugOutputBuffer = [];
-}
-
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  const sessionId = req.headers["x-session-id"] as string;
+
   if (req.method !== "GET") {
     res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
+  if (!sessionId) {
+    res.status(401).json({ error: "Missing session ID" });
+    return;
+  }
+
+  const session = sessionManager.getSession(sessionId);
+  if (!session) {
+    res.status(403).json({ error: "Invalid session ID" });
     return;
   }
 
@@ -40,12 +50,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
   // An interval that drains the output buffer (if there were any writes).
   const intervalId = setInterval(() => {
-    while (
-      globalThis.debugOutputBuffer &&
-      globalThis.debugOutputBuffer.length > 0
-    ) {
-      const output = globalThis.debugOutputBuffer.shift();
-      res.write(`data: ${JSON.stringify(output)}\n\n`);
+    while (session.outputBuffer.length > 0) {
+      const output = session.outputBuffer.shift();
+      if (output) {
+        res.write(`data: ${JSON.stringify(output)}\n\n`);
+      }
     }
   }, 100);
 

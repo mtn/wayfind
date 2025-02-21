@@ -20,11 +20,13 @@ interface DebugLogEntry {
 interface DebugToolbarProps {
   onDebugSessionStart: () => void;
   debugStatus?: string;
+  sessionId: string | null;
 }
 
 export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
+  sessionId,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
 
@@ -42,14 +44,17 @@ export function DebugToolbar({
   }
 
   async function handleEvaluate() {
-    if (!isSessionActive) {
+    if (!isSessionActive || !sessionId) {
       console.error("Cannot evaluate: Debug session not started");
       return;
     }
     try {
       const res = await fetch("/api/debug?action=evaluate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
         body: JSON.stringify({ expression, threadId: 1 }),
       });
       const data = await res.json();
@@ -63,14 +68,17 @@ export function DebugToolbar({
   }
 
   async function handleContinue() {
-    if (!isSessionActive) {
+    if (!isSessionActive || !sessionId) {
       console.error("Cannot continue: Debug session not started");
       return;
     }
     try {
       const res = await fetch("/api/debug?action=continue", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
@@ -83,10 +91,14 @@ export function DebugToolbar({
 
   // New handlers for additional debugging actions.
   async function handleStepOver() {
+    if (!sessionId) return;
     try {
       const res = await fetch("/api/debug?action=stepOver", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
@@ -98,10 +110,14 @@ export function DebugToolbar({
   }
 
   async function handleStepIn() {
+    if (!sessionId) return;
     try {
       const res = await fetch("/api/debug?action=stepIn", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
@@ -113,10 +129,14 @@ export function DebugToolbar({
   }
 
   async function handleStepOut() {
+    if (!sessionId) return;
     try {
       const res = await fetch("/api/debug?action=stepOut", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
@@ -128,10 +148,14 @@ export function DebugToolbar({
   }
 
   async function handleRestart() {
+    if (!sessionId) return;
     try {
       const res = await fetch("/api/debug?action=restart", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
       });
       const data = await res.json();
       console.log("Restart result:", JSON.stringify(data.result));
@@ -142,10 +166,14 @@ export function DebugToolbar({
   }
 
   async function handleTerminate() {
+    if (!sessionId) return;
     try {
       const res = await fetch("/api/debug?action=terminate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
       });
       const data = await res.json();
       console.log("Stop result:", JSON.stringify(data.result));

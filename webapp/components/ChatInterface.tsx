@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
 import { SendIcon } from "lucide-react";
@@ -17,6 +17,8 @@ interface ChatInterfaceProps {
   onContinue: () => void;
   // Callback to evaluate an expression. Should return a promise resolving to a string.
   onEvaluate: (expression: string) => Promise<string>;
+  // Session ID passed from parent
+  sessionId: string | null;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -31,6 +33,7 @@ export function ChatInterface({
   onLaunch,
   onContinue,
   onEvaluate,
+  sessionId,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
 
@@ -38,9 +41,16 @@ export function ChatInterface({
   // Instead, intercept tool calls via onToolCall.
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     maxSteps: 5,
+    headers: sessionId
+      ? {
+          "X-Session-Id": sessionId,
+        }
+      : undefined,
     async onToolCall({ toolCall }) {
+      if (!sessionId) return;
+
       if (toolCall.toolName === "setBreakpoint") {
-        const { line } = toolCall.args;
+        const { line } = toolCall.args as { line: number };
         onSetBreakpoint(line);
         return { message: "Breakpoint set." };
       } else if (toolCall.toolName === "launchDebug") {
@@ -50,7 +60,7 @@ export function ChatInterface({
         onContinue();
         return { message: "Continued execution." };
       } else if (toolCall.toolName === "evaluateExpression") {
-        const { expression } = toolCall.args;
+        const { expression } = toolCall.args as { expression: string };
         const result = await onEvaluate(expression);
         return { message: `Evaluation result: ${result}` };
       }

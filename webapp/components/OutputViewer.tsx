@@ -2,12 +2,20 @@
 
 import { useEffect, useState } from "react";
 
-export function OutputViewer() {
+interface OutputViewerProps {
+  sessionId: string | null;
+}
+
+export function OutputViewer({ sessionId }: OutputViewerProps) {
   const [output, setOutput] = useState<string[]>([]);
 
   useEffect(() => {
+    if (!sessionId) return;
+
     console.log("OutputViewer mounted");
-    const eventSource = new EventSource("/api/debug/outputs");
+    const eventSource = new EventSource(
+      `/api/debug/outputs?sessionId=${sessionId}`,
+    );
 
     eventSource.onopen = (event) => {
       console.log("SSE connection for output streaming opened", event);
@@ -17,7 +25,7 @@ export function OutputViewer() {
       try {
         const data = JSON.parse(event.data);
         setOutput((prev) => [...prev, data]);
-      } catch (err) {
+      } catch (_err) {
         setOutput((prev) => [...prev, event.data]);
       }
     };
@@ -30,7 +38,7 @@ export function OutputViewer() {
     return () => {
       eventSource.close();
     };
-  }, []);
+  }, [sessionId]);
 
   return (
     <div className="p-2 bg-gray-100 h-full overflow-auto text-xs flex flex-col">

@@ -2,16 +2,25 @@
 
 import { useState, useEffect } from "react";
 
-export function CallStack() {
+interface CallStackProps {
+  sessionId: string | null;
+}
+
+export function CallStack({ sessionId }: CallStackProps) {
   const [frames, setFrames] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   async function fetchCallStack() {
+    if (!sessionId) return;
+
     setLoading(true);
     try {
       const res = await fetch("/api/debug?action=stackTrace", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
         body: JSON.stringify({ threadId: 1 }),
       });
       const data = await res.json();
@@ -24,8 +33,10 @@ export function CallStack() {
   }
 
   useEffect(() => {
-    fetchCallStack();
-  }, []);
+    if (sessionId) {
+      fetchCallStack();
+    }
+  }, [sessionId]);
 
   return (
     <div className="p-2">
