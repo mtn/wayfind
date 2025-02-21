@@ -290,8 +290,7 @@ export default async function handler(
       });
       if (typeof res.flushHeaders === "function") res.flushHeaders();
 
-      // Function to compute and send the current status.
-      function sendStatus() {
+      const sendStatus = () => {
         const client = globalThis.dapClient;
         let payload;
         if (!client) {
@@ -314,11 +313,11 @@ export default async function handler(
           payload,
         );
         res.write(`data: ${JSON.stringify(payload)}\n\n`);
-      }
+      };
 
       // Dynamic registration of event listeners on the latest DAPClient.
       let currentClient = globalThis.dapClient;
-      const eventListener = (msg: any) => {
+      const eventListener = () => {
         sendStatus();
       };
       const registrationInterval = setInterval(() => {
@@ -327,6 +326,7 @@ export default async function handler(
             currentClient.off("stopped", eventListener);
             currentClient.off("continued", eventListener);
             currentClient.off("terminated", eventListener);
+            currentClient.off("pausedLocationUpdated", eventListener);
           }
           currentClient = globalThis.dapClient;
           console.log(
@@ -335,21 +335,19 @@ export default async function handler(
           currentClient.on("stopped", eventListener);
           currentClient.on("continued", eventListener);
           currentClient.on("terminated", eventListener);
+          currentClient.on("pausedLocationUpdated", eventListener);
           sendStatus();
         }
       }, 500);
 
-      // Send the initial status.
       console.log(`[SSE ${new Date().toISOString()}] Sending initial status.`);
       sendStatus();
 
-      // Heartbeat: send a heartbeat message every 15 seconds.
       const heartbeat = setInterval(() => {
         console.log(`[SSE ${new Date().toISOString()}] Sending heartbeat.`);
         res.write(":\n\n");
       }, 15000);
 
-      // Cleanup on client disconnect.
       req.on("close", () => {
         console.log(
           `[SSE ${new Date().toISOString()}] Client disconnected. Cleaning up listeners and heartbeat.`,
@@ -360,6 +358,7 @@ export default async function handler(
           currentClient.off("stopped", eventListener);
           currentClient.off("continued", eventListener);
           currentClient.off("terminated", eventListener);
+          currentClient.off("pausedLocationUpdated", eventListener);
         }
         res.end();
       });

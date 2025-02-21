@@ -196,6 +196,10 @@ export class DAPClient extends EventEmitter {
                     "[DAPClient] Updated currentPausedLocation:",
                     this.currentPausedLocation,
                   );
+                  this.emit(
+                    "pausedLocationUpdated",
+                    this.currentPausedLocation,
+                  );
                 } else {
                   console.log(
                     "[DAPClient] No stack frames received on 'stopped' event.",
