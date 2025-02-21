@@ -9,10 +9,10 @@ import { DAPClient } from "../../lib/dapClient";
 // GLOBALS
 // --------------------------------------------------------------------------
 declare global {
-  var dapClient: DAPClient | null | undefined;
-  var pythonProcess: ReturnType<typeof spawn> | null | undefined;
-  var configurationDoneSent: boolean | undefined;
-  var debugOutputBuffer: string[] | undefined;
+  let dapClient: DAPClient | null | undefined;
+  let pythonProcess: ReturnType<typeof spawn> | null | undefined;
+  let configurationDoneSent: boolean | undefined;
+  let debugOutputBuffer: string[] | undefined;
 }
 
 if (globalThis.dapClient === undefined) {
