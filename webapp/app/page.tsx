@@ -63,6 +63,11 @@ export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFile, setSelectedFile] = useState(files[0]);
 
+  const selectedFileRef = useRef(selectedFile);
+  useEffect(() => {
+    selectedFileRef.current = selectedFile;
+  }, [selectedFile]);
+
   // New state variable to store the session token.
   const [sessionToken, setSessionToken] = useState<string>("");
 
@@ -100,12 +105,17 @@ export default function Home() {
     queued: IBreakpoint[],
     active: IBreakpoint[],
   ): IBreakpoint[] {
-    const merged = new Map<number, IBreakpoint>();
+    const merged = new Map<string, IBreakpoint>();
+    // Use a unique composite key for each breakpoint: file:line
     for (const bp of queued) {
-      merged.set(bp.line, bp);
+      if (bp.file) {
+        merged.set(`${bp.file}:${bp.line}`, bp);
+      }
     }
     for (const bp of active) {
-      merged.set(bp.line, bp);
+      if (bp.file) {
+        merged.set(`${bp.file}:${bp.line}`, bp);
+      }
     }
     return Array.from(merged.values());
   }
@@ -129,45 +139,40 @@ export default function Home() {
   }, [isDebugSessionActive]);
 
   const handleBreakpointChange = (lineNumber: number) => {
+    const currentFileName = selectedFileRef.current.name;
     if (!isDebugSessionActiveRef.current) {
       setQueuedBreakpoints((currentQueued) => {
-        const existingBp = currentQueued.find(
-          (bp) => bp.line === lineNumber && bp.file === selectedFile.name,
+        const exists = currentQueued.some(
+          (bp) => bp.line === lineNumber && bp.file === currentFileName,
         );
-        if (!existingBp) {
+        if (!exists) {
           return [
             ...currentQueued,
-            { line: lineNumber, file: selectedFile.name },
+            { line: lineNumber, file: currentFileName },
           ];
         }
         return currentQueued.filter(
-          (bp) => !(bp.line === lineNumber && bp.file === selectedFile.name),
+          (bp) => !(bp.line === lineNumber && bp.file === currentFileName),
         );
       });
     } else {
       setActiveBreakpoints((currentActive) => {
-        const existingBp = currentActive.find(
-          (bp) => bp.line === lineNumber && bp.file === selectedFile.name,
+        const exists = currentActive.some(
+          (bp) => bp.line === lineNumber && bp.file === currentFileName,
         );
-        let newBreakpoints: IBreakpoint[];
-        if (!existingBp) {
-          newBreakpoints = [
-            ...currentActive,
-            { line: lineNumber, file: selectedFile.name },
-          ];
-        } else {
-          newBreakpoints = currentActive.filter(
-            (bp) => !(bp.line === lineNumber && bp.file === selectedFile.name),
-          );
-        }
+        const newBreakpoints = exists
+          ? currentActive.filter(
+              (bp) => !(bp.line === lineNumber && bp.file === currentFileName),
+            )
+          : [...currentActive, { line: lineNumber, file: currentFileName }];
         fetch("/api/debug?action=setBreakpoints&token=" + sessionToken, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             breakpoints: newBreakpoints.filter(
-              (bp) => bp.file === selectedFile.name,
+              (bp) => bp.file === currentFileName,
             ),
-            filePath: selectedFile.name,
+            filePath: currentFileName,
           }),
         })
           .then((response) => response.json())
@@ -175,7 +180,7 @@ export default function Home() {
             if (data.breakpoints) {
               setActiveBreakpoints((current) =>
                 current.map((bp) => {
-                  if (bp.file !== selectedFile.name) return bp;
+                  if (bp.file !== currentFileName) return bp;
                   const verifiedBp = data.breakpoints.find(
                     (vbp: IBreakpoint) => vbp.line === bp.line,
                   );
