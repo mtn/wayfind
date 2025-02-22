@@ -57,7 +57,12 @@ export function MonacoEditorWrapper({
     const executionDecorations = [];
     // Here we compare executionFile with the current file. Adjust if needed.
     // TODO this needs to change
-    if (executionFile && executionFile.endsWith("a.py") && executionLine) {
+    if (
+      executionFile &&
+      currentFile &&
+      executionFile.endsWith(currentFile) &&
+      executionLine
+    ) {
       executionDecorations.push({
         range: new monaco.Range(executionLine, 1, executionLine, 1),
         options: {
