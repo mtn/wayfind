@@ -14,7 +14,7 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "beagle",
+  title: "wayfind",
   description: "debugging copilot",
 };
 
