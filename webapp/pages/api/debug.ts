@@ -23,6 +23,14 @@ const targetScript = path.join(
 // Simple helper that logs process output for the specified session token.
 function sendOutput(data: string, token: string) {
   console.log(`[Python stdout][Session:${token}]:`, data);
+  // Add to the global buffer for this session
+  if (!globalThis.debugOutputBuffers) {
+    globalThis.debugOutputBuffers = {};
+  }
+  if (!globalThis.debugOutputBuffers[token]) {
+    globalThis.debugOutputBuffers[token] = [];
+  }
+  globalThis.debugOutputBuffers[token].push(data.trim());
 }
 
 function findAvailablePort(startPort: number = 5678): Promise<number> {
@@ -93,7 +101,9 @@ export default async function handler(
           "--wait-for-client",
           targetScript,
         ],
-        { stdio: "inherit" },
+        {
+          stdio: ["inherit", "pipe", "pipe"],
+        },
       );
       console.log("Launched Python process with PID:", pythonProcess.pid);
 
@@ -111,7 +121,23 @@ export default async function handler(
 
       // Attach stdout logging so we can see Python logs for this session
       pythonProcess.stdout?.on("data", (data: Buffer) => {
-        sendOutput(data.toString(), session.token);
+        const output = data.toString();
+        const lines = output.split("\n");
+        lines.forEach((line) => {
+          if (line.trim()) {
+            sendOutput(line, session.token);
+          }
+        });
+      });
+
+      pythonProcess.stderr?.on("data", (data: Buffer) => {
+        const output = data.toString();
+        const lines = output.split("\n");
+        lines.forEach((line) => {
+          if (line.trim()) {
+            sendOutput(`[ERROR] ${line}`, session.token);
+          }
+        });
       });
 
       // Initialize & attach

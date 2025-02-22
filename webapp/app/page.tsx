@@ -412,7 +412,7 @@ export default function Home() {
             {/* Section 3: Outputs */}
             <ResizablePanel defaultSize={20} minSize={10}>
               <div className="h-full">
-                <OutputViewer />
+                <OutputViewer sessionToken={sessionToken} />
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>

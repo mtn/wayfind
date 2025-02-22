@@ -1,5 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
+// Declare types for our global state
+declare global {
+  var debugOutputBuffers: {
+    [key: string]: string[];
+  };
+}
+
 export const config = {
   api: { bodyParser: false },
 };
@@ -12,11 +19,7 @@ if (!globalThis.debugOutputBuffers) {
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   // Expect a token query parameter to identify the session.
   const token =
-    typeof req.query.token === "string" ? req.query.token : undefined;
-  if (!token) {
-    res.status(400).json({ error: "Missing session token" });
-    return;
-  }
+    typeof req.query.token === "string" ? req.query.token : "default";
 
   // Ensure an output buffer exists for this session.
   if (!globalThis.debugOutputBuffers[token]) {
