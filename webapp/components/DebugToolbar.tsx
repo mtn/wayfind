@@ -11,12 +11,6 @@ import {
   Square,
 } from "lucide-react";
 
-interface DebugLogEntry {
-  id: number;
-  text: string;
-  type: "dap" | "program";
-}
-
 interface DebugToolbarProps {
   onDebugSessionStart: () => void;
   debugStatus?: string;
