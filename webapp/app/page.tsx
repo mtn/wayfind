@@ -173,10 +173,22 @@ export default function Home() {
 
   // Called when the user presses "Launch Debug Session".
   const handleDebugSessionStart = async () => {
-    if (isDebugSessionActive) {
+    // Only skip launching if the session is active (and not terminated)
+    if (isDebugSessionActive && debugStatus !== "terminated") {
       addLog("Debug session is already launching or active, skipping");
       return;
     }
+    // If the current status is "terminated", reset the session state
+    if (debugStatus === "terminated") {
+      addLog(
+        "Previous debug session terminated. Resetting session state to launch new session.",
+      );
+      setSessionToken(""); // clear the old session token
+      // setActiveBreakpoints([]);
+      // setQueuedBreakpoints([]);
+    }
+
+    // Now launch the new session regardless of whether it was terminated before.
     setIsDebugSessionActive(true);
     addLog("Launching debug session...");
     try {
@@ -187,6 +199,8 @@ export default function Home() {
       // Save the returned session token for subsequent API calls.
       setSessionToken(launchData.token);
       addLog(`Session launched: ${launchData.message}`);
+
+      // If there are any queued breakpoints, set them as active now.
       if (queuedBreakpoints.length > 0) {
         setActiveBreakpoints(queuedBreakpoints);
         addLog(
@@ -227,7 +241,9 @@ export default function Home() {
       addLog(`configurationDone response: ${JSON.stringify(confData)}`);
     } catch (error) {
       addLog(
-        `Failed launching debug session: ${error instanceof Error ? error.message : error}`,
+        `Failed launching debug session: ${
+          error instanceof Error ? error.message : error
+        }`,
       );
     }
   };
