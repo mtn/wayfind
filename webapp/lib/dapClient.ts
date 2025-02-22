@@ -12,9 +12,9 @@ export interface DAPMessage {
   command?: string;
   request_seq?: number;
   success?: boolean;
-  body?: Record<string, unknown>;
+  body?: any;
   event?: string;
-  arguments?: Record<string, unknown>;
+  arguments?: any;
 }
 
 const SEQ_UNASSIGNED = -1;
@@ -178,18 +178,15 @@ export class DAPClient extends EventEmitter {
             this.terminated,
           );
           if (msg.body?.threadId) {
-            this.currentThreadId = msg.body.threadId as number;
+            this.currentThreadId = msg.body.threadId;
             console.log(
               `[DAPClient ${this.id}] Got threadId:`,
               this.currentThreadId,
               " - fetching stack trace...",
             );
-            this.stackTrace(msg.body.threadId as number, 0, 1)
+            this.stackTrace(msg.body.threadId, 0, 1)
               .then((stackResp) => {
-                const frames = stackResp.body?.stackFrames as Array<{
-                  source?: { path?: string };
-                  line: number;
-                }>;
+                const frames = stackResp.body?.stackFrames;
                 if (frames && frames.length > 0) {
                   const topFrame = frames[0];
                   const file = topFrame.source?.path;
@@ -299,22 +296,13 @@ export class DAPClient extends EventEmitter {
     breakpoints: Array<{ line: number }>,
   ): Promise<DAPMessage> {
     const bpSeq = this.nextSeq;
-    const normalizedPath = path.join(
-      process.cwd(),
-      "..",
-      "dap",
-      "test_scripts",
-      "test_data",
-      filePath,
-    );
-
     const req: DAPMessage = {
       seq: SEQ_UNASSIGNED,
       type: "request",
       command: "setBreakpoints",
       arguments: {
         source: {
-          path: normalizedPath,
+          path: filePath,
           name: path.basename(filePath),
         },
         breakpoints,
@@ -367,7 +355,7 @@ export class DAPClient extends EventEmitter {
 
   async evaluate(expression: string, frameId?: number): Promise<DAPMessage> {
     const evalSeq = this.nextSeq;
-    const args: Record<string, unknown> = { expression, context: "hover" };
+    const args: any = { expression, context: "hover" };
     if (frameId) {
       args.frameId = frameId;
     }
