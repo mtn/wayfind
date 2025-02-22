@@ -36,7 +36,7 @@ export class DAPClient extends EventEmitter {
   constructor() {
     super();
     this.id = ++instanceCounter;
-    console.log(`[DAPClient] New instance created. ID: ${this.id}`);
+    console.log(`[DAPClient ${this.id}] New instance created. ID: ${this.id}`);
     this.socket = new net.Socket();
     this.buffer = "";
     this.nextSeq = 1;
@@ -69,9 +69,9 @@ export class DAPClient extends EventEmitter {
     const data = header + json;
     this.socket.write(data);
 
-    // console.log(
-    //   `--> Sent (seq ${message.seq}, cmd: ${message.command}): ${json}`,
-    // );
+    console.log(
+      `--> Sent (seq ${message.seq}, cmd: ${message.command}): ${json}`,
+    );
   }
 
   // Wait for a DAP "response" matching request_seq.
@@ -163,7 +163,7 @@ export class DAPClient extends EventEmitter {
       // Check for debug events to update paused state and current location.
       if (msg.type === "event") {
         console.log(
-          "[DAPClient] Event received:",
+          `[DAPClient ${this.id}] Event received:`,
           msg.event,
           "with payload:",
           msg.body,
@@ -172,7 +172,7 @@ export class DAPClient extends EventEmitter {
           this.isPaused = true;
           this.terminated = false;
           console.log(
-            "[DAPClient] Processing 'stopped' event. isPaused:",
+            `[DAPClient ${this.id}] Processing 'stopped' event. isPaused:`,
             this.isPaused,
             "terminated:",
             this.terminated,
@@ -180,7 +180,7 @@ export class DAPClient extends EventEmitter {
           if (msg.body?.threadId) {
             this.currentThreadId = msg.body.threadId;
             console.log(
-              "[DAPClient] Got threadId:",
+              `[DAPClient ${this.id}] Got threadId:`,
               this.currentThreadId,
               " - fetching stack trace...",
             );
@@ -193,7 +193,7 @@ export class DAPClient extends EventEmitter {
                   const line = topFrame.line;
                   this.currentPausedLocation = { file, line };
                   console.log(
-                    "[DAPClient] Updated currentPausedLocation:",
+                    `[DAPClient ${this.id}] Updated currentPausedLocation:`,
                     this.currentPausedLocation,
                   );
                   this.emit(
@@ -202,7 +202,7 @@ export class DAPClient extends EventEmitter {
                   );
                 } else {
                   console.log(
-                    "[DAPClient] No stack frames received on 'stopped' event.",
+                    `[DAPClient ${this.id}] No stack frames received on 'stopped' event.`,
                   );
                 }
               })
@@ -215,7 +215,7 @@ export class DAPClient extends EventEmitter {
           this.currentPausedLocation = null;
           this.currentThreadId = null;
           console.log(
-            "[DAPClient] Processing '" + msg.event + "' event. isPaused set to",
+            `[DAPClient ${this.id}] Processing '${msg.event}' event. isPaused set to`,
             this.isPaused,
           );
         } else if (msg.event === "terminated") {
@@ -224,7 +224,7 @@ export class DAPClient extends EventEmitter {
           this.currentThreadId = null;
           this.terminated = true;
           console.log(
-            "[DAPClient] Processing 'terminated' event. terminated set to",
+            `[DAPClient ${this.id}] Processing 'terminated' event. terminated set to`,
             this.terminated,
           );
         }
@@ -248,7 +248,7 @@ export class DAPClient extends EventEmitter {
 
       // Emit message event for logging.
       this.emit("message", msg);
-      // console.log("<-- Received:", msg);
+      console.log("<-- Received:", msg);
     }
   }
 
