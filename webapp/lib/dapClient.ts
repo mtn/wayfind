@@ -69,9 +69,9 @@ export class DAPClient extends EventEmitter {
     const data = header + json;
     this.socket.write(data);
 
-    // console.log(
-    //   `--> Sent (seq ${message.seq}, cmd: ${message.command}): ${json}`,
-    // );
+    console.log(
+      `--> Sent (seq ${message.seq}, cmd: ${message.command}): ${json}`,
+    );
   }
 
   // Wait for a DAP "response" matching request_seq.
@@ -248,7 +248,7 @@ export class DAPClient extends EventEmitter {
 
       // Emit message event for logging.
       this.emit("message", msg);
-      // console.log("<-- Received:", msg);
+      console.log("<-- Received:", msg);
     }
   }
 
