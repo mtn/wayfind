@@ -7,7 +7,11 @@ export function OutputViewer() {
 
   useEffect(() => {
     console.log("OutputViewer mounted");
-    const eventSource = new EventSource("/api/debug/outputs");
+    const sessionToken = localStorage.getItem("sessionToken") || "";
+    const eventSourceUrl = sessionToken
+      ? `/api/debug/outputs?token=${sessionToken}`
+      : "/api/debug/outputs";
+    const eventSource = new EventSource(eventSourceUrl);
 
     eventSource.onopen = (event) => {
       console.log("SSE connection for output streaming opened", event);
@@ -17,13 +21,13 @@ export function OutputViewer() {
       try {
         const data = JSON.parse(event.data);
         setOutput((prev) => [...prev, data]);
-      } catch (err) {
+      } catch {
         setOutput((prev) => [...prev, event.data]);
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.error("EventSource failed:", err);
+    eventSource.onerror = () => {
+      console.error("EventSource failed:");
       eventSource.close();
     };
 

@@ -16,10 +16,12 @@ interface WatchExpression {
 }
 
 export interface WatchExpressionsProps {
-  // onEvaluate should take an expression and return a promise that resolves to its evaluated value
-  onEvaluate: (expression: string) => Promise<string>;
+  // onEvaluate should take an expression and (optionally) a session token, and return a promise that resolves to its evaluated value
+  onEvaluate: (expression: string, sessionToken?: string) => Promise<string>;
   // isPaused is true when the debugger is stopped (so you want to update the watch values)
   isPaused: boolean;
+  // Optional session token for multi-session support
+  sessionToken?: string;
 }
 
 export interface WatchExpressionsHandle {
@@ -29,7 +31,7 @@ export interface WatchExpressionsHandle {
 const WatchExpressions = forwardRef<
   WatchExpressionsHandle,
   WatchExpressionsProps
->(({ onEvaluate, isPaused }, ref) => {
+>(({ onEvaluate, isPaused, sessionToken }, ref) => {
   const [expressions, setExpressions] = useState<WatchExpression[]>([]);
   const [inputValue, setInputValue] = useState("");
 
@@ -44,10 +46,10 @@ const WatchExpressions = forwardRef<
       // Use functional updates to get the latest expressions
       setExpressions((prevExpressions) => {
         // For each expression in the current state,
-        // call onEvaluate and eventually update it if needed.
+        // call onEvaluate (with sessionToken) and eventually update it if needed.
         prevExpressions.forEach(async (expr) => {
           try {
-            const result = await onEvaluate(expr.expression);
+            const result = await onEvaluate(expr.expression, sessionToken);
             setExpressions((current) =>
               current.map((item) =>
                 item.id === expr.id ? { ...item, result } : item,
@@ -64,7 +66,7 @@ const WatchExpressions = forwardRef<
         return prevExpressions;
       });
     }
-  }, [isPaused, onEvaluate]);
+  }, [isPaused, onEvaluate, sessionToken]);
 
   // When the number of expressions changes, re-evaluate all expressions.
   const prevExpressionCountRef = useRef(expressions.length);

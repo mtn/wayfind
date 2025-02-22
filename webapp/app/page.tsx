@@ -57,6 +57,9 @@ export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [selectedFile, setSelectedFile] = useState(files[0]);
 
+  // New state variable to store the session token.
+  const [sessionToken, setSessionToken] = useState<string>("");
+
   // Breakpoint handling: separate queued vs. active sets.
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
@@ -137,7 +140,7 @@ export default function Home() {
         } else {
           newBreakpoints = currentActive.filter((bp) => bp.line !== lineNumber);
         }
-        fetch("/api/debug?action=setBreakpoints", {
+        fetch("/api/debug?action=setBreakpoints&token=" + sessionToken, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -181,20 +184,25 @@ export default function Home() {
         method: "POST",
       });
       const launchData = await launchResp.json();
+      // Save the returned session token for subsequent API calls.
+      setSessionToken(launchData.token);
       addLog(`Session launched: ${launchData.message}`);
       if (queuedBreakpoints.length > 0) {
         setActiveBreakpoints(queuedBreakpoints);
         addLog(
           `Setting queued breakpoints: ${JSON.stringify(queuedBreakpoints)}`,
         );
-        const bpResp = await fetch("/api/debug?action=setBreakpoints", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            breakpoints: queuedBreakpoints,
-            filePath: selectedFile.name,
-          }),
-        });
+        const bpResp = await fetch(
+          "/api/debug?action=setBreakpoints&token=" + launchData.token,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              breakpoints: queuedBreakpoints,
+              filePath: selectedFile.name,
+            }),
+          },
+        );
         const bpData = await bpResp.json();
         addLog(`Breakpoint response: ${JSON.stringify(bpData)}`);
         if (bpData.breakpoints) {
@@ -209,9 +217,12 @@ export default function Home() {
         }
         setQueuedBreakpoints([]);
       }
-      const confResp = await fetch("/api/debug?action=configurationDone", {
-        method: "POST",
-      });
+      const confResp = await fetch(
+        "/api/debug?action=configurationDone&token=" + launchData.token,
+        {
+          method: "POST",
+        },
+      );
       const confData = await confResp.json();
       addLog(`configurationDone response: ${JSON.stringify(confData)}`);
     } catch (error) {
@@ -223,8 +234,10 @@ export default function Home() {
 
   // Listen for debug status updates using Server-Sent Events (SSE) if a debug session is active.
   useEffect(() => {
-    if (isDebugSessionActive) {
-      const eventSource = new EventSource("/api/debug?action=status");
+    if (isDebugSessionActive && sessionToken) {
+      const eventSource = new EventSource(
+        "/api/debug?action=status&token=" + sessionToken,
+      );
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -262,15 +275,18 @@ export default function Home() {
       setExecutionLine(null);
       setDebugStatus("inactive");
     }
-  }, [isDebugSessionActive]);
+  }, [isDebugSessionActive, sessionToken]);
 
   const evaluateExpression = async (expression: string) => {
     try {
-      const res = await fetch("/api/debug?action=evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expression, threadId: 1 }),
-      });
+      const res = await fetch(
+        "/api/debug?action=evaluate&token=" + sessionToken,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expression, threadId: 1 }),
+        },
+      );
       const data = await res.json();
       return data.result;
     } catch (e) {
@@ -281,7 +297,7 @@ export default function Home() {
 
   // onContinue callback for ChatInterface.
   const handleContinue = () => {
-    fetch("/api/debug?action=continue", {
+    fetch("/api/debug?action=continue&token=" + sessionToken, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threadId: 1 }),
@@ -316,6 +332,7 @@ export default function Home() {
                   <DebugToolbar
                     onDebugSessionStart={handleDebugSessionStart}
                     debugStatus={debugStatus}
+                    sessionToken={sessionToken}
                   />
                 </div>
                 {/* Tab Header */}
@@ -369,7 +386,9 @@ export default function Home() {
                       onEvaluate={evaluateExpression}
                     />
                   )}
-                  {selectedTab === "callstack" && <CallStack />}
+                  {selectedTab === "callstack" && (
+                    <CallStack token={sessionToken} />
+                  )}
                 </div>
               </div>
             </ResizablePanel>
@@ -407,6 +426,7 @@ export default function Home() {
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}
                 onEvaluate={evaluateExpression}
+                sessionToken={sessionToken}
               />
             </ResizablePanel>
           </ResizablePanelGroup>

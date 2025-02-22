@@ -4,35 +4,12 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { spawn } from "child_process";
 import path from "path";
 import { DAPClient } from "../../lib/dapClient";
+import {
+  createDebugSession,
+  getDebugSession,
+  cleanUpSession,
+} from "../../lib/sessionManager";
 
-// --------------------------------------------------------------------------
-// GLOBALS
-// --------------------------------------------------------------------------
-declare global {
-  let dapClient: DAPClient | null | undefined;
-  let pythonProcess: ReturnType<typeof spawn> | null | undefined;
-  let configurationDoneSent: boolean | undefined;
-  let debugOutputBuffer: string[] | undefined;
-}
-
-if (globalThis.dapClient === undefined) {
-  globalThis.dapClient = null;
-}
-if (globalThis.pythonProcess === undefined) {
-  globalThis.pythonProcess = null;
-}
-if (globalThis.configurationDoneSent === undefined) {
-  globalThis.configurationDoneSent = false;
-}
-if (globalThis.debugOutputBuffer === undefined) {
-  globalThis.debugOutputBuffer = [];
-}
-
-let dapClient: DAPClient | null = globalThis.dapClient;
-let pythonProcess: ReturnType<typeof spawn> | null = globalThis.pythonProcess;
-let configurationDoneSent: boolean = globalThis.configurationDoneSent;
-
-// Adjust target script below as needed.
 const targetScript = path.join(
   process.cwd(),
   "..",
@@ -42,47 +19,48 @@ const targetScript = path.join(
   "a.py",
 );
 
-// --------------------------------------------------------------------------
-// HELPER: Send output to SSE consumers.
-// --------------------------------------------------------------------------
-function sendOutput(data: string) {
-  globalThis.debugOutputBuffer!.push(data);
-  console.log("Buffered output:", data);
+// Simple helper that logs process output for the specified session token.
+function sendOutput(data: string, token: string) {
+  console.log(`[Python stdout][Session:${token}]:`, data);
+}
+
+/**
+ * Reads the token either from ?token=... or from the JSON body { token: "..." }
+ */
+function getTokenFromRequest(req: NextApiRequest): string | undefined {
+  const { token } = req.query;
+  if (typeof token === "string") {
+    return token;
+  }
+  if (req.body && typeof req.body.token === "string") {
+    return req.body.token;
+  }
+  return undefined;
 }
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  // Only allow POST for most actions. "status" may be GET.
   const { action } = req.query;
+
+  // Only "status" can be GET; everything else must be POST.
   if (req.method !== "POST" && action !== "status") {
     res.status(405).json({ error: "Method not allowed" });
     return;
   }
 
   try {
-    // ------------------------------------------------------------------------
-    // ACTION: LAUNCH
-    // ------------------------------------------------------------------------
     if (action === "launch") {
-      // If we already have a running pythonProcess, kill it
-      if (pythonProcess) {
-        pythonProcess.kill();
-        pythonProcess = null;
+      // If the client provided a token in the request, try cleaning up any old session with that token.
+      const existingToken = getTokenFromRequest(req);
+      if (existingToken) {
+        cleanUpSession(existingToken);
       }
-      if (dapClient) {
-        console.log("Closing DAP client");
-        dapClient.close();
-        dapClient = null;
-      }
-      configurationDoneSent = false;
-      globalThis.configurationDoneSent = false;
 
+      // Start debugpy on port 5678
       const debugpyPort = 5678;
-
-      // Start the python script with debugpy
-      pythonProcess = spawn("python", [
+      const pythonProcess = spawn("python", [
         "-u",
         "-m",
         "debugpy",
@@ -93,283 +71,202 @@ export default async function handler(
       ]);
       console.log("Launched Python process with PID:", pythonProcess.pid);
 
-      // Capture stdout for streaming to SSE, if needed.
-      pythonProcess.stdout?.on("data", (data: Buffer) => {
-        sendOutput(data.toString());
-      });
+      // Wait longer for debugpy to bind to the port (2 seconds).
+      // If it's still finishing, increase this to 3 or 5 seconds, or do a retry approach.
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      // Wait a bit for debugpy to start.
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Create new DAPClient and connect.
-      dapClient = new DAPClient();
+      // Create & connect a brand-new DAPClient
+      const dapClient = new DAPClient();
       await dapClient.connect("127.0.0.1", debugpyPort);
       console.log("Connected to DAP server on port", debugpyPort);
-      globalThis.dapClient = dapClient;
-      globalThis.pythonProcess = pythonProcess;
 
-      // Send initialize request
-      const initResp = await dapClient.initialize();
-      console.log("Initialize response:", initResp);
+      // Create a new session. This gives us a token.
+      const session = createDebugSession(dapClient, pythonProcess);
 
-      // Send attach request
+      // Attach stdout logging so we can see Python logs for this session
+      pythonProcess.stdout?.on("data", (data: Buffer) => {
+        sendOutput(data.toString(), session.token);
+      });
+
+      // Initialize & attach
+      await dapClient.initialize();
       await dapClient.attach("127.0.0.1", debugpyPort);
-      console.log("Attach sent and initialized event received");
 
+      // Return JSON with the new token
       res.status(200).json({
         success: true,
-        message:
-          "Debug session launched. The script is running. Breakpoints set before launch are active.",
+        token: session.token,
+        message: "Debug session launched successfully.",
       });
-
-      // ------------------------------------------------------------------------
-      // ACTION: SET BREAKPOINTS
-      // ------------------------------------------------------------------------
-    } else if (action === "setBreakpoints") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
+    } else {
+      // For all other actions, we require a valid session token.
+      const token = getTokenFromRequest(req);
+      if (!token) {
+        res.status(400).json({ error: "Missing token" });
+        return;
       }
-      if (configurationDoneSent) {
-        console.log(
-          "Warning: Program already launched; new breakpoints may not be hit unless paused.",
+      const session = getDebugSession(token);
+      if (!session) {
+        res.status(400).json({ error: "No session found" });
+        return;
+      }
+      const dapClient = session.dapClient;
+
+      if (action === "setBreakpoints") {
+        const { breakpoints } = req.body;
+        if (!Array.isArray(breakpoints)) {
+          res.status(400).json({ error: "Missing breakpoints array" });
+          return;
+        }
+        const bpResp = await dapClient.setBreakpoints(
+          targetScript,
+          breakpoints,
         );
-      }
-      const { breakpoints } = req.body;
-      if (!Array.isArray(breakpoints)) {
-        res
-          .status(400)
-          .json({ error: "Missing or malformed breakpoints array" });
-        return;
-      }
-      console.log("Setting breakpoints for script:", targetScript);
-      const bpResp = await dapClient.setBreakpoints(targetScript, breakpoints);
-      console.log("Breakpoint response:", bpResp);
+        res.status(200).json({ breakpoints: bpResp.body?.breakpoints || [] });
+      } else if (action === "evaluate") {
+        const { expression, threadId } = req.body;
+        if (!expression) {
+          res.status(400).json({ error: "Missing expression in request" });
+          return;
+        }
+        const effThreadId = threadId || 1;
+        const stackResp = await dapClient.stackTrace(effThreadId);
+        let frameId: number | undefined;
+        if (stackResp.body?.stackFrames?.length) {
+          frameId = stackResp.body.stackFrames[0].id;
+        }
+        const evalResp = await dapClient.evaluate(expression, frameId);
+        res.status(200).json({ result: evalResp.body?.result });
+      } else if (action === "continue") {
+        const { threadId } = req.body;
+        const effThreadId = threadId || 1;
+        const contResp = await dapClient.continue(effThreadId);
+        res.status(200).json({ result: contResp.body });
+      } else if (action === "stepOver") {
+        const { threadId } = req.body;
+        const effThreadId = threadId || 1;
+        const stepResp = await dapClient.next(effThreadId);
+        res.status(200).json({ result: stepResp.body });
+      } else if (action === "stepIn") {
+        const { threadId } = req.body;
+        const effThreadId = threadId || 1;
+        const stepInResp = await dapClient.stepIn(effThreadId);
+        res.status(200).json({ result: stepInResp.body });
+      } else if (action === "stepOut") {
+        const { threadId } = req.body;
+        const effThreadId = threadId || 1;
+        const stepOutResp = await dapClient.stepOut(effThreadId);
+        res.status(200).json({ result: stepOutResp.body });
+      } else if (action === "terminate") {
+        const termResp = await dapClient.terminate();
+        cleanUpSession(token);
+        res.status(200).json({ result: termResp.body });
+      } else if (action === "configurationDone") {
+        if (!session.configurationDoneSent) {
+          const confResp = await dapClient.configurationDone();
+          session.configurationDoneSent = true;
+          res.status(200).json({
+            success: true,
+            message: "configurationDone sent; target program is now running.",
+            response: confResp,
+          });
+        } else {
+          res.status(200).json({
+            success: true,
+            message: "configurationDone has already been sent.",
+          });
+        }
+      } else if (action === "stackTrace") {
+        const { threadId } = req.body;
+        const effThreadId = threadId || 1;
+        const stResp = await dapClient.stackTrace(effThreadId, 0, 20);
+        res.status(200).json({ stackFrames: stResp.body?.stackFrames || [] });
+      } else if (action === "status") {
+        // Only GET is allowed for SSE status updates.
+        if (req.method !== "GET") {
+          res.setHeader("Allow", "GET");
+          res.status(405).json({
+            error: "Method not allowed. Use GET for SSE status updates.",
+          });
+          return;
+        }
 
-      res.status(200).json({
-        breakpoints: bpResp.body?.breakpoints || [],
-        message: configurationDoneSent
-          ? "Set breakpoints after program started; might only matter if you pause."
-          : "Breakpoints set – they will take effect once you launch the program.",
-      });
+        // Set up SSE headers
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        if (typeof res.flushHeaders === "function") res.flushHeaders();
 
-      // ------------------------------------------------------------------------
-      // ACTION: EVALUATE
-      // ------------------------------------------------------------------------
-    } else if (action === "evaluate") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
-      }
-      const { expression, threadId } = req.body;
-      if (!expression) {
-        res.status(400).json({ error: "Missing expression in request body" });
-        return;
-      }
-      const effectiveThreadId = threadId || 1;
-      const stackResp = await dapClient.stackTrace(effectiveThreadId);
-      let frameId: number | undefined;
-      if (stackResp.body?.stackFrames?.length) {
-        frameId = stackResp.body.stackFrames[0].id;
-      }
-      const evalResp = await dapClient.evaluate(expression, frameId);
-      res.status(200).json({ result: evalResp.body?.result });
+        // Helper function to send the current status based on the session's DAPClient.
+        const sendStatus = () => {
+          let payload;
+          if (!dapClient) {
+            payload = { status: "inactive" };
+          } else if (dapClient.terminated) {
+            payload = { status: "terminated" };
+          } else if (!dapClient.isPaused) {
+            payload = { status: "running" };
+          } else {
+            const location = dapClient.currentPausedLocation || {};
+            payload = {
+              status: "paused",
+              file: location.file || null,
+              line: location.line || null,
+              threadId: dapClient.currentThreadId || 1,
+            };
+          }
+          console.log(
+            `[SSE ${new Date().toISOString()}] Sending status:`,
+            payload,
+          );
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        };
 
-      // ------------------------------------------------------------------------
-      // ACTION: CONTINUE
-      // ------------------------------------------------------------------------
-    } else if (action === "continue") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
-      }
-      const { threadId } = req.body;
-      const effectiveThreadId = threadId || 1;
-      const contResp = await dapClient.continue(effectiveThreadId);
-      res.status(200).json({ result: contResp.body });
+        // Register event listeners on the session's DAPClient.
+        const eventListener = () => {
+          sendStatus();
+        };
+        if (dapClient) {
+          dapClient.on("stopped", eventListener);
+          dapClient.on("continued", eventListener);
+          dapClient.on("terminated", eventListener);
+          dapClient.on("pausedLocationUpdated", eventListener);
+        }
 
-      // ------------------------------------------------------------------------
-      // ACTION: STEP OVER
-      // ------------------------------------------------------------------------
-    } else if (action === "stepOver") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
-      }
-      const { threadId } = req.body;
-      const effectiveThreadId = threadId || 1;
-      const nextResp = await dapClient.next(effectiveThreadId);
-      res.status(200).json({ result: nextResp.body });
+        // Send an initial status.
+        console.log(
+          `[SSE ${new Date().toISOString()}] Sending initial status.`,
+        );
+        sendStatus();
 
-      // ------------------------------------------------------------------------
-      // ACTION: STEP IN
-      // ------------------------------------------------------------------------
-    } else if (action === "stepIn") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
-      }
-      const { threadId } = req.body;
-      const effectiveThreadId = threadId || 1;
-      const stepInResp = await dapClient.stepIn(effectiveThreadId);
-      res.status(200).json({ result: stepInResp.body });
+        // Send heartbeat periodically to keep the connection alive.
+        const heartbeat = setInterval(() => {
+          console.log(`[SSE ${new Date().toISOString()}] Sending heartbeat.`);
+          res.write(":\n\n");
+        }, 15000);
 
-      // ------------------------------------------------------------------------
-      // ACTION: STEP OUT
-      // ------------------------------------------------------------------------
-    } else if (action === "stepOut") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
-      }
-      const { threadId } = req.body;
-      const effectiveThreadId = threadId || 1;
-      const stepOutResp = await dapClient.stepOut(effectiveThreadId);
-      res.status(200).json({ result: stepOutResp.body });
-
-      // ------------------------------------------------------------------------
-      // ACTION: TERMINATE
-      // ------------------------------------------------------------------------
-    } else if (action === "terminate") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
-      }
-      const termResp = await dapClient.terminate();
-      res.status(200).json({ result: termResp.body });
-
-      // ------------------------------------------------------------------------
-      // ACTION: CONFIGURATION DONE
-      // ------------------------------------------------------------------------
-    } else if (action === "configurationDone") {
-      if (!dapClient) {
-        throw new Error("No DAP session. Please launch first.");
-      }
-      if (!configurationDoneSent) {
-        const confResp = await dapClient.configurationDone();
-        configurationDoneSent = true;
-        console.log("configurationDone response:", confResp);
-        res.status(200).json({
-          success: true,
-          message: "configurationDone sent; target program is now running.",
-          response: confResp,
+        // On client disconnection, remove listeners and clear intervals.
+        req.on("close", () => {
+          console.log(
+            `[SSE ${new Date().toISOString()}] Client disconnected. Cleaning up.`,
+          );
+          clearInterval(heartbeat);
+          if (dapClient) {
+            dapClient.off("stopped", eventListener);
+            dapClient.off("continued", eventListener);
+            dapClient.off("terminated", eventListener);
+            dapClient.off("pausedLocationUpdated", eventListener);
+          }
+          res.end();
         });
       } else {
-        res.status(200).json({
-          success: true,
-          message: "configurationDone has already been sent.",
-        });
+        res.status(400).json({ error: `Unknown action: ${action}` });
       }
-
-      // ------------------------------------------------------------------------
-      // ACTION: STACK TRACE (added to support CallStack component)
-      // ------------------------------------------------------------------------
-    } else if (action === "stackTrace") {
-      if (!dapClient) {
-        res.status(400).json({ error: "No DAP session. Please launch first." });
-        return;
-      }
-      const { threadId } = req.body;
-      const effectiveThreadId = threadId || 1;
-      const stResp = await dapClient.stackTrace(effectiveThreadId, 0, 20);
-      res.status(200).json({ stackFrames: stResp.body?.stackFrames || [] });
-
-      // ------------------------------------------------------------------------
-      // ACTION: STATUS
-      // ------------------------------------------------------------------------
-    } else if (action === "status") {
-      if (req.method !== "GET") {
-        res.setHeader("Allow", "GET");
-        res.status(405).json({
-          error: "Method not allowed. Use GET for SSE status updates.",
-        });
-        return;
-      }
-
-      console.log(
-        `[SSE ${new Date().toISOString()}] Setting up SSE connection for status updates.`,
-      );
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      });
-      if (typeof res.flushHeaders === "function") res.flushHeaders();
-
-      const sendStatus = () => {
-        const client = globalThis.dapClient;
-        let payload;
-        if (!client) {
-          payload = { status: "inactive" };
-        } else if (client.terminated) {
-          payload = { status: "terminated" };
-        } else if (!client.isPaused) {
-          payload = { status: "running" };
-        } else {
-          const location = client.currentPausedLocation || {};
-          payload = {
-            status: "paused",
-            file: location.file || null,
-            line: location.line || null,
-            threadId: client.currentThreadId || 1,
-          };
-        }
-        console.log(
-          `[SSE ${new Date().toISOString()}] Sending status:`,
-          payload,
-        );
-        res.write(`data: ${JSON.stringify(payload)}\n\n`);
-      };
-
-      // Dynamic registration of event listeners on the latest DAPClient.
-      let currentClient = globalThis.dapClient;
-      const eventListener = () => {
-        sendStatus();
-      };
-      const registrationInterval = setInterval(() => {
-        if (globalThis.dapClient && globalThis.dapClient !== currentClient) {
-          if (currentClient) {
-            currentClient.off("stopped", eventListener);
-            currentClient.off("continued", eventListener);
-            currentClient.off("terminated", eventListener);
-            currentClient.off("pausedLocationUpdated", eventListener);
-          }
-          currentClient = globalThis.dapClient;
-          console.log(
-            `[SSE ${new Date().toISOString()}] Registering listeners on new DAPClient instance.`,
-          );
-          currentClient.on("stopped", eventListener);
-          currentClient.on("continued", eventListener);
-          currentClient.on("terminated", eventListener);
-          currentClient.on("pausedLocationUpdated", eventListener);
-          sendStatus();
-        }
-      }, 500);
-
-      console.log(`[SSE ${new Date().toISOString()}] Sending initial status.`);
-      sendStatus();
-
-      const heartbeat = setInterval(() => {
-        console.log(`[SSE ${new Date().toISOString()}] Sending heartbeat.`);
-        res.write(":\n\n");
-      }, 15000);
-
-      req.on("close", () => {
-        console.log(
-          `[SSE ${new Date().toISOString()}] Client disconnected. Cleaning up listeners and heartbeat.`,
-        );
-        clearInterval(heartbeat);
-        clearInterval(registrationInterval);
-        if (currentClient) {
-          currentClient.off("stopped", eventListener);
-          currentClient.off("continued", eventListener);
-          currentClient.off("terminated", eventListener);
-          currentClient.off("pausedLocationUpdated", eventListener);
-        }
-        res.end();
-      });
-
-      // ------------------------------------------------------------------------
-      // ACTION: UNKNOWN
-      // ------------------------------------------------------------------------
-    } else {
-      res.status(400).json({ error: `Unknown action: ${action}` });
     }
-  } catch (error: unknown) {
+  } catch (error) {
     console.error("Error in debug API:", error);
     if (error instanceof Error) {
       res.status(500).json({ error: error.message });

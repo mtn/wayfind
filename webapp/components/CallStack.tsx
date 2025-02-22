@@ -2,18 +2,31 @@
 
 import { useState, useEffect } from "react";
 
-export function CallStack() {
-  const [frames, setFrames] = useState<any[]>([]);
+interface Frame {
+  id: number;
+  name: string;
+  line: number;
+}
+
+interface CallStackProps {
+  token: string;
+}
+
+export function CallStack({ token }: CallStackProps) {
+  const [frames, setFrames] = useState<Frame[]>([]);
   const [loading, setLoading] = useState(false);
 
   async function fetchCallStack() {
     setLoading(true);
     try {
-      const res = await fetch("/api/debug?action=stackTrace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: 1 }),
-      });
+      const res = await fetch(
+        `/api/debug?action=stackTrace&token=${encodeURIComponent(token)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: 1 }),
+        },
+      );
       const data = await res.json();
       setFrames(data.stackFrames || []);
     } catch (e) {
@@ -25,7 +38,7 @@ export function CallStack() {
 
   useEffect(() => {
     fetchCallStack();
-  }, []);
+  }, [token]);
 
   return (
     <div className="p-2">
@@ -42,7 +55,7 @@ export function CallStack() {
         <div>Loading call stack…</div>
       ) : frames.length > 0 ? (
         <ul className="text-sm">
-          {frames.map((frame: any) => (
+          {frames.map((frame: Frame) => (
             <li key={frame.id}>
               {frame.name} at line {frame.line}
             </li>
