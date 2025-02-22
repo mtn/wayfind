@@ -173,22 +173,23 @@ export default function Home() {
 
   // Called when the user presses "Launch Debug Session".
   const handleDebugSessionStart = async () => {
-    // Only skip launching if the session is active (and not terminated)
     if (isDebugSessionActive && debugStatus !== "terminated") {
       addLog("Debug session is already launching or active, skipping");
       return;
     }
-    // If the current status is "terminated", reset the session state
-    if (debugStatus === "terminated") {
-      addLog(
-        "Previous debug session terminated. Resetting session state to launch new session.",
-      );
-      setSessionToken(""); // clear the old session token
-      // setActiveBreakpoints([]);
-      // setQueuedBreakpoints([]);
+
+    // Create a local copy of breakpoints we want to set in the new session
+    let breakpointsToSet: IBreakpoint[] = [];
+    if (debugStatus === "terminated" || !isDebugSessionActive) {
+      // Combine active breakpoints into the queued ones for the new session
+      breakpointsToSet = [...activeBreakpoints]; // Keep a local copy
+
+      // Update state for next render
+      setQueuedBreakpoints(activeBreakpoints);
+      setActiveBreakpoints([]);
+      setSessionToken("");
     }
 
-    // Now launch the new session regardless of whether it was terminated before.
     setIsDebugSessionActive(true);
     addLog("Launching debug session...");
     try {
@@ -196,23 +197,21 @@ export default function Home() {
         method: "POST",
       });
       const launchData = await launchResp.json();
-      // Save the returned session token for subsequent API calls.
       setSessionToken(launchData.token);
       addLog(`Session launched: ${launchData.message}`);
 
-      // If there are any queued breakpoints, set them as active now.
-      if (queuedBreakpoints.length > 0) {
-        setActiveBreakpoints(queuedBreakpoints);
-        addLog(
-          `Setting queued breakpoints: ${JSON.stringify(queuedBreakpoints)}`,
-        );
+      // Use our local copy plus any existing queued breakpoints
+      const allBreakpoints = [...breakpointsToSet, ...queuedBreakpoints];
+
+      if (allBreakpoints.length > 0) {
+        addLog(`Setting breakpoints: ${JSON.stringify(allBreakpoints)}`);
         const bpResp = await fetch(
           "/api/debug?action=setBreakpoints&token=" + launchData.token,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              breakpoints: queuedBreakpoints,
+              breakpoints: allBreakpoints,
               filePath: selectedFile.name,
             }),
           },
@@ -220,17 +219,18 @@ export default function Home() {
         const bpData = await bpResp.json();
         addLog(`Breakpoint response: ${JSON.stringify(bpData)}`);
         if (bpData.breakpoints) {
-          setActiveBreakpoints((current) =>
-            current.map((bp) => {
+          setActiveBreakpoints(
+            allBreakpoints.map((bp) => {
               const verified = bpData.breakpoints.find(
                 (vbp: IBreakpoint) => vbp.line === bp.line,
               )?.verified;
               return { ...bp, verified };
             }),
           );
+          setQueuedBreakpoints([]); // Clear queued breakpoints after setting them
         }
-        setQueuedBreakpoints([]);
       }
+
       const confResp = await fetch(
         "/api/debug?action=configurationDone&token=" + launchData.token,
         {
