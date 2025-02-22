@@ -11,6 +11,7 @@ import WatchExpressions, {
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { OutputViewer } from "@/components/OutputViewer";
 import { CallStack } from "@/components/CallStack";
+import path from "path";
 
 const cPy = {
   name: "c.py",
@@ -306,6 +307,14 @@ export default function Home() {
             setExecutionLine(data.line);
             setDebugStatus("paused");
             forceWatchEvaluation();
+
+            const dfile = path.basename(data.file);
+            if (dfile !== selectedFile.name) {
+              const newFile = files.find((f) => f.name === dfile);
+              if (newFile) {
+                setSelectedFile(newFile);
+              }
+            }
           } else if (data.status === "terminated") {
             setExecutionFile(null);
             setExecutionLine(null);
