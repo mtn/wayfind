@@ -56,7 +56,6 @@ export function MonacoEditorWrapper({
     // NEW: Execution decoration – only if the paused file matches the open file.
     const executionDecorations = [];
     // Here we compare executionFile with the current file. Adjust if needed.
-    // TODO this needs to change
     if (
       executionFile &&
       currentFile &&
