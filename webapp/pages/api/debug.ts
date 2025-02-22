@@ -9,6 +9,7 @@ import {
   getDebugSession,
   cleanUpSession,
 } from "../../lib/sessionManager";
+import net from "net";
 
 const targetScript = path.join(
   process.cwd(),
@@ -22,6 +23,27 @@ const targetScript = path.join(
 // Simple helper that logs process output for the specified session token.
 function sendOutput(data: string, token: string) {
   console.log(`[Python stdout][Session:${token}]:`, data);
+}
+
+function findAvailablePort(startPort: number = 5678): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(startPort, "127.0.0.1", () => {
+      const { port } = server.address() as net.AddressInfo;
+      server.close(() => resolve(port));
+    });
+
+    server.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        // Port is in use, try the next one
+        findAvailablePort(startPort + 1)
+          .then(resolve)
+          .catch(reject);
+      } else {
+        reject(err);
+      }
+    });
+  });
 }
 
 /**
@@ -58,17 +80,21 @@ export default async function handler(
         cleanUpSession(existingToken);
       }
 
-      // Start debugpy on port 5678
-      const debugpyPort = 5678;
-      const pythonProcess = spawn("python", [
-        "-u",
-        "-m",
-        "debugpy",
-        "--listen",
-        `127.0.0.1:${debugpyPort}`,
-        "--wait-for-client",
-        targetScript,
-      ]);
+      // Start debugpy on an available port
+      const debugpyPort = await findAvailablePort();
+      const pythonProcess = spawn(
+        "python",
+        [
+          "-u",
+          "-m",
+          "debugpy",
+          "--listen",
+          `127.0.0.1:${debugpyPort}`,
+          "--wait-for-client",
+          targetScript,
+        ],
+        { stdio: "inherit" },
+      );
       console.log("Launched Python process with PID:", pythonProcess.pid);
 
       // Wait longer for debugpy to bind to the port (2 seconds).
