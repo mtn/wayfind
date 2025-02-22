@@ -10,6 +10,7 @@ import {
   cleanUpSession,
 } from "../../lib/sessionManager";
 import net from "net";
+import { Fullscreen } from "lucide-react";
 
 const targetScript = path.join(
   process.cwd(),
@@ -17,7 +18,7 @@ const targetScript = path.join(
   "dap",
   "test_scripts",
   "test_data",
-  "a.py",
+  "c.py",
 );
 
 // Simple helper that logs process output for the specified session token.
@@ -165,13 +166,26 @@ export default async function handler(
       const dapClient = session.dapClient;
 
       if (action === "setBreakpoints") {
-        const { breakpoints } = req.body;
+        const { breakpoints, filePath } = req.body;
         if (!Array.isArray(breakpoints)) {
           res.status(400).json({ error: "Missing breakpoints array" });
           return;
         }
+        if (!filePath) {
+          res.status(400).json({ error: "Missing filePath" });
+          return;
+        }
+
+        const fullScriptPath = path.join(
+          process.cwd(),
+          "..",
+          "dap",
+          "test_scripts",
+          "test_data",
+          filePath,
+        );
         const bpResp = await dapClient.setBreakpoints(
-          targetScript,
+          fullScriptPath,
           breakpoints,
         );
         res.status(200).json({ breakpoints: bpResp.body?.breakpoints || [] });
