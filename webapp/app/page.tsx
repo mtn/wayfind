@@ -172,15 +172,15 @@ export default function Home() {
   };
 
   // Called when the user presses "Launch Debug Session".
-  const handleDebugSessionStart = async () => {
-    if (isDebugSessionActive && debugStatus !== "terminated") {
+  const handleDebugSessionStart = async (force: boolean = false) => {
+    if (!force && isDebugSessionActive && debugStatus !== "terminated") {
       addLog("Debug session is already launching or active, skipping");
       return;
     }
 
     // Create a local copy of breakpoints we want to set in the new session
     let breakpointsToSet: IBreakpoint[] = [];
-    if (debugStatus === "terminated" || !isDebugSessionActive) {
+    if (force || debugStatus === "terminated" || !isDebugSessionActive) {
       // Combine active breakpoints into the queued ones for the new session
       breakpointsToSet = [...activeBreakpoints]; // Keep a local copy
 

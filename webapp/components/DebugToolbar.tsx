@@ -129,16 +129,28 @@ export function DebugToolbar({
   }
 
   async function handleRestart() {
+    if (!sessionToken) {
+      console.error("Cannot restart: No active debug session");
+      return;
+    }
+
     try {
-      const res = await fetch("/api/debug?action=restart" + tokenQuery, {
+      addLog("Restarting debug session...");
+
+      await fetch("/api/debug?action=terminate&token=" + sessionToken, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+      }).then(async (response) => {
+        // Wait for terminate to complete
+        await response.json();
+        // Now that termination is complete, launch new session
+        return onDebugSessionStart(true);
       });
-      const data = await res.json();
-      console.log("Restart result:", JSON.stringify(data.result));
+
+      addLog("Debug session restarted successfully.");
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error("Error restarting:", errMsg);
+      console.error("Error restarting debug session:", errMsg);
+      addLog("Error restarting debug session: " + errMsg);
     }
   }
 
