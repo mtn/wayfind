@@ -21,12 +21,14 @@ interface DebugToolbarProps {
   onDebugSessionStart: () => void;
   debugStatus?: string;
   sessionToken?: string;
+  addLog: (msg: string) => void;
 }
 
 export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
   sessionToken,
+  addLog,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
 
@@ -58,7 +60,7 @@ export function DebugToolbar({
         body: JSON.stringify({ expression, threadId: 1 }),
       });
       const data = await res.json();
-      console.log("Evaluation result:", data.result);
+      addLog(`Evaluation result: ${data.result}`);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error evaluating:", errMsg);

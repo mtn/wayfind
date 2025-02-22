@@ -333,6 +333,7 @@ export default function Home() {
                     onDebugSessionStart={handleDebugSessionStart}
                     debugStatus={debugStatus}
                     sessionToken={sessionToken}
+                    addLog={addLog}
                   />
                 </div>
                 {/* Tab Header */}
