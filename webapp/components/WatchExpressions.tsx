@@ -104,7 +104,13 @@ const WatchExpressions = forwardRef<
   return (
     <div className="p-2 border-t">
       <h2 className="font-bold mb-2">Watch Expressions</h2>
-      <div className="flex gap-2 mb-2">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleAddExpression();
+        }}
+        className="flex gap-2 mb-2"
+      >
         <input
           type="text"
           value={inputValue}
@@ -118,7 +124,7 @@ const WatchExpressions = forwardRef<
         >
           Add
         </button>
-      </div>
+      </form>
       <ul>
         {expressions.map((expr) => (
           <li key={expr.id} className="mb-1 flex justify-between items-center">
