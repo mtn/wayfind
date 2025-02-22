@@ -25,7 +25,7 @@ function sendOutput(data: string, token: string) {
 }
 
 /**
- * Reads the token either from ?token=... or from the JSON body { token: "..."}
+ * Reads the token either from ?token=... or from the JSON body { token: "..." }
  */
 function getTokenFromRequest(req: NextApiRequest): string | undefined {
   const { token } = req.query;
@@ -182,8 +182,86 @@ export default async function handler(
         const stResp = await dapClient.stackTrace(effThreadId, 0, 20);
         res.status(200).json({ stackFrames: stResp.body?.stackFrames || [] });
       } else if (action === "status") {
-        // SSE for status updates. Not fully implemented, so we can short-circuit here:
-        return res.status(501).json({ error: "Not implemented here" });
+        // Only GET is allowed for SSE status updates.
+        if (req.method !== "GET") {
+          res.setHeader("Allow", "GET");
+          res.status(405).json({
+            error: "Method not allowed. Use GET for SSE status updates.",
+          });
+          return;
+        }
+
+        // Set up SSE headers
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        if (typeof res.flushHeaders === "function") res.flushHeaders();
+
+        // Helper function to send the current status based on the session's DAPClient.
+        const sendStatus = () => {
+          let payload;
+          if (!dapClient) {
+            payload = { status: "inactive" };
+          } else if (dapClient.terminated) {
+            payload = { status: "terminated" };
+          } else if (!dapClient.isPaused) {
+            payload = { status: "running" };
+          } else {
+            const location = dapClient.currentPausedLocation || {};
+            payload = {
+              status: "paused",
+              file: location.file || null,
+              line: location.line || null,
+              threadId: dapClient.currentThreadId || 1,
+            };
+          }
+          console.log(
+            `[SSE ${new Date().toISOString()}] Sending status:`,
+            payload,
+          );
+          res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        };
+
+        // Register event listeners on the session's DAPClient.
+        const eventListener = () => {
+          sendStatus();
+        };
+        if (dapClient) {
+          dapClient.on("stopped", eventListener);
+          dapClient.on("continued", eventListener);
+          dapClient.on("terminated", eventListener);
+          dapClient.on("pausedLocationUpdated", eventListener);
+        }
+
+        // Send an initial status.
+        console.log(
+          `[SSE ${new Date().toISOString()}] Sending initial status.`,
+        );
+        sendStatus();
+
+        // Send heartbeat periodically to keep the connection alive.
+        const heartbeat = setInterval(() => {
+          console.log(`[SSE ${new Date().toISOString()}] Sending heartbeat.`);
+          res.write(":\n\n");
+        }, 15000);
+
+        // On client disconnection, remove listeners and clear intervals.
+        req.on("close", () => {
+          console.log(
+            `[SSE ${new Date().toISOString()}] Client disconnected. Cleaning up.`,
+          );
+          clearInterval(heartbeat);
+          if (dapClient) {
+            dapClient.off("stopped", eventListener);
+            dapClient.off("continued", eventListener);
+            dapClient.off("terminated", eventListener);
+            dapClient.off("pausedLocationUpdated", eventListener);
+          }
+          res.end();
+        });
       } else {
         res.status(400).json({ error: `Unknown action: ${action}` });
       }

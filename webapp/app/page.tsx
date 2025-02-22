@@ -332,6 +332,7 @@ export default function Home() {
                   <DebugToolbar
                     onDebugSessionStart={handleDebugSessionStart}
                     debugStatus={debugStatus}
+                    sessionToken={sessionToken}
                   />
                 </div>
                 {/* Tab Header */}
@@ -425,6 +426,7 @@ export default function Home() {
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}
                 onEvaluate={evaluateExpression}
+                sessionToken={sessionToken}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
