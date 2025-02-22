@@ -390,10 +390,15 @@ export default function Home() {
                 {/* Tab Content – for the Status tab, display only the log messages */}
                 <div className="flex-1 overflow-auto p-2">
                   {selectedTab === "status" && (
-                    <div className="max-h-40 overflow-auto border p-2 text-sm">
-                      {debugLog.map((msg, i) => (
-                        <div key={i}>{msg}</div>
-                      ))}
+                    <div className="h-full overflow-auto border rounded-md bg-background">
+                      <div className="p-2 border-b font-bold">Debug Log</div>
+                      <div className="p-2 space-y-1 font-mono text-xs">
+                        {debugLog.map((msg, i) => (
+                          <div key={i} className="whitespace-pre-wrap">
+                            {msg}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {selectedTab === "watches" && (
