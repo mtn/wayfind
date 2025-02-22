@@ -11,14 +11,18 @@ import {
 } from "../../lib/sessionManager";
 import net from "net";
 
-const targetScript = path.join(
+// Function to resolve script paths
+const TEST_SCRIPTS_DIR = path.join(
   process.cwd(),
   "..",
   "dap",
   "test_scripts",
   "test_data",
-  "a.py",
 );
+
+function resolveScriptPath(filename: string): string {
+  return path.join(TEST_SCRIPTS_DIR, filename);
+}
 
 // Simple helper that logs process output for the specified session token.
 function sendOutput(data: string, token: string) {
@@ -88,6 +92,10 @@ export default async function handler(
         cleanUpSession(existingToken);
       }
 
+      // Get entry script from request or default to c.py
+      const entryScript = req.body?.entryScript || "c.py";
+      const targetScript = resolveScriptPath(entryScript);
+
       // Start debugpy on an available port
       const debugpyPort = await findAvailablePort();
       const pythonProcess = spawn(
@@ -103,6 +111,7 @@ export default async function handler(
         ],
         {
           stdio: ["inherit", "pipe", "pipe"],
+          cwd: TEST_SCRIPTS_DIR,
         },
       );
       console.log("Launched Python process with PID:", pythonProcess.pid);
@@ -165,15 +174,17 @@ export default async function handler(
       const dapClient = session.dapClient;
 
       if (action === "setBreakpoints") {
-        const { breakpoints } = req.body;
+        const { breakpoints, filePath } = req.body;
         if (!Array.isArray(breakpoints)) {
           res.status(400).json({ error: "Missing breakpoints array" });
           return;
         }
-        const bpResp = await dapClient.setBreakpoints(
-          targetScript,
-          breakpoints,
+        console.log(
+          "Setting breakpoints for script:",
+          resolveScriptPath(filePath),
         );
+        const targetFile = resolveScriptPath(filePath);
+        const bpResp = await dapClient.setBreakpoints(targetFile, breakpoints);
         res.status(200).json({ breakpoints: bpResp.body?.breakpoints || [] });
       } else if (action === "evaluate") {
         const { expression, threadId } = req.body;
@@ -263,9 +274,10 @@ export default async function handler(
             payload = { status: "running" };
           } else {
             const location = dapClient.currentPausedLocation || {};
+            // Send just the filename instead of full path
             payload = {
               status: "paused",
-              file: location.file || null,
+              file: location.file ? path.basename(location.file) : null,
               line: location.line || null,
               threadId: dapClient.currentThreadId || 1,
             };

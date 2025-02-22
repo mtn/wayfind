@@ -12,22 +12,20 @@ import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { OutputViewer } from "@/components/OutputViewer";
 import { CallStack } from "@/components/CallStack";
 
-const aPy = {
-  name: "a.py",
-  content: `def add_numbers(a, b):
-    total = a + b
-    return total
+const cPy = {
+  name: "c.py",
+  content: `from d import add_numbers
 
 def compute_fibonacci(n):
-    if n <= 0:
-        return []
-    elif n == 1:
-        return [0]
-    fib_sequence = [0, 1]
-    for i in range(2, n):
-        next_val = fib_sequence[i - 1] + fib_sequence[i - 2]
-        fib_sequence.append(next_val)
-    return fib_sequence
+  if n <= 0:
+      return []
+  elif n == 1:
+      return [0]
+  fib_sequence = [0, 1]
+  for i in range(2, n):
+      next_val = fib_sequence[i - 1] + fib_sequence[i - 2]
+      fib_sequence.append(next_val)
+  return fib_sequence
 
 def main():
     print("Starting test script for debugger step-through...")
@@ -42,15 +40,23 @@ def main():
     print("Test script finished.")
 
 if __name__ == '__main__':
-    main()
-`,
+  main()`,
 };
 
-const initialFiles = [aPy];
+const dPy = {
+  name: "d.py",
+  content: `
+def add_numbers(a, b):
+  total = a + b
+  return total`,
+};
+
+const initialFiles = [cPy, dPy];
 
 export interface IBreakpoint {
   line: number;
   verified?: boolean;
+  file?: string;
 }
 
 export default function Home() {
@@ -60,7 +66,7 @@ export default function Home() {
   // New state variable to store the session token.
   const [sessionToken, setSessionToken] = useState<string>("");
 
-  // Breakpoint handling: separate queued vs. active sets.
+  // Breakpoint handling: separate queued vs. active sets, now with file info.
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
 
@@ -125,26 +131,42 @@ export default function Home() {
   const handleBreakpointChange = (lineNumber: number) => {
     if (!isDebugSessionActiveRef.current) {
       setQueuedBreakpoints((currentQueued) => {
-        const existingBp = currentQueued.find((bp) => bp.line === lineNumber);
+        const existingBp = currentQueued.find(
+          (bp) => bp.line === lineNumber && bp.file === selectedFile.name,
+        );
         if (!existingBp) {
-          return [...currentQueued, { line: lineNumber }];
+          return [
+            ...currentQueued,
+            { line: lineNumber, file: selectedFile.name },
+          ];
         }
-        return currentQueued.filter((bp) => bp.line !== lineNumber);
+        return currentQueued.filter(
+          (bp) => !(bp.line === lineNumber && bp.file === selectedFile.name),
+        );
       });
     } else {
       setActiveBreakpoints((currentActive) => {
-        const existingBp = currentActive.find((bp) => bp.line === lineNumber);
+        const existingBp = currentActive.find(
+          (bp) => bp.line === lineNumber && bp.file === selectedFile.name,
+        );
         let newBreakpoints: IBreakpoint[];
         if (!existingBp) {
-          newBreakpoints = [...currentActive, { line: lineNumber }];
+          newBreakpoints = [
+            ...currentActive,
+            { line: lineNumber, file: selectedFile.name },
+          ];
         } else {
-          newBreakpoints = currentActive.filter((bp) => bp.line !== lineNumber);
+          newBreakpoints = currentActive.filter(
+            (bp) => !(bp.line === lineNumber && bp.file === selectedFile.name),
+          );
         }
         fetch("/api/debug?action=setBreakpoints&token=" + sessionToken, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            breakpoints: newBreakpoints,
+            breakpoints: newBreakpoints.filter(
+              (bp) => bp.file === selectedFile.name,
+            ),
             filePath: selectedFile.name,
           }),
         })
@@ -153,6 +175,7 @@ export default function Home() {
             if (data.breakpoints) {
               setActiveBreakpoints((current) =>
                 current.map((bp) => {
+                  if (bp.file !== selectedFile.name) return bp;
                   const verifiedBp = data.breakpoints.find(
                     (vbp: IBreakpoint) => vbp.line === bp.line,
                   );
@@ -195,6 +218,8 @@ export default function Home() {
     try {
       const launchResp = await fetch("/api/debug?action=launch", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryScript: "c.py" }),
       });
       const launchData = await launchResp.json();
       setSessionToken(launchData.token);
@@ -203,33 +228,47 @@ export default function Home() {
       // Use our local copy plus any existing queued breakpoints
       const allBreakpoints = [...breakpointsToSet, ...queuedBreakpoints];
 
-      if (allBreakpoints.length > 0) {
-        addLog(`Setting breakpoints: ${JSON.stringify(allBreakpoints)}`);
+      // Set breakpoints for each file
+      const uniqueFiles = Array.from(
+        new Set(
+          allBreakpoints.map((bp) => bp.file).filter(Boolean),
+        ) as Set<string>,
+      );
+
+      for (const file of uniqueFiles) {
+        const fileBreakpoints = allBreakpoints.filter((bp) => bp.file === file);
+        if (fileBreakpoints.length === 0) continue;
+
+        addLog(
+          `Setting breakpoints for ${file}: ${JSON.stringify(fileBreakpoints)}`,
+        );
         const bpResp = await fetch(
           "/api/debug?action=setBreakpoints&token=" + launchData.token,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              breakpoints: allBreakpoints,
-              filePath: selectedFile.name,
+              breakpoints: fileBreakpoints,
+              filePath: file,
             }),
           },
         );
         const bpData = await bpResp.json();
-        addLog(`Breakpoint response: ${JSON.stringify(bpData)}`);
+        addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpData)}`);
         if (bpData.breakpoints) {
-          setActiveBreakpoints(
-            allBreakpoints.map((bp) => {
-              const verified = bpData.breakpoints.find(
+          setActiveBreakpoints((current) => [
+            ...current,
+            ...fileBreakpoints.map((bp) => ({
+              ...bp,
+              verified: bpData.breakpoints.find(
                 (vbp: IBreakpoint) => vbp.line === bp.line,
-              )?.verified;
-              return { ...bp, verified };
-            }),
-          );
-          setQueuedBreakpoints([]); // Clear queued breakpoints after setting them
+              )?.verified,
+            })),
+          ]);
         }
       }
+
+      setQueuedBreakpoints([]); // Clear queued breakpoints after setting them
 
       const confResp = await fetch(
         "/api/debug?action=configurationDone&token=" + launchData.token,
@@ -434,10 +473,11 @@ export default function Home() {
                   breakpoints={mergeBreakpoints(
                     queuedBreakpoints,
                     activeBreakpoints,
-                  )}
+                  ).filter((bp) => bp.file === selectedFile.name)}
                   onBreakpointChange={handleBreakpointChange}
                   executionFile={executionFile}
                   executionLine={executionLine}
+                  currentFile={selectedFile.name}
                 />
               </div>
             </ResizablePanel>

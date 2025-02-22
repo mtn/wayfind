@@ -15,6 +15,7 @@ interface EditorProps {
   // NEW props for current execution location:
   executionFile?: string | null;
   executionLine?: number | null;
+  currentFile: string;
 }
 
 export function MonacoEditorWrapper({
@@ -25,6 +26,7 @@ export function MonacoEditorWrapper({
   onBreakpointChange,
   executionFile,
   executionLine,
+  currentFile,
 }: EditorProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<string[]>([]);
@@ -53,8 +55,12 @@ export function MonacoEditorWrapper({
 
     // NEW: Execution decoration – only if the paused file matches the open file.
     const executionDecorations = [];
-    // Here we compare executionFile with the current file. Adjust if needed.
-    if (executionFile && executionFile.endsWith("a.py") && executionLine) {
+    // Here we compare executionFile with the current file
+    if (
+      executionFile &&
+      (executionFile === currentFile || executionFile.endsWith(currentFile)) &&
+      executionLine
+    ) {
       executionDecorations.push({
         range: new monaco.Range(executionLine, 1, executionLine, 1),
         options: {
@@ -69,7 +75,7 @@ export function MonacoEditorWrapper({
     const allDecorations = [...bpDecorations, ...executionDecorations];
 
     decorationsRef.current = editor.deltaDecorations([], allDecorations);
-  }, [breakpoints, executionFile, executionLine]);
+  }, [breakpoints, executionFile, executionLine, currentFile]);
 
   const getBreakpointClassName = (bp: IBreakpoint) => {
     const classes = ["breakpoint"];
