@@ -27,24 +27,14 @@ impl DebugManager {
     pub fn launch_python(
         &self,
         app_handle: tauri::AppHandle,
-        _script_path: &str,
+        script_path: &str,
     ) -> Result<(), String> {
-        // Create a temporary Python script with clear output
-        let script = r#"
-import time
-print("Starting Python program...")
-for i in range(5):
-    print(f"Counter: {i}")
-    time.sleep(1)
-print("Program finished!")
-"#;
+        println!("Launching Python script: {}", script_path);
 
-        // Create Python process with -c to run inline code
         let mut child = Command::new("python")
             .args(&[
                 "-u", // Unbuffered output
-                "-c", // Run command
-                script,
+                script_path,
             ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

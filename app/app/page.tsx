@@ -259,12 +259,20 @@ export default function Home() {
       return;
     }
 
+    if (!selectedFile || selectedFile.type !== "file") {
+      addLog("No file selected to run");
+      return;
+    }
+
     setIsDebugSessionActive(true);
     addLog("Launching debug session...");
 
     try {
+      const scriptPath = fs.getFullPath(selectedFile.path);
+      addLog(`Running script: ${scriptPath}`);
+
       await invoke("launch_program", {
-        scriptPath: fs.getFullPath(selectedFile.path),
+        scriptPath,
       });
 
       addLog("Debug session launched successfully");
