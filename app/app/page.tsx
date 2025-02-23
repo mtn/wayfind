@@ -287,28 +287,37 @@ export default function Home() {
 
       addLog("Debug session launched successfully");
 
-      // Start listening for program output
+      // Start listening for program output and error output
       const unlistenOutput = await listen("program-output", (event) => {
         addLog(event.payload as string);
       });
 
+      const unlistenError = await listen("program-error", (event) => {
+        addLog(`ERROR: ${event.payload as string}`);
+      });
+
       // Listen for debug status changes
       const unlistenStatus = await listen("debug-status", (event) => {
-        const status = event.payload as any;
+        const status = event.payload as {
+          status: string;
+          file?: string;
+          line?: number;
+        };
         setDebugStatus(status.status.toLowerCase());
 
-        if (status.status === "Paused") {
-          setExecutionFile(status.file);
-          setExecutionLine(status.line);
-          forceWatchEvaluation();
-        } else {
+        if (status.status === "Running") {
           setExecutionFile(null);
           setExecutionLine(null);
+        } else if (status.status === "Terminated") {
+          setExecutionFile(null);
+          setExecutionLine(null);
+          setIsDebugSessionActive(false);
         }
       });
 
       return () => {
         unlistenOutput();
+        unlistenError();
         unlistenStatus();
       };
     } catch (error) {

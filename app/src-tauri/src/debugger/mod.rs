@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::Emitter;
@@ -27,17 +27,31 @@ impl DebugManager {
     pub fn launch_python(
         &self,
         app_handle: tauri::AppHandle,
-        script_path: &str,
+        _script_path: &str,
     ) -> Result<(), String> {
+        // Create a temporary Python script with clear output
+        let script = r#"
+import time
+print("Starting Python program...")
+for i in range(5):
+    print(f"Counter: {i}")
+    time.sleep(1)
+print("Program finished!")
+"#;
+
+        // Create Python process with -c to run inline code
         let mut child = Command::new("python")
             .args(&[
                 "-u", // Unbuffered output
-                script_path,
+                "-c", // Run command
+                script,
             ])
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(|e| e.to_string())?;
+
+        println!("Python process started"); // Debug log
 
         // Get stdout handle
         let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
@@ -51,6 +65,7 @@ impl DebugManager {
             let reader = BufReader::new(stdout);
             for line in reader.lines() {
                 if let Ok(line) = line {
+                    println!("Stdout: {}", line); // Debug log
                     let _ = app_handle_clone.emit("program-output", line);
                 }
             }
@@ -62,6 +77,7 @@ impl DebugManager {
             let reader = BufReader::new(stderr);
             for line in reader.lines() {
                 if let Ok(line) = line {
+                    println!("Stderr: {}", line); // Debug log
                     let _ = app_handle_clone.emit("program-error", line);
                 }
             }
@@ -79,22 +95,31 @@ impl DebugManager {
         let app_handle_clone = app_handle.clone();
         let process = self.process.lock().unwrap().as_mut().unwrap().id();
         std::thread::spawn(move || {
-            let mut status = Command::new("ps")
-                .arg("-p")
-                .arg(process.to_string())
-                .stdout(std::process::Stdio::null())
-                .status();
-
-            while status.is_ok() {
+            loop {
                 std::thread::sleep(std::time::Duration::from_millis(100));
-                status = Command::new("ps")
+
+                let status = Command::new("ps")
                     .arg("-p")
                     .arg(process.to_string())
                     .stdout(std::process::Stdio::null())
                     .status();
-            }
 
-            let _ = app_handle_clone.emit("debug-status", DebugStatus::Terminated);
+                match status {
+                    Ok(exit_status) if !exit_status.success() => {
+                        // Process has terminated
+                        println!("Python process terminated"); // Debug log
+                        let _ = app_handle_clone.emit("debug-status", DebugStatus::Terminated);
+                        break;
+                    }
+                    Err(_) => {
+                        // Process not found
+                        println!("Python process not found"); // Debug log
+                        let _ = app_handle_clone.emit("debug-status", DebugStatus::Terminated);
+                        break;
+                    }
+                    _ => {} // Process still running
+                }
+            }
         });
 
         Ok(())

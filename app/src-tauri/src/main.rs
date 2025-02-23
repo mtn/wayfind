@@ -3,8 +3,8 @@
 
 mod debugger;
 
+use debugger::DebugManager;
 use std::fs;
-use debugger::{DebugManager};
 use std::sync::Arc;
 
 #[derive(serde::Serialize)]
@@ -24,7 +24,8 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         let is_dir = path.is_dir();
-        let name = path.file_name()
+        let name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
