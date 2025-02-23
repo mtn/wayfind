@@ -65,6 +65,10 @@ export class InMemoryFileSystem {
     this.workspacePath = path;
   }
 
+  getWorkspacePath(): string | null {
+    return this.workspacePath;
+  }
+
   private findEntry(path: string): FileEntry | null {
     if (path === "/" || path === "") return this.root;
 

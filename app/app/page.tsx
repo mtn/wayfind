@@ -22,55 +22,14 @@ export interface IBreakpoint {
   file?: string;
 }
 
-const cPy: FileEntry = {
-  name: "c.py",
-  content: `from d import add_numbers
-
-def compute_fibonacci(n):
-  if n <= 0:
-      return []
-  elif n == 1:
-      return [0]
-  fib_sequence = [0, 1]
-  for i in range(2, n):
-      next_val = fib_sequence[i - 1] + fib_sequence[i - 2]
-      fib_sequence.append(next_val)
-  return fib_sequence
-
-def main():
-    print("Starting test script for debugger step-through...")
-    a, b = 3, 4
-    print("Adding numbers:", a, "and", b)
-    result = add_numbers(a, b)
-    print("Result of add_numbers:", result)
-    n = 10
-    print("Computing Fibonacci sequence for first", n, "terms")
-    fib_series = compute_fibonacci(n)
-    print("Fibonacci sequence:", fib_series)
-    print("Test script finished.")
-
-if __name__ == '__main__':
-  main()`,
-  path: "/c.py",
-  type: "file",
-};
-
-const dPy: FileEntry = {
-  name: "d.py",
-  content: `
-def add_numbers(a, b):
-  total = a + b
-  return total`,
-  path: "/d.py",
-  type: "file",
-};
-
-const initialFiles = [cPy, dPy];
+const initialFiles: FileEntry[] = [];
 
 export default function Home() {
   const [fs, setFs] = useState(() => new InMemoryFileSystem(initialFiles));
   const [files, setFiles] = useState<FileEntry[]>(initialFiles);
-  const [selectedFile, setSelectedFile] = useState<FileEntry>(files[0]);
+  const [selectedFile, setSelectedFile] = useState<FileEntry | undefined>(
+    undefined,
+  );
 
   const selectedFileRef = useRef(selectedFile);
   useEffect(() => {
@@ -138,6 +97,8 @@ export default function Home() {
   };
 
   const handleFileChange = async (newContent: string) => {
+    if (selectedFile === undefined) return;
+
     await fs.updateFile(selectedFile.path, newContent);
     const entries = await fs.getEntries("/");
     setFiles(entries);
@@ -330,6 +291,7 @@ export default function Home() {
     }
   };
 
+  const hasWorkspace = Boolean(fs.getWorkspacePath());
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
@@ -356,6 +318,7 @@ export default function Home() {
                     debugStatus={debugStatus}
                     sessionToken={sessionToken}
                     addLog={addLog}
+                    hasWorkspace={hasWorkspace}
                   />
                 </div>
                 {/* Tab Header */}
@@ -434,17 +397,17 @@ export default function Home() {
             <ResizablePanel defaultSize={60}>
               <div className="h-full">
                 <MonacoEditorWrapper
-                  content={selectedFile.content || ""}
+                  content={selectedFile?.content || ""}
                   language="python"
                   onChange={handleFileChange}
                   breakpoints={mergeBreakpoints(
                     queuedBreakpoints,
                     activeBreakpoints,
-                  ).filter((bp) => bp.file === selectedFile.name)}
+                  ).filter((bp) => bp.file === selectedFile?.name)}
                   onBreakpointChange={handleBreakpointChange}
                   executionFile={executionFile}
                   executionLine={executionLine}
-                  currentFile={selectedFile.name}
+                  currentFile={selectedFile?.name}
                 />
               </div>
             </ResizablePanel>
