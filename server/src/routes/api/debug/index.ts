@@ -3,12 +3,12 @@
 import { Request, Response } from "express";
 import { spawn } from "child_process";
 import path from "path";
-import { DAPClient } from "../../lib/dapClient";
+import { DAPClient } from "../../../lib/dapClient";
 import {
   createDebugSession,
   getDebugSession,
   cleanUpSession,
-} from "../../lib/sessionManager";
+} from "../../../lib/sessionManager";
 import net from "net";
 
 const targetScript = path.join(
