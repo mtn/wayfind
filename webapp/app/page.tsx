@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -98,6 +99,16 @@ export default function Home() {
   const forceWatchEvaluation = () => {
     if (watchExpressionsRef.current) {
       watchExpressionsRef.current.reevaluate();
+    }
+  };
+
+  // Handler for the greet test button.
+  const handleGreet = async () => {
+    try {
+      const message = await invoke("greet", { name: "World" });
+      console.log("Greet from Rust:", message);
+    } catch (error) {
+      console.error("Error calling greet command:", error);
     }
   };
 
@@ -383,6 +394,14 @@ export default function Home() {
 
   return (
     <div className="h-screen flex flex-col">
+      <header className="p-4 bg-gray-100">
+        <button
+          onClick={handleGreet}
+          className="px-4 py-2 bg-blue-500 text-white rounded shadow"
+        >
+          Greet Test
+        </button>
+      </header>
       <ResizablePanelGroup direction="horizontal">
         {/* Left side: three vertical sections (40:40:20) */}
         <ResizablePanel defaultSize={33} minSize={10}>
