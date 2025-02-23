@@ -69,7 +69,7 @@ def add_numbers(a, b):
 const initialFiles = [cPy, dPy];
 
 export default function Home() {
-  const [fs] = useState(() => new InMemoryFileSystem(initialFiles));
+  const [fs, setFs] = useState(() => new InMemoryFileSystem(initialFiles));
   const [files, setFiles] = useState<FileEntry[]>(initialFiles);
   const [selectedFile, setSelectedFile] = useState<FileEntry>(files[0]);
 
@@ -169,15 +169,22 @@ export default function Home() {
           path: selected,
         });
 
+        // Convert the entries to FileEntry format for InMemoryFileSystem
         const newFiles = entries.map((entry: any) => ({
           name: entry.name,
-          path: entry.path,
-          content: entry.content || "",
+          path: `/${entry.name}`, // Ensure path starts with /
           type: entry.is_dir ? "directory" : "file",
+          content: entry.content || "", // Include content if it exists
         }));
 
+        // Create a new InMemoryFileSystem with the files
+        const newFs = new InMemoryFileSystem(newFiles);
+        setFs(newFs); // You'll need to make fs state mutable with useState
+
+        // Update the files state
         setFiles(newFiles);
 
+        // Select the first file if available
         if (newFiles.length > 0) {
           const firstFile = newFiles.find((f) => f.type === "file");
           if (firstFile) {
