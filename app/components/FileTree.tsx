@@ -1,25 +1,21 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { FileIcon } from "lucide-react"
-
-interface File {
-  name: string
-  content: string
-}
+import { useState } from "react";
+import { FileIcon, FolderIcon } from "lucide-react";
+import { FileEntry } from "@/lib/fileSystem";
 
 interface FileTreeProps {
-  files: File[]
-  onSelectFile: (file: File) => void
+  files: FileEntry[];
+  onSelectFile: (file: FileEntry) => void;
 }
 
 export function FileTree({ files, onSelectFile }: FileTreeProps) {
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
-  const handleSelectFile = (file: File) => {
-    setSelectedFile(file.name)
-    onSelectFile(file)
-  }
+  const handleSelectFile = (file: FileEntry) => {
+    setSelectedFile(file.path);
+    onSelectFile(file);
+  };
 
   return (
     <div className="p-2">
@@ -27,19 +23,22 @@ export function FileTree({ files, onSelectFile }: FileTreeProps) {
       <ul className="space-y-1">
         {files.map((file) => (
           <li
-            key={file.name}
+            key={file.path}
             onClick={() => handleSelectFile(file)}
             className={`
               flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer
-              ${selectedFile === file.name ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}
+              ${selectedFile === file.path ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}
             `}
           >
-            <FileIcon className="h-4 w-4" />
+            {file.type === "directory" ? (
+              <FolderIcon className="h-4 w-4" />
+            ) : (
+              <FileIcon className="h-4 w-4" />
+            )}
             <span className="text-sm">{file.name}</span>
           </li>
         ))}
       </ul>
     </div>
-  )
+  );
 }
-

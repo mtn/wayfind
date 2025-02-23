@@ -13,8 +13,15 @@ import { OutputViewer } from "@/components/OutputViewer";
 import { CallStack } from "@/components/CallStack";
 import { apiUrl } from "@/lib/utils";
 import path from "path";
+import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 
-const cPy = {
+export interface IBreakpoint {
+  line: number;
+  verified?: boolean;
+  file?: string;
+}
+
+const cPy: FileEntry = {
   name: "c.py",
   content: `from d import add_numbers
 
@@ -43,32 +50,39 @@ def main():
 
 if __name__ == '__main__':
   main()`,
+  path: "/c.py",
+  type: "file",
 };
 
-const dPy = {
+const dPy: FileEntry = {
   name: "d.py",
   content: `
 def add_numbers(a, b):
   total = a + b
   return total`,
+  path: "/d.py",
+  type: "file",
 };
 
 const initialFiles = [cPy, dPy];
 
-export interface IBreakpoint {
-  line: number;
-  verified?: boolean;
-  file?: string;
-}
-
 export default function Home() {
-  const [files, setFiles] = useState(initialFiles);
-  const [selectedFile, setSelectedFile] = useState(files[0]);
+  const [fs] = useState(() => new InMemoryFileSystem(initialFiles));
+  const [files, setFiles] = useState<FileEntry[]>(initialFiles);
+  const [selectedFile, setSelectedFile] = useState<FileEntry>(files[0]);
 
   const selectedFileRef = useRef(selectedFile);
   useEffect(() => {
     selectedFileRef.current = selectedFile;
   }, [selectedFile]);
+
+  useEffect(() => {
+    async function loadFiles() {
+      const entries = await fs.getEntries("/");
+      setFiles(entries);
+    }
+    loadFiles();
+  }, [fs]);
 
   // New state variable to store the session token.
   const [sessionToken, setSessionToken] = useState<string>("");
@@ -122,16 +136,23 @@ export default function Home() {
     return Array.from(merged.values());
   }
 
-  const handleFileSelect = (file: { name: string; content: string }) => {
-    setSelectedFile(file);
+  const handleFileSelect = async (file: FileEntry) => {
+    if (file.type === "file") {
+      const freshFile = await fs.getFile(file.path);
+      if (freshFile) {
+        setSelectedFile(freshFile);
+      }
+    }
   };
 
-  const handleFileChange = (newContent: string) => {
-    const updatedFiles = files.map((file) =>
-      file.name === selectedFile.name ? { ...file, content: newContent } : file,
-    );
-    setFiles(updatedFiles);
-    setSelectedFile({ ...selectedFile, content: newContent });
+  const handleFileChange = async (newContent: string) => {
+    await fs.updateFile(selectedFile.path, newContent);
+    const entries = await fs.getEntries("/");
+    setFiles(entries);
+    const updatedFile = await fs.getFile(selectedFile.path);
+    if (updatedFile) {
+      setSelectedFile(updatedFile);
+    }
   };
 
   // Toggle a breakpoint.
@@ -485,7 +506,7 @@ export default function Home() {
             <ResizablePanel defaultSize={60}>
               <div className="h-full">
                 <MonacoEditorWrapper
-                  content={selectedFile.content}
+                  content={selectedFile.content || ""}
                   language="python"
                   onChange={handleFileChange}
                   breakpoints={mergeBreakpoints(
