@@ -1,2 +1,6 @@
-run:
-	npm run dev
+dev:
+	npx tauri dev
+
+build:
+	npx tauri build
+
