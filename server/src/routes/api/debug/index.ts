@@ -90,6 +90,7 @@ export default async function handler(req: Request, res: Response) {
       const pythonProcess = spawn(
         "python",
         [
+          "-Xfrozen_modules=off",
           "-u",
           "-m",
           "debugpy",
