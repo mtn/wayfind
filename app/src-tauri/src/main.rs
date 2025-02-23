@@ -1,7 +1,11 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod debugger;
+
 use std::fs;
+use debugger::{DAPClient, SessionManager};
+use std::sync::Arc;
 
 #[derive(serde::Serialize)]
 struct FileEntry {
@@ -42,10 +46,36 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
     Ok(files)
 }
 
+#[tauri::command]
+async fn launch_debug_session(
+    session_manager: tauri::State<'_, Arc<SessionManager>>,
+) -> Result<String, String> {
+    // Implementation here
+    Ok("token".to_string())
+}
+
+#[tauri::command]
+async fn set_breakpoint(
+    token: String,
+    line: u32,
+    file: String,
+    session_manager: tauri::State<'_, Arc<SessionManager>>,
+) -> Result<(), String> {
+    // Implementation here
+    Ok(())
+}
+
 fn main() {
+    let session_manager = Arc::new(SessionManager::new());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![read_directory])
+        .manage(session_manager)
+        .invoke_handler(tauri::generate_handler![
+            read_directory,
+            launch_debug_session,
+            set_breakpoint,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
