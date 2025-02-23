@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
+import { FileEntry } from "@/lib/fileSystem";
 import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 interface ChatInterfaceProps {
   // An array of files that provide context.
-  files: { name: string; content: string }[];
+  files: FileEntry[];
   // Callback to update breakpoints (as if the user clicked the gutter).
   onSetBreakpoint: (line: number) => void;
   // Callback to launch a debug session.
@@ -65,7 +66,7 @@ export function ChatInterface({
   const attachments = files.map(({ name, content }) => ({
     name,
     contentType: "text/plain",
-    url: `data:text/plain;base64,${btoa(content)}`,
+    url: content ? `data:text/plain;base64,${btoa(content)}` : "",
   }));
 
   const onSubmit = (e: React.FormEvent) => {
