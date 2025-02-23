@@ -301,7 +301,7 @@ export default function Home() {
   useEffect(() => {
     if (isDebugSessionActive && sessionToken) {
       const eventSource = new EventSource(
-        "/api/debug?action=status&token=" + sessionToken,
+        apiUrl("/api/debug?action=status&token=" + sessionToken),
       );
       eventSource.onmessage = (event) => {
         try {

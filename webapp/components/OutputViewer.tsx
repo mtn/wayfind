@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiUrl } from "@/lib/utils";
 
 interface OutputViewerProps {
   sessionToken?: string;
@@ -19,7 +20,7 @@ export function OutputViewer({ sessionToken }: OutputViewerProps) {
         ? `/api/debug/outputs?token=${sessionToken}`
         : "/api/debug/outputs";
 
-      eventSource = new EventSource(eventSourceUrl);
+      eventSource = new EventSource(apiUrl(eventSourceUrl));
 
       eventSource.onopen = (event) => {
         console.log("SSE connection for output streaming opened", event);
