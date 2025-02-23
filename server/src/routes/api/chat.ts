@@ -1,4 +1,4 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+import { Router, Request, Response } from "express";
 // import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
@@ -9,12 +9,11 @@ import {
   evaluateExpression,
 } from "@/tools/dapTools";
 
+const router = Router();
+
 // This endpoint accepts a POST with a JSON body containing "messages"
 // and returns a streaming response from OpenAI.
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+router.post("/", async (req: Request, res: Response) => {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     res.status(405).json({ error: "Method Not Allowed" });
@@ -94,4 +93,6 @@ export default async function handler(
     console.error("Error processing chat request:", error);
     res.status(500).json({ error: error.message || "Internal Server Error" });
   }
-}
+});
+
+export default router;

@@ -1,6 +1,6 @@
 "use strict";
 
-import type { NextApiRequest, NextApiResponse } from "next";
+import { Request, Response } from "express";
 import { spawn } from "child_process";
 import path from "path";
 import { DAPClient } from "../../lib/dapClient";
@@ -10,7 +10,6 @@ import {
   cleanUpSession,
 } from "../../lib/sessionManager";
 import net from "net";
-import { Fullscreen } from "lucide-react";
 
 const targetScript = path.join(
   process.cwd(),
@@ -58,7 +57,7 @@ function findAvailablePort(startPort: number = 5678): Promise<number> {
 /**
  * Reads the token either from ?token=... or from the JSON body { token: "..." }
  */
-function getTokenFromRequest(req: NextApiRequest): string | undefined {
+function getTokenFromRequest(req: Request): string | undefined {
   const { token } = req.query;
   if (typeof token === "string") {
     return token;
@@ -69,10 +68,7 @@ function getTokenFromRequest(req: NextApiRequest): string | undefined {
   return undefined;
 }
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+export default async function handler(req: Request, res: Response) {
   const { action } = req.query;
 
   // Only "status" can be GET; everything else must be POST.

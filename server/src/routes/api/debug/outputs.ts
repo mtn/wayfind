@@ -1,4 +1,4 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+import { Request, Response } from "express";
 
 // Declare types for our global state
 declare global {
@@ -7,16 +7,12 @@ declare global {
   };
 }
 
-export const config = {
-  api: { bodyParser: false },
-};
-
 // Initialize a per-session output buffers container on globalThis.
 if (!globalThis.debugOutputBuffers) {
   globalThis.debugOutputBuffers = {};
 }
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
+export default function handler(req: Request, res: Response) {
   // Expect a token query parameter to identify the session.
   const token =
     typeof req.query.token === "string" ? req.query.token : "default";
