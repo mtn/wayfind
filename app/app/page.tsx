@@ -14,6 +14,8 @@ import { CallStack } from "@/components/CallStack";
 import { apiUrl } from "@/lib/utils";
 import path from "path";
 import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
+import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 
 export interface IBreakpoint {
   line: number;
@@ -152,6 +154,39 @@ export default function Home() {
     const updatedFile = await fs.getFile(selectedFile.path);
     if (updatedFile) {
       setSelectedFile(updatedFile);
+    }
+  };
+
+  const handleOpenWorkspace = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+
+      if (selected) {
+        const entries = await invoke("read_directory", {
+          path: selected,
+        });
+
+        const newFiles = entries.map((entry: any) => ({
+          name: entry.name,
+          path: entry.path,
+          content: entry.content || "",
+          type: entry.is_dir ? "directory" : "file",
+        }));
+
+        setFiles(newFiles);
+
+        if (newFiles.length > 0) {
+          const firstFile = newFiles.find((f) => f.type === "file");
+          if (firstFile) {
+            setSelectedFile(firstFile);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error opening workspace:", error);
     }
   };
 
@@ -415,7 +450,11 @@ export default function Home() {
             {/* Section 1: FileTree */}
             <ResizablePanel defaultSize={40} minSize={10}>
               <div className="h-full border-b">
-                <FileTree files={files} onSelectFile={handleFileSelect} />
+                <FileTree
+                  files={files}
+                  onSelectFile={handleFileSelect}
+                  onOpenWorkspace={handleOpenWorkspace}
+                />
               </div>
             </ResizablePanel>
             {/* Section 2: Debug Panel – Controls always visible with tabs below */}
