@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { apiUrl } from "@/lib/utils";
 import {
   Play,
   ArrowRightCircle,
@@ -48,11 +49,14 @@ export function DebugToolbar({
       return;
     }
     try {
-      const res = await fetch("/api/debug?action=evaluate" + tokenQuery, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expression, threadId: 1 }),
-      });
+      const res = await fetch(
+        apiUrl("/api/debug?action=evaluate" + tokenQuery),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expression, threadId: 1 }),
+        },
+      );
       const data = await res.json();
       addLog(`Evaluation result: ${data.result}`);
     } catch (err: unknown) {
@@ -69,11 +73,14 @@ export function DebugToolbar({
       return;
     }
     try {
-      const res = await fetch("/api/debug?action=continue" + tokenQuery, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: 1 }),
-      });
+      const res = await fetch(
+        apiUrl("/api/debug?action=continue" + tokenQuery),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: 1 }),
+        },
+      );
       const data = await res.json();
       console.log("Continue result:", JSON.stringify(data.result));
     } catch (err: unknown) {
@@ -85,11 +92,14 @@ export function DebugToolbar({
   // New handlers for additional debugging actions.
   async function handleStepOver() {
     try {
-      const res = await fetch("/api/debug?action=stepOver" + tokenQuery, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: 1 }),
-      });
+      const res = await fetch(
+        apiUrl("/api/debug?action=stepOver" + tokenQuery),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: 1 }),
+        },
+      );
       const data = await res.json();
       console.log("Step Over result:", JSON.stringify(data.result));
     } catch (err: unknown) {
@@ -100,7 +110,7 @@ export function DebugToolbar({
 
   async function handleStepIn() {
     try {
-      const res = await fetch("/api/debug?action=stepIn" + tokenQuery, {
+      const res = await fetch(apiUrl("/api/debug?action=stepIn" + tokenQuery), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: 1 }),
@@ -115,11 +125,14 @@ export function DebugToolbar({
 
   async function handleStepOut() {
     try {
-      const res = await fetch("/api/debug?action=stepOut" + tokenQuery, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: 1 }),
-      });
+      const res = await fetch(
+        apiUrl("/api/debug?action=stepOut" + tokenQuery),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: 1 }),
+        },
+      );
       const data = await res.json();
       console.log("Step Out result:", JSON.stringify(data.result));
     } catch (err: unknown) {
@@ -137,7 +150,7 @@ export function DebugToolbar({
     try {
       addLog("Restarting debug session...");
 
-      await fetch("/api/debug?action=terminate&token=" + sessionToken, {
+      await fetch(apiUrl("/api/debug?action=terminate&token=" + sessionToken), {
         method: "POST",
       }).then(async (response) => {
         // Wait for terminate to complete
@@ -156,10 +169,13 @@ export function DebugToolbar({
 
   async function handleTerminate() {
     try {
-      const res = await fetch("/api/debug?action=terminate" + tokenQuery, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      const res = await fetch(
+        apiUrl("/api/debug?action=terminate" + tokenQuery),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
       const data = await res.json();
       console.log("Stop result:", JSON.stringify(data.result));
     } catch (err: unknown) {

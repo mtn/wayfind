@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/utils";
 
 interface Frame {
   id: number;
@@ -20,7 +21,9 @@ export function CallStack({ token }: CallStackProps) {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/debug?action=stackTrace&token=${encodeURIComponent(token)}`,
+        apiUrl(
+          `/api/debug?action=stackTrace&token=${encodeURIComponent(token)}`,
+        ),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

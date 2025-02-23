@@ -11,6 +11,7 @@ import WatchExpressions, {
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { OutputViewer } from "@/components/OutputViewer";
 import { CallStack } from "@/components/CallStack";
+import { apiUrl } from "@/lib/utils";
 import path from "path";
 
 const cPy = {
@@ -166,16 +167,19 @@ export default function Home() {
               (bp) => !(bp.line === lineNumber && bp.file === currentFileName),
             )
           : [...currentActive, { line: lineNumber, file: currentFileName }];
-        fetch("/api/debug?action=setBreakpoints&token=" + sessionToken, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            breakpoints: newBreakpoints.filter(
-              (bp) => bp.file === currentFileName,
-            ),
-            filePath: currentFileName,
-          }),
-        })
+        fetch(
+          apiUrl(`/api/debug?action=setBreakpoints&token=${sessionToken}`),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              breakpoints: newBreakpoints.filter(
+                (bp) => bp.file === currentFileName,
+              ),
+              filePath: currentFileName,
+            }),
+          },
+        )
           .then((response) => response.json())
           .then((data) => {
             if (data.breakpoints) {
@@ -222,7 +226,7 @@ export default function Home() {
     setIsDebugSessionActive(true);
     addLog("Launching debug session...");
     try {
-      const launchResp = await fetch("/api/debug?action=launch", {
+      const launchResp = await fetch(apiUrl(`/api/debug?action=launch`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entryScript: "c.py" }),
@@ -249,7 +253,7 @@ export default function Home() {
           `Setting breakpoints for ${file}: ${JSON.stringify(fileBreakpoints)}`,
         );
         const bpResp = await fetch(
-          "/api/debug?action=setBreakpoints&token=" + launchData.token,
+          apiUrl(`/api/debug?action=setBreakpoints&token=${launchData.token}`),
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -277,7 +281,7 @@ export default function Home() {
       setQueuedBreakpoints([]); // Clear queued breakpoints after setting them
 
       const confResp = await fetch(
-        "/api/debug?action=configurationDone&token=" + launchData.token,
+        apiUrl(`/api/debug?action=configurationDone&token=${launchData.token}`),
         {
           method: "POST",
         },
@@ -349,7 +353,7 @@ export default function Home() {
   const evaluateExpression = async (expression: string) => {
     try {
       const res = await fetch(
-        "/api/debug?action=evaluate&token=" + sessionToken,
+        apiUrl("/api/debug?action=evaluate&token=" + sessionToken),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -366,7 +370,7 @@ export default function Home() {
 
   // onContinue callback for ChatInterface.
   const handleContinue = () => {
-    fetch("/api/debug?action=continue&token=" + sessionToken, {
+    fetch(apiUrl("/api/debug?action=continue&token=" + sessionToken), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ threadId: 1 }),
