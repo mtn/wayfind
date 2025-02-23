@@ -1,0 +1,1 @@
+node server for the tauri app, eventually this should only have the chat endpoint
