@@ -4,7 +4,7 @@
 mod debugger;
 
 use std::fs;
-use debugger::{DAPClient, SessionManager};
+use debugger::{DebugManager};
 use std::sync::Arc;
 
 #[derive(serde::Serialize)]
@@ -47,34 +47,31 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
 }
 
 #[tauri::command]
-async fn launch_debug_session(
-    session_manager: tauri::State<'_, Arc<SessionManager>>,
-) -> Result<String, String> {
-    // Implementation here
-    Ok("token".to_string())
+async fn launch_program(
+    app_handle: tauri::AppHandle,
+    debug_manager: tauri::State<'_, Arc<DebugManager>>,
+    script_path: String,
+) -> Result<(), String> {
+    debug_manager.launch_python(app_handle, &script_path)
 }
 
 #[tauri::command]
-async fn set_breakpoint(
-    token: String,
-    line: u32,
-    file: String,
-    session_manager: tauri::State<'_, Arc<SessionManager>>,
+async fn terminate_program(
+    debug_manager: tauri::State<'_, Arc<DebugManager>>,
 ) -> Result<(), String> {
-    // Implementation here
-    Ok(())
+    debug_manager.terminate()
 }
 
 fn main() {
-    let session_manager = Arc::new(SessionManager::new());
+    let debug_manager = Arc::new(DebugManager::new());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(session_manager)
+        .manage(debug_manager)
         .invoke_handler(tauri::generate_handler![
             read_directory,
-            launch_debug_session,
-            set_breakpoint,
+            launch_program,
+            terminate_program,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
