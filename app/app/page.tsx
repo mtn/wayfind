@@ -11,8 +11,6 @@ import WatchExpressions, {
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { OutputViewer } from "@/components/OutputViewer";
 import { CallStack } from "@/components/CallStack";
-import { apiUrl } from "@/lib/utils";
-import path from "path";
 import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -87,45 +85,35 @@ export default function Home() {
     loadFiles();
   }, [fs]);
 
-  // New state variable to store the session token.
   const [sessionToken, setSessionToken] = useState<string>("");
 
-  // Breakpoint handling: separate queued vs. active sets, now with file info.
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
 
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   const [debugStatus, setDebugStatus] = useState("inactive");
 
-  // Execution status state.
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
-  // A state to accumulate debug log messages, which will display only in the Status tab.
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const addLog = (msg: string) => setDebugLog((prev) => [...prev, msg]);
 
-  // Create a ref for WatchExpressions.
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
 
-  // State to manage the selected tab in the debug panel.
-  // We offer three tabs: Status, Watches, and Call Stack.
   const [selectedTab, setSelectedTab] = useState("status");
 
-  // Function to force evaluation: called by status updates.
   const forceWatchEvaluation = () => {
     if (watchExpressionsRef.current) {
       watchExpressionsRef.current.reevaluate();
     }
   };
 
-  // Helper: merge queued + active so Monaco shows all breakpoints.
   function mergeBreakpoints(
     queued: IBreakpoint[],
     active: IBreakpoint[],
   ): IBreakpoint[] {
     const merged = new Map<string, IBreakpoint>();
-    // Use a unique composite key for each breakpoint: file:line
     for (const bp of queued) {
       if (bp.file) {
         merged.set(`${bp.file}:${bp.line}`, bp);
@@ -177,24 +165,20 @@ export default function Home() {
           path: selected,
         });
 
-        // Convert the entries to FileEntry format for InMemoryFileSystem
         const newFiles = entries.map((entry) => ({
           name: entry.name,
-          path: `/${entry.name}`, // Ensure path starts with /
-          type: entry.is_dir ? "directory" : "file",
-          content: entry.content || "", // Include content if it exists
+          path: `/${entry.name}`,
+          type: entry.is_dir ? ("directory" as const) : ("file" as const),
+          content: entry.content || "",
         }));
 
-        // Create a new InMemoryFileSystem with the files
         const newFs = new InMemoryFileSystem(newFiles);
         setFs(newFs);
 
-        // Update the files state
         setFiles(newFiles);
 
-        // Select the first file if available
         if (newFiles.length > 0) {
-          const firstFile = newFiles.find((f: FileEntry) => f.type === "file");
+          const firstFile = newFiles.find((f) => f.type === "file");
           if (firstFile) {
             setSelectedFile(firstFile);
           }
@@ -205,7 +189,6 @@ export default function Home() {
     }
   };
 
-  // Toggle a breakpoint.
   const isDebugSessionActiveRef = useRef(isDebugSessionActive);
   useEffect(() => {
     isDebugSessionActiveRef.current = isDebugSessionActive;
@@ -246,7 +229,7 @@ export default function Home() {
           ),
           filePath: currentFileName,
         })
-          .then((data: any) => {
+          .then((data: { breakpoints?: IBreakpoint[] }) => {
             if (data.breakpoints) {
               setActiveBreakpoints((current) =>
                 current.map((bp) => {
@@ -269,7 +252,6 @@ export default function Home() {
     }
   };
 
-  // Called when the user presses "Launch Debug Session".
   const handleDebugSessionStart = async (force: boolean = false) => {
     if (!force && isDebugSessionActive && debugStatus !== "terminated") {
       addLog("Debug session is already launching or active, skipping");
@@ -280,23 +262,12 @@ export default function Home() {
     addLog("Launching debug session...");
 
     try {
-      // Launch program using Tauri command
       await invoke("launch_program", {
         scriptPath: selectedFile.path,
       });
 
       addLog("Debug session launched successfully");
 
-      // Start listening for program output and error output
-      const unlistenOutput = await listen("program-output", (event) => {
-        addLog(event.payload as string);
-      });
-
-      const unlistenError = await listen("program-error", (event) => {
-        addLog(`ERROR: ${event.payload as string}`);
-      });
-
-      // Listen for debug status changes
       const unlistenStatus = await listen("debug-status", (event) => {
         const status = event.payload as {
           status: string;
@@ -316,8 +287,6 @@ export default function Home() {
       });
 
       return () => {
-        unlistenOutput();
-        unlistenError();
         unlistenStatus();
       };
     } catch (error) {
@@ -342,7 +311,6 @@ export default function Home() {
     }
   };
 
-  // onContinue callback for ChatInterface.
   const handleContinue = async () => {
     try {
       await invoke("continue_execution");
@@ -446,7 +414,7 @@ export default function Home() {
             {/* Section 3: Outputs */}
             <ResizablePanel defaultSize={20} minSize={10}>
               <div className="h-full">
-                <OutputViewer sessionToken={sessionToken} />
+                <OutputViewer />
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
