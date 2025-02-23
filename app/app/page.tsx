@@ -132,6 +132,7 @@ export default function Home() {
       const freshFile = await fs.getFile(file.path);
       if (freshFile) {
         setSelectedFile(freshFile);
+        console.log("Selected file full path:", fs.getFullPath(freshFile.path));
       }
     }
   };
@@ -172,7 +173,7 @@ export default function Home() {
           content: entry.content || "",
         }));
 
-        const newFs = new InMemoryFileSystem(newFiles);
+        const newFs = new InMemoryFileSystem(newFiles, selected);
         setFs(newFs);
 
         setFiles(newFiles);
@@ -263,7 +264,7 @@ export default function Home() {
 
     try {
       await invoke("launch_program", {
-        scriptPath: selectedFile.path,
+        scriptPath: fs.getFullPath(selectedFile.path),
       });
 
       addLog("Debug session launched successfully");

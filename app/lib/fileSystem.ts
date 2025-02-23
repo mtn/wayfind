@@ -8,9 +8,13 @@ export interface FileEntry {
 
 export class InMemoryFileSystem {
   private root: FileEntry;
+  private workspacePath: string | null = null;
 
-  constructor(initialFiles: Array<FileEntry>) {
-    // Create root directory
+  constructor(
+    initialFiles: Array<FileEntry>,
+    workspacePath: string | null = null,
+  ) {
+    this.workspacePath = workspacePath;
     this.root = {
       name: "/",
       path: "/",
@@ -45,6 +49,20 @@ export class InMemoryFileSystem {
     }
     entry.content = content;
     return true;
+  }
+
+  getFullPath(relativePath: string): string {
+    if (!this.workspacePath) {
+      throw new Error("No workspace path set");
+    }
+    const cleanPath = relativePath.startsWith("/")
+      ? relativePath.slice(1)
+      : relativePath;
+    return `${this.workspacePath}/${cleanPath}`;
+  }
+
+  setWorkspacePath(path: string) {
+    this.workspacePath = path;
   }
 
   private findEntry(path: string): FileEntry | null {
