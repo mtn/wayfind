@@ -139,6 +139,7 @@ async fn launch_debug_session(
         .emit("debug-status", "Running")
         .map_err(|e| format!("Failed to emit status: {}", e))?;
 
+    println!("Debug session launched successfully");
     Ok("Debug session launched successfully".into())
 }
 

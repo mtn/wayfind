@@ -25,7 +25,7 @@ pub struct DAPMessage {
 }
 
 pub struct DAPClient {
-    stream: Arc<Mutex<TcpStream>>,
+    stream: Arc<Mutex<Option<TcpStream>>>,
     next_seq: Arc<Mutex<i32>>,
     event_sender: mpsc::UnboundedSender<DAPMessage>,
 }
@@ -35,7 +35,7 @@ impl DAPClient {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let client = Self {
-            stream: Arc::new(Mutex::new(TcpStream::connect("127.0.0.1:0").unwrap())), // placeholder
+            stream: Arc::new(Mutex::new(None)), // no initial stream
             next_seq: Arc::new(Mutex::new(1)),
             event_sender: tx,
         };
@@ -45,7 +45,7 @@ impl DAPClient {
 
     pub fn connect(&self, host: &str, port: u16) -> std::io::Result<()> {
         let stream = TcpStream::connect((host, port))?;
-        *self.stream.lock().unwrap() = stream;
+        *self.stream.lock().unwrap() = Some(stream);
         Ok(())
     }
 
@@ -61,7 +61,8 @@ impl DAPClient {
         let json = serde_json::to_string(&message)?;
         let header = format!("Content-Length: {}\r\n\r\n", json.len());
 
-        let mut stream = self.stream.lock().unwrap();
+        let mut guard = self.stream.lock().unwrap();
+        let stream = guard.as_mut().expect("Stream is not connected");
         stream.write_all(header.as_bytes())?;
         stream.write_all(json.as_bytes())?;
 
