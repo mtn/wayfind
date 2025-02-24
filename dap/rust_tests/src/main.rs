@@ -11,22 +11,22 @@ async fn main() {
     let debugpy_port = 5678;
 
     // Launch Python with debugpy.
-    let mut child = Command::new("python")
-        .args(&[
-            "-Xfrozen_modules=off",
-            "-m",
-            "debugpy",
-            "--listen",
-            &format!("127.0.0.1:{}", debugpy_port),
-            "--wait-for-client",
-            script_path,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to spawn debugpy process");
+    // let mut child = Command::new("python")
+    //     .args(&[
+    //         "-Xfrozen_modules=off",
+    //         "-m",
+    //         "debugpy",
+    //         "--listen",
+    //         &format!("127.0.0.1:{}", debugpy_port),
+    //         "--wait-for-client",
+    //         script_path,
+    //     ])
+    //     .stdout(Stdio::piped())
+    //     .stderr(Stdio::piped())
+    //     .spawn()
+    //     .expect("Failed to spawn debugpy process");
 
-    println!("Launched Python process with PID: {}", child.id());
+    // println!("Launched Python process with PID: {}", child.id());
 
     // Give debugpy time to start.
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -69,16 +69,6 @@ async fn main() {
         if let Some(term_event) = client.wait_for_event("terminated", 0.5) {
             println!("Received terminated event: {:?}", term_event);
             done = true;
-        } else {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    println!("Process ended with status: {:?}", status);
-                    done = true;
-                }
-                _ => {
-                    std::thread::sleep(std::time::Duration::from_millis(200));
-                }
-            }
         }
     }
 }

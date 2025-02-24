@@ -1,16 +1,67 @@
-use serde::{Deserialize, Serialize};
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
+use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MessageType {
     Request,
     Response,
     Event,
+}
+
+// Manually implement Serialize so that the variants are always lower-case.
+impl Serialize for MessageType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s = match *self {
+            MessageType::Request => "request",
+            MessageType::Response => "response",
+            MessageType::Event => "event",
+        };
+        serializer.serialize_str(s)
+    }
+}
+
+struct MessageTypeVisitor;
+
+impl<'de> Visitor<'de> for MessageTypeVisitor {
+    type Value = MessageType;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a string representing a message type")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<MessageType, E>
+    where
+        E: de::Error,
+    {
+        match value {
+            "request" => Ok(MessageType::Request),
+            "response" => Ok(MessageType::Response),
+            "event" => Ok(MessageType::Event),
+            _ => Err(de::Error::unknown_variant(
+                value,
+                &["request", "response", "event"],
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MessageType {
+    fn deserialize<D>(deserializer: D) -> Result<MessageType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(MessageTypeVisitor)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -18,11 +69,17 @@ pub struct DAPMessage {
     pub seq: i32,
     #[serde(rename = "type")]
     pub message_type: MessageType,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub request_seq: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub success: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub event: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub arguments: Option<serde_json::Value>,
 }
 
@@ -31,8 +88,6 @@ pub struct DAPClient {
     next_seq: Arc<Mutex<i32>>,
     responses: Arc<Mutex<HashMap<i32, DAPMessage>>>,
     events: Arc<Mutex<HashMap<String, Vec<DAPMessage>>>>,
-    // We don’t really need to convert the std::thread::JoinHandle to a Tokio handle.
-    // We'll just store it if needed.
     receiver_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
 }
 
@@ -73,7 +128,6 @@ impl DAPClient {
 
         let guard = self.stream.lock().unwrap();
         if let Some(stream) = guard.as_ref() {
-            // Write synchronously.
             let mut stream = stream;
             stream.write_all(header.as_bytes())?;
             stream.write_all(json.as_bytes())?;
@@ -94,16 +148,13 @@ impl DAPClient {
 
         let handle = thread::spawn(move || {
             loop {
-                // Acquire the stream.
                 let maybe_msg = {
                     let guard = stream.lock().unwrap();
                     if let Some(ref stream) = *guard {
                         let mut reader = BufReader::new(stream);
-                        // Read header.
                         let mut header = String::new();
                         loop {
                             let mut line = String::new();
-                            // read_line is blocking
                             if reader.read_line(&mut line).unwrap_or(0) == 0 {
                                 break;
                             }
@@ -112,7 +163,6 @@ impl DAPClient {
                                 break;
                             }
                         }
-                        // If no header was read, return None.
                         if header.is_empty() {
                             None
                         } else if let Some(content_length) = header
@@ -228,6 +278,7 @@ impl DAPClient {
         }
     }
 
+    // Updated initialize: using "arguments" instead of "body".
     pub async fn initialize(&self) -> Result<DAPMessage, Box<dyn std::error::Error>> {
         let req = DAPMessage {
             seq: -1,
@@ -235,7 +286,8 @@ impl DAPClient {
             command: Some("initialize".to_string()),
             request_seq: None,
             success: None,
-            body: Some(serde_json::json!({
+            // Use arguments as in your Python code.
+            arguments: Some(serde_json::json!({
                 "adapterID": "python",
                 "clientID": "dap_test_client",
                 "clientName": "DAP Test",
@@ -245,12 +297,11 @@ impl DAPClient {
                 "supportsVariableType": true,
                 "supportsEvaluateForHovers": true,
             })),
+            body: None,
             event: None,
-            arguments: None,
         };
 
         let seq = self.send_message(req)?;
-        // Wait briefly
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
         if let Some(response) = self.responses.lock().unwrap().remove(&seq) {
@@ -260,6 +311,7 @@ impl DAPClient {
         }
     }
 
+    // The attach and configuration_done methods can remain unchanged.
     pub async fn attach(
         &self,
         host: &str,
