@@ -125,4 +125,31 @@ impl DAPClient {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         Ok(())
     }
+
+    pub async fn configuration_done(&self) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let conf_seq = *self.next_seq.lock().unwrap();
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("configurationDone".to_string()),
+            request_seq: None,
+            success: None,
+            body: None,
+            event: None,
+            arguments: None,
+        };
+        self.send_message(req)
+            .map_err(|e| format!("Send configurationDone error: {}", e))?;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        Ok(DAPMessage {
+            seq: conf_seq,
+            message_type: MessageType::Response,
+            command: Some("configurationDone".to_string()),
+            request_seq: Some(conf_seq),
+            success: Some(true),
+            body: Some(serde_json::json!({ "configured": true })),
+            event: None,
+            arguments: None,
+        })
+    }
 }

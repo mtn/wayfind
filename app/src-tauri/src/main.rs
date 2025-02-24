@@ -112,7 +112,7 @@ async fn launch_debug_session(
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     // 3. Create a new DAPClient and connect it.
-    let (mut dap_client, _rx) = DAPClient::new();
+    let (dap_client, _rx) = DAPClient::new();
     dap_client
         .connect("127.0.0.1", debugpy_port as u16)
         .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
@@ -127,11 +127,11 @@ async fn launch_debug_session(
         .map_err(|e| format!("Attach failed: {}", e))?;
 
     {
-        let mut client_lock = debug_state.client.lock().unwrap();
+        let mut client_lock = debug_state.client.lock().await;
         *client_lock = Some(dap_client);
     }
     {
-        let mut proc_lock = debug_state.process.lock().unwrap();
+        let mut proc_lock = debug_state.process.lock().await;
         *proc_lock = Some(child);
     }
 
@@ -141,6 +141,22 @@ async fn launch_debug_session(
 
     println!("Debug session launched successfully");
     Ok("Debug session launched successfully".into())
+}
+
+#[tauri::command]
+async fn configuration_done(
+    debug_state: tauri::State<'_, DebugSessionState>,
+) -> Result<String, String> {
+    let client_lock = debug_state.client.lock().await;
+    if client_lock.is_none() {
+        return Err("No active debug session".into());
+    }
+    let dap_client = client_lock.as_ref().unwrap();
+    let _conf_resp = dap_client
+        .configuration_done()
+        .await
+        .map_err(|e| format!("ConfigurationDone failed: {}", e))?;
+    Ok("configurationDone sent; target program is now running.".into())
 }
 
 #[tauri::command]
@@ -162,6 +178,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             read_directory,
             launch_debug_session,
+            configuration_done,
             terminate_program,
         ])
         .run(tauri::generate_context!())

@@ -238,6 +238,17 @@ export default function Home() {
 
       addLog("Debug session launched successfully");
 
+      await invoke("configuration_done")
+        .then((response) => {
+          addLog("configurationDone: " + response);
+        })
+        .catch((error) => {
+          addLog(
+            "Failed configuration_done: " +
+              (error instanceof Error ? error.message : error),
+          );
+        });
+
       const unlistenStatus = await listen("debug-status", (event) => {
         const status = event.payload as {
           status: string;

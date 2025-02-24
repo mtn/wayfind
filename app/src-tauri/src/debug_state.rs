@@ -1,5 +1,5 @@
 use std::process::Child;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 // Import your DAPClient type from your debugger client module:
 use crate::debugger::client::DAPClient;
