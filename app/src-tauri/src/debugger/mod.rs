@@ -1,5 +1,6 @@
 mod async_listener;
-mod util;
+pub mod client;
+pub mod util;
 
 use self::async_listener::async_listen_debugpy;
 use self::util::find_available_port;

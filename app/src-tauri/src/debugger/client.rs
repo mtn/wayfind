@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -64,6 +65,63 @@ impl DAPClient {
         stream.write_all(header.as_bytes())?;
         stream.write_all(json.as_bytes())?;
 
+        Ok(())
+    }
+
+    pub async fn initialize(&self) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let init_seq = *self.next_seq.lock().unwrap();
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("initialize".to_string()),
+            request_seq: None,
+            success: None,
+            body: Some(serde_json::json!({
+                "adapterID": "python",
+                "clientID": "dap_test_client",
+                "clientName": "DAP Test",
+                "linesStartAt1": true,
+                "columnsStartAt1": true,
+                "pathFormat": "path",
+                "supportsVariableType": true,
+                "supportsEvaluateForHovers": true
+            })),
+            event: None,
+            arguments: None,
+        };
+        self.send_message(req)
+            .map_err(|e| format!("Send initialize error: {}", e))?;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        Ok(DAPMessage {
+            seq: init_seq,
+            message_type: MessageType::Response,
+            command: Some("initialize".to_string()),
+            request_seq: Some(init_seq),
+            success: Some(true),
+            body: Some(serde_json::json!({ "capabilities": {} })),
+            event: None,
+            arguments: None,
+        })
+    }
+
+    pub async fn attach(&self, host: &str, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("attach".to_string()),
+            request_seq: None,
+            success: None,
+            body: None,
+            event: None,
+            arguments: Some(serde_json::json!({
+                "host": host,
+                "port": port,
+            })),
+        };
+        self.send_message(req)
+            .map_err(|e| format!("Send attach error: {}", e))?;
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         Ok(())
     }
 }
