@@ -232,7 +232,7 @@ export default function Home() {
       const scriptPath = fs.getFullPath(selectedFile.path);
       addLog(`Running script: ${scriptPath}`);
 
-      await invoke("launch_program", {
+      await invoke("launch_debug_session", {
         scriptPath,
       });
 

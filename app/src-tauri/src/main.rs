@@ -48,12 +48,12 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
 }
 
 #[tauri::command]
-async fn launch_program(
+async fn launch_debug_session(
     app_handle: tauri::AppHandle,
     debug_manager: tauri::State<'_, Arc<DebugManager>>,
     script_path: String,
 ) -> Result<(), String> {
-    debug_manager.launch_python(app_handle, &script_path)
+    debug_manager.launch_debugpy(app_handle, &script_path)
 }
 
 #[tauri::command]
@@ -71,7 +71,7 @@ fn main() {
         .manage(debug_manager)
         .invoke_handler(tauri::generate_handler![
             read_directory,
-            launch_program,
+            launch_debug_session,
             terminate_program,
         ])
         .run(tauri::generate_context!())
