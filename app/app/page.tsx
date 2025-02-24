@@ -303,6 +303,7 @@ export default function Home() {
               <div className="h-full border-b">
                 <FileTree
                   files={files}
+                  selectedFilePath={selectedFile?.path}
                   onSelectFile={handleFileSelect}
                   onOpenWorkspace={handleOpenWorkspace}
                 />
