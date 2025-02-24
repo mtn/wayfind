@@ -8,7 +8,7 @@ use tokio;
 async fn main() {
     println!("Starting DAP test...");
 
-    let script_path = "test_scripts/test_data/a.py";
+    let script_path = "../test_data/a.py";
     let debugpy_port = 5678;
 
     // Launch Python with debugpy

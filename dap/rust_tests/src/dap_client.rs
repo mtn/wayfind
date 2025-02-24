@@ -25,7 +25,7 @@ pub struct DAPMessage {
 }
 
 pub struct DAPClient {
-    stream: Arc<Mutex<TcpStream>>,
+    stream: Arc<Mutex<Option<TcpStream>>>,
     next_seq: Arc<Mutex<i32>>,
     event_sender: mpsc::UnboundedSender<DAPMessage>,
 }
@@ -35,7 +35,7 @@ impl DAPClient {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let client = Self {
-            stream: Arc::new(Mutex::new(TcpStream::connect(("127.0.0.1", 0)).unwrap())),
+            stream: Arc::new(Mutex::new(None)),
             next_seq: Arc::new(Mutex::new(1)),
             event_sender: tx,
         };
@@ -45,7 +45,7 @@ impl DAPClient {
 
     pub fn connect(&self, host: &str, port: u16) -> std::io::Result<()> {
         let stream = TcpStream::connect((host, port))?;
-        *self.stream.lock().unwrap() = stream;
+        *self.stream.lock().unwrap() = Some(stream);
         Ok(())
     }
 
@@ -66,51 +66,65 @@ impl DAPClient {
             seq, header, json
         );
 
-        let mut guard = self.stream.lock().unwrap();
-        guard.write_all(header.as_bytes())?;
-        guard.write_all(json.as_bytes())?;
-
-        Ok(())
+        let guard = self.stream.lock().unwrap();
+        if let Some(stream) = guard.as_ref() {
+            let mut stream = stream;
+            stream.write_all(header.as_bytes())?;
+            stream.write_all(json.as_bytes())?;
+            Ok(())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Not connected to debug adapter",
+            ))
+        }
     }
 
     pub fn read_message(&self) -> std::io::Result<serde_json::Value> {
-        let mut guard = self.stream.lock().unwrap();
-        let mut reader = BufReader::new(&*guard);
+        let guard = self.stream.lock().unwrap();
+        if let Some(stream) = guard.as_ref() {
+            let mut reader = BufReader::new(stream);
 
-        let mut header = String::new();
-        loop {
-            let mut line = String::new();
-            let bytes_read = reader.read_line(&mut line)?;
-            if bytes_read == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "Connection closed while reading header",
-                ));
+            let mut header = String::new();
+            loop {
+                let mut line = String::new();
+                let bytes_read = reader.read_line(&mut line)?;
+                if bytes_read == 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "Connection closed while reading header",
+                    ));
+                }
+                header.push_str(&line);
+                if line == "\r\n" {
+                    break;
+                }
             }
-            header.push_str(&line);
-            if line == "\r\n" {
-                break;
-            }
+
+            let content_length = header
+                .lines()
+                .find(|line| line.to_lowercase().starts_with("content-length:"))
+                .and_then(|line| line[15..].trim().parse::<usize>().ok())
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "No content length found")
+                })?;
+
+            let mut body = vec![0; content_length];
+            reader.read_exact(&mut body)?;
+
+            let message = String::from_utf8(body)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+            println!("<-- Received: {}", message);
+
+            serde_json::from_str(&message)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Not connected to debug adapter",
+            ))
         }
-
-        let content_length = header
-            .lines()
-            .find(|line| line.to_lowercase().starts_with("content-length:"))
-            .and_then(|line| line[15..].trim().parse::<usize>().ok())
-            .ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "No content length found")
-            })?;
-
-        let mut body = vec![0; content_length];
-        reader.read_exact(&mut body)?;
-
-        let message = String::from_utf8(body)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-        println!("<-- Received: {}", message);
-
-        serde_json::from_str(&message)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
     pub async fn initialize(&self) -> Result<DAPMessage, Box<dyn std::error::Error>> {
