@@ -241,8 +241,7 @@ def send_terminate_request(sock):
 
 def main():
     debugpy_port = 5678
-    # Change the target script path as needed. Here we assume a.py is in test_data subfolder.
-    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data", "a.py"))
+    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "test_data", "a.py"))
 
     # Launch the target with debugpy.
     proc, output_buffer, output_thread = launch_target_script_with_debugpy(target_script, debugpy_port)

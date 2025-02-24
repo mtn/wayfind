@@ -278,7 +278,7 @@ def restart_debug_session(proc, sock, debugpy_port, target_script):
 
 def main():
     debugpy_port = 5678
-    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data", "a.py"))
+    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "test_data", "a.py"))
 
     # Initial launch with debugpy
     proc, output_buffer, output_thread = launch_target_script_with_debugpy(target_script, debugpy_port)

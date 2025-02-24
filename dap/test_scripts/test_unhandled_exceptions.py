@@ -228,10 +228,9 @@ def send_continue_request(sock, thread_id):
 
 def main():
     # For this test, the target script should throw an unhandled exception.
-    # It is assumed to be located in test_data/c.py.
     debugpy_port = 5678
     target_script = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "test_data", "b.py")
+        os.path.join(os.path.dirname(__file__), "..", "test_data", "b.py")
     )
 
     # Step 1: Launch the target script with debugpy.

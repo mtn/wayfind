@@ -277,7 +277,7 @@ def main():
     # Step 1: Launch target script with debugpy
     debugpy_port = 5678
     target_script = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "test_data", "a.py")
+        os.path.join(os.path.dirname(__file__), "..", "test_data", "a.py")
     )
     proc, output_buffer, output_thread = launch_target_script_with_debugpy(target_script, debugpy_port)
 
