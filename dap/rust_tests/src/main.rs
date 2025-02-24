@@ -2,7 +2,6 @@ mod dap_client;
 
 use crate::dap_client::DAPClient;
 use std::process::{Command, Stdio};
-use tokio;
 
 #[tokio::main]
 async fn main() {
@@ -11,9 +10,10 @@ async fn main() {
     let script_path = "../test_data/a.py";
     let debugpy_port = 5678;
 
-    // Launch Python with debugpy
-    let child = Command::new("python")
+    // Launch Python with debugpy.
+    let mut child = Command::new("python")
         .args(&[
+            "-Xfrozen_modules=off",
             "-m",
             "debugpy",
             "--listen",
@@ -28,36 +28,57 @@ async fn main() {
 
     println!("Launched Python process with PID: {}", child.id());
 
-    // Give debugpy time to start
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    // Give debugpy time to start.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-    // Create DAP client and connect
-    let (client, _rx) = DAPClient::new();
+    // Create DAP client and connect.
+    let client = DAPClient::new();
     client
         .connect("127.0.0.1", debugpy_port)
         .expect("Failed to connect");
+    client.start_receiver();
 
-    // Initialize
+    // Initialize.
     let init_response = client.initialize().await.expect("Failed to initialize");
     println!("Initialize response: {:?}", init_response);
 
-    // Attach
+    // Attach.
     let attach_response = client
         .attach("127.0.0.1", debugpy_port)
         .await
         .expect("Failed to attach");
     println!("Attach response: {:?}", attach_response);
 
-    // Configuration Done
+    // Wait for the 'initialized' event.
+    if let Some(initialized) = client.wait_for_event("initialized", 10.0) {
+        println!("Received initialized event: {:?}", initialized);
+    } else {
+        println!("Timed out waiting for 'initialized' event");
+    }
+
+    // Configuration Done.
     let conf_response = client
         .configuration_done()
         .await
         .expect("Failed to send configurationDone");
     println!("ConfigurationDone response: {:?}", conf_response);
 
-    // Wait for program to finish
-    let status = child
-        .wait_with_output()
-        .expect("Failed to wait for child process");
-    println!("Program finished with status: {:?}", status);
+    // Wait for program to finish or 'terminated' event.
+    let mut done = false;
+    while !done {
+        if let Some(term_event) = client.wait_for_event("terminated", 0.5) {
+            println!("Received terminated event: {:?}", term_event);
+            done = true;
+        } else {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    println!("Process ended with status: {:?}", status);
+                    done = true;
+                }
+                _ => {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+            }
+        }
+    }
 }
