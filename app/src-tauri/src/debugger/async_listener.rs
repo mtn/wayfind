@@ -48,6 +48,6 @@ pub async fn async_listen_debugpy(addr: &str) -> Result<(), Box<dyn Error>> {
         reader.read_exact(&mut body_buf).await?;
 
         let msg_str = std::str::from_utf8(&body_buf)?;
-        println!("(Async listener) Received message: {}", msg_str);
+        println!("<-- Received: {}", msg_str);
     }
 }

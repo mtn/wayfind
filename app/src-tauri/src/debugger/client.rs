@@ -61,6 +61,11 @@ impl DAPClient {
         let json = serde_json::to_string(&message)?;
         let header = format!("Content-Length: {}\r\n\r\n", json.len());
 
+        println!(
+            "--> Sending message (seq={}):\nHeader: {}\nPayload: {}",
+            seq, header, json
+        );
+
         let mut guard = self.stream.lock().unwrap();
         let stream = guard.as_mut().expect("Stream is not connected");
         stream.write_all(header.as_bytes())?;

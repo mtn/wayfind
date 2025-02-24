@@ -111,6 +111,14 @@ async fn launch_debug_session(
 
     std::thread::sleep(std::time::Duration::from_secs(2));
 
+    // Spawn the asynchronous debugpy listener to stream incoming messages.
+    let addr = format!("127.0.0.1:{}", debugpy_port);
+    tokio::spawn(async move {
+        if let Err(e) = debugger::async_listener::async_listen_debugpy(&addr).await {
+            eprintln!("Error in asynchronous debugpy listener: {}", e);
+        }
+    });
+
     // 3. Create a new DAPClient and connect it.
     let (dap_client, _rx) = DAPClient::new();
     dap_client
@@ -128,11 +136,11 @@ async fn launch_debug_session(
 
     {
         let mut client_lock = debug_state.client.lock().await;
-        *client_lock = Some(dap_client);
+        client_lock.replace(dap_client);
     }
     {
         let mut proc_lock = debug_state.process.lock().await;
-        *proc_lock = Some(child);
+        proc_lock.replace(child);
     }
 
     app_handle

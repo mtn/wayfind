@@ -1,4 +1,4 @@
-mod async_listener;
+pub mod async_listener;
 pub mod client;
 pub mod util;
 
