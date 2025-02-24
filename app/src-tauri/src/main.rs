@@ -1,8 +1,9 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod debug_state;
 mod debugger;
 
+use debug_state::DebugSessionState;
 use debugger::DebugManager;
 use std::fs;
 use std::sync::Arc;
@@ -65,10 +66,12 @@ async fn terminate_program(
 
 fn main() {
     let debug_manager = Arc::new(DebugManager::new());
+    let debug_session_state = DebugSessionState::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(debug_manager)
+        .manage(debug_session_state)
         .invoke_handler(tauri::generate_handler![
             read_directory,
             launch_debug_session,
