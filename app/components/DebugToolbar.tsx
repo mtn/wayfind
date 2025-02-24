@@ -145,9 +145,12 @@ export function DebugToolbar({
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button onClick={handleLaunch} disabled={!hasWorkspace}>
-                  Launch Debug Session
-                </Button>
+                <span className="inline-block">
+                  <Button onClick={handleLaunch} disabled={!hasWorkspace}>
+                    <Play />
+                    Launch Debug Session
+                  </Button>
+                </span>
               </TooltipTrigger>
               {!hasWorkspace && (
                 <TooltipContent>
