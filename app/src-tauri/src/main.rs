@@ -149,7 +149,6 @@ async fn launch_debug_session(
         proc_lock.replace(child);
     }
 
-    println!("Debug status emitted");
     app_handle
         .emit("debug-status", "Running")
         .map_err(|e| format!("Failed to emit status: {}", e))?;

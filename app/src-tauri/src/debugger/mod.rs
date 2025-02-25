@@ -85,7 +85,6 @@ impl DebugManager {
         app_handle
             .emit("debug-status", DebugStatus::Running)
             .map_err(|e| e.to_string())?;
-        println!("Debug status emitted");
 
         // Wait briefly to give debugpy time to start.
         std::thread::sleep(std::time::Duration::from_secs(2));
