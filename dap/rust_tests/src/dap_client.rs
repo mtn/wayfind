@@ -2,11 +2,11 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufReader, ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MessageType {
@@ -85,11 +85,13 @@ pub struct DAPMessage {
 
 pub struct DAPClient {
     writer: Option<Arc<Mutex<TcpStream>>>,
+    // We keep an Arc of the BufReader ensure the receiver thread is the only one that reads.
     reader: Option<Arc<Mutex<BufReader<TcpStream>>>>,
     next_seq: Arc<Mutex<i32>>,
+    // Responses are added by the receiver thread after reading from the socket.
     responses: Arc<Mutex<HashMap<i32, DAPMessage>>>,
     events: Arc<Mutex<HashMap<String, Vec<DAPMessage>>>>,
-    receiver_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
+    receiver_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl DAPClient {
@@ -100,12 +102,13 @@ impl DAPClient {
             next_seq: Arc::new(Mutex::new(1)),
             responses: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(Mutex::new(HashMap::new())),
-            receiver_handle: Arc::new(Mutex::new(None)),
+            receiver_handle: None,
         }
     }
 
     pub fn connect(&mut self, host: &str, port: u16) -> std::io::Result<()> {
         let stream = TcpStream::connect((host, port))?;
+        // Note: We clone the stream so that writer and reader can be used on separate handles.
         self.writer = Some(Arc::new(Mutex::new(stream.try_clone()?)));
         self.reader = Some(Arc::new(Mutex::new(BufReader::new(stream))));
         Ok(())
@@ -123,7 +126,6 @@ impl DAPClient {
         message.seq = seq;
         let json = serde_json::to_string(&message)?;
         let header = format!("Content-Length: {}\r\n\r\n", json.len());
-
         println!(
             "--> Sending message (seq={}):\nHeader: {}\nPayload: {}",
             seq, header, json
@@ -136,131 +138,127 @@ impl DAPClient {
         Ok(seq)
     }
 
-    /// Starts a background receiver thread that continuously reads messages.
-    pub fn start_receiver(&self) {
+    /// Starts a background receiver thread which is the only code that reads the socket.
+    pub fn start_receiver(&mut self) {
+        // Clone the Arcs needed by the receiver thread.
         let reader_arc = Arc::clone(self.reader.as_ref().unwrap());
         let responses_arc = Arc::clone(&self.responses);
         let events_arc = Arc::clone(&self.events);
 
-        let handle = thread::spawn(move || {
+        self.receiver_handle = Some(thread::spawn(move || {
             loop {
-                let maybe_msg = {
+                // Read header until we find the "\r\n\r\n" sequence.
+                let header = {
                     let mut reader = reader_arc.lock().unwrap();
-                    let mut header = String::new();
+                    let mut header_bytes = Vec::new();
+                    // Read one byte at a time until the header terminator is found.
                     loop {
-                        let mut line = String::new();
-                        if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                            break;
-                        }
-                        header.push_str(&line);
-                        if line == "\r\n" {
-                            break;
-                        }
-                    }
-                    if header.is_empty() {
-                        None
-                    } else if let Some(content_length) = header
-                        .lines()
-                        .find(|line| line.to_lowercase().starts_with("content-length:"))
-                        .and_then(|line| line[15..].trim().parse::<usize>().ok())
-                    {
-                        let mut body = vec![0; content_length];
-                        if reader.read_exact(&mut body).is_ok() {
-                            if let Ok(message_str) = String::from_utf8(body) {
-                                println!("<-- Received: {}", message_str);
-                                serde_json::from_str::<DAPMessage>(&message_str).ok()
-                            } else {
-                                None
+                        let mut buf = [0u8; 1];
+                        match reader.read_exact(&mut buf) {
+                            Ok(()) => {
+                                header_bytes.push(buf[0]);
+                                if header_bytes.ends_with(b"\r\n\r\n") {
+                                    break;
+                                }
                             }
-                        } else {
-                            None
+                            Err(ref e) if e.kind() == ErrorKind::UnexpectedEof => {
+                                // Connection closed.
+                                return;
+                            }
+                            Err(e) => {
+                                eprintln!("Error reading header: {}", e);
+                                return;
+                            }
                         }
-                    } else {
-                        None
                     }
+                    String::from_utf8_lossy(&header_bytes).to_string()
                 };
 
-                if let Some(msg) = maybe_msg {
-                    match msg.message_type {
-                        MessageType::Response => {
-                            if let Some(req_seq) = msg.request_seq {
-                                responses_arc.lock().unwrap().insert(req_seq, msg);
-                            }
-                        }
-                        MessageType::Event => {
-                            if let Some(event_name) = &msg.event {
-                                events_arc
-                                    .lock()
-                                    .unwrap()
-                                    .entry(event_name.clone())
-                                    .or_insert_with(Vec::new)
-                                    .push(msg);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                thread::sleep(Duration::from_millis(100));
-            }
-        });
+                // Parse Content-Length from header.
+                let content_length = header
+                    .lines()
+                    .find(|line| line.to_lowercase().starts_with("content-length:"))
+                    .and_then(|line| line[15..].trim().parse::<usize>().ok());
 
-        *self.receiver_handle.lock().unwrap() = Some(handle);
+                if let Some(len) = content_length {
+                    // Now, read the body.
+                    let mut body_bytes = vec![0; len];
+                    {
+                        let mut reader = reader_arc.lock().unwrap();
+                        if let Err(e) = reader.read_exact(&mut body_bytes) {
+                            eprintln!("Error reading body: {}", e);
+                            return;
+                        }
+                    }
+                    let message_str = match String::from_utf8(body_bytes) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            eprintln!("Invalid UTF-8 body: {}", e);
+                            continue;
+                        }
+                    };
+                    println!("<-- Received: {}", message_str);
+                    match serde_json::from_str::<DAPMessage>(&message_str) {
+                        Ok(msg) => match msg.message_type {
+                            MessageType::Response => {
+                                if let Some(req_seq) = msg.request_seq {
+                                    responses_arc.lock().unwrap().insert(req_seq, msg);
+                                }
+                            }
+                            MessageType::Event => {
+                                if let Some(evt) = &msg.event {
+                                    events_arc
+                                        .lock()
+                                        .unwrap()
+                                        .entry(evt.clone())
+                                        .or_insert_with(Vec::new)
+                                        .push(msg);
+                                }
+                            }
+                            _ => {}
+                        },
+                        Err(e) => {
+                            eprintln!("Error parsing message: {}", e);
+                        }
+                    }
+                } else {
+                    eprintln!("No Content-Length found in header: {}", header);
+                }
+                // Don't busy‐spin.
+                thread::sleep(Duration::from_millis(10));
+            }
+        }));
     }
 
-    /// Waits for an event (by its name) to appear for up to `timeout` seconds.
-    pub fn wait_for_event(&self, name: &str, timeout: f64) -> Option<DAPMessage> {
-        let start = std::time::Instant::now();
-        while start.elapsed().as_secs_f64() < timeout {
-            let mut events = self.events.lock().unwrap();
-            if let Some(event_list) = events.get_mut(name) {
-                if !event_list.is_empty() {
-                    return Some(event_list.remove(0));
+    /// Waits for an event (by name) until the timeout (in seconds) expires.
+    pub fn wait_for_event(&self, name: &str, timeout_secs: f64) -> Option<DAPMessage> {
+        let start = Instant::now();
+        while start.elapsed().as_secs_f64() < timeout_secs {
+            if let Some(mut events) = self.events.lock().ok() {
+                if let Some(list) = events.get_mut(name) {
+                    if !list.is_empty() {
+                        return Some(list.remove(0));
+                    }
                 }
             }
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(50));
         }
         None
     }
 
-    fn read_message(&self) -> std::io::Result<DAPMessage> {
-        let mut reader = self.reader.as_ref().unwrap().lock().unwrap();
-        let mut header = String::new();
-        loop {
-            let mut line = String::new();
-            let bytes_read = reader.read_line(&mut line)?;
-            if bytes_read == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "Connection closed while reading header",
-                ));
+    /// Waits asynchronously for a response with the given sequence number.
+    pub async fn wait_for_response(&self, seq: i32, timeout_secs: f64) -> Option<DAPMessage> {
+        let start = Instant::now();
+        while start.elapsed().as_secs_f64() < timeout_secs {
+            if let Some(resp) = self.responses.lock().unwrap().remove(&seq) {
+                return Some(resp);
             }
-            header.push_str(&line);
-            if line == "\r\n" {
-                break;
-            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
-
-        let content_length = header
-            .lines()
-            .find(|line| line.to_lowercase().starts_with("content-length:"))
-            .and_then(|line| line[15..].trim().parse::<usize>().ok())
-            .ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, "No content length found")
-            })?;
-
-        let mut body = vec![0; content_length];
-        reader.read_exact(&mut body)?;
-
-        let message = String::from_utf8(body)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-        println!("<-- Received: {}", message);
-
-        serde_json::from_str(&message)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        None
     }
 
-    // Updated initialize: using "arguments" instead of "body".
+    // Now the DAP commands use only send_message and wait_for_response.
     pub async fn initialize(&self) -> Result<DAPMessage, Box<dyn std::error::Error>> {
         let req = DAPMessage {
             seq: -1,
@@ -283,21 +281,14 @@ impl DAPClient {
         };
 
         let seq = self.send_message(req)?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        if let Some(response) = self.responses.lock().unwrap().remove(&seq) {
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
             Ok(response)
         } else {
-            Ok(self.read_message()?)
+            Err("Timeout waiting for initialize response".into())
         }
     }
 
-    // The attach and configuration_done methods can remain unchanged.
-    pub async fn attach(
-        &self,
-        host: &str,
-        port: u16,
-    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+    pub fn attach(&self, host: &str, port: u16) -> std::io::Result<()> {
         let req = DAPMessage {
             seq: -1,
             message_type: MessageType::Request,
@@ -311,15 +302,9 @@ impl DAPClient {
                 "port": port
             })),
         };
-
-        let seq = self.send_message(req)?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        if let Some(response) = self.responses.lock().unwrap().remove(&seq) {
-            Ok(response)
-        } else {
-            Ok(self.read_message()?)
-        }
+        // Send the message and do not wait for a response.
+        self.send_message(req)?;
+        Ok(())
     }
 
     pub async fn configuration_done(&self) -> Result<DAPMessage, Box<dyn std::error::Error>> {
@@ -333,14 +318,11 @@ impl DAPClient {
             event: None,
             arguments: None,
         };
-
         let seq = self.send_message(req)?;
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-        if let Some(response) = self.responses.lock().unwrap().remove(&seq) {
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
             Ok(response)
         } else {
-            Ok(self.read_message()?)
+            Err("Timeout waiting for configurationDone response".into())
         }
     }
 }
