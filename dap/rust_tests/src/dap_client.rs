@@ -325,4 +325,122 @@ impl DAPClient {
             Err("Timeout waiting for configurationDone response".into())
         }
     }
+
+    pub async fn set_breakpoints(
+        &self,
+        file_path: &str,
+        line_numbers: &[i32],
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("setBreakpoints".to_string()),
+            request_seq: None,
+            success: None,
+            body: None,
+            event: None,
+            arguments: Some(serde_json::json!({
+                "source": {
+                    "path": file_path,
+                    "name": std::path::Path::new(file_path).file_name().unwrap().to_str().unwrap()
+                },
+                "breakpoints": line_numbers.iter().map(|&line| serde_json::json!({ "line": line })).collect::<Vec<_>>(),
+                "sourceModified": false
+            })),
+        };
+
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for setBreakpoints response".into())
+        }
+    }
+
+    pub async fn stack_trace(
+        &self,
+        thread_id: i32,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("stackTrace".to_string()),
+            request_seq: None,
+            success: None,
+            body: None,
+            event: None,
+            arguments: Some(serde_json::json!({
+                "threadId": thread_id,
+                "startFrame": 0,
+                "levels": 1
+            })),
+        };
+
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for stackTrace response".into())
+        }
+    }
+
+    pub async fn evaluate(
+        &self,
+        expression: &str,
+        frame_id: Option<i32>,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let mut args = serde_json::json!({
+            "expression": expression,
+            "context": "hover"
+        });
+
+        if let Some(id) = frame_id {
+            if let serde_json::Value::Object(ref mut map) = args {
+                map.insert("frameId".to_string(), serde_json::json!(id));
+            }
+        }
+
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("evaluate".to_string()),
+            request_seq: None,
+            success: None,
+            body: None,
+            event: None,
+            arguments: Some(args),
+        };
+
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for evaluate response".into())
+        }
+    }
+
+    pub async fn continue_execution(
+        &self,
+        thread_id: i32,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("continue".to_string()),
+            request_seq: None,
+            success: None,
+            body: None,
+            event: None,
+            arguments: Some(serde_json::json!({
+                "threadId": thread_id
+            })),
+        };
+
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for continue response".into())
+        }
+    }
 }
