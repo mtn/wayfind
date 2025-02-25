@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -86,15 +86,21 @@ export default function Home() {
     return Array.from(merged.values());
   }
 
-  const handleFileSelect = async (file: FileEntry) => {
-    if (file.type === "file") {
-      const freshFile = await fs.getFile(file.path);
-      if (freshFile) {
-        setSelectedFile(freshFile);
-        console.log("Selected file full path:", fs.getFullPath(freshFile.path));
+  const handleFileSelect = useCallback(
+    async (file: FileEntry) => {
+      if (file.type === "file") {
+        const freshFile = await fs.getFile(file.path);
+        if (freshFile) {
+          setSelectedFile(freshFile);
+          console.log(
+            "Selected file full path:",
+            fs.getFullPath(freshFile.path),
+          );
+        }
       }
-    }
-  };
+    },
+    [fs],
+  );
 
   const handleFileChange = async (newContent: string) => {
     if (selectedFile === undefined) return;
@@ -173,6 +179,8 @@ export default function Home() {
           setExecutionFile(null);
           setExecutionLine(null);
           setIsDebugSessionActive(false);
+        } else if (status === "paused") {
+          forceWatchEvaluation();
         }
       });
     })();
@@ -183,8 +191,48 @@ export default function Home() {
     };
   }, []);
 
+  // Add new listener for debug-location events
+  useEffect(() => {
+    let unlistenLocation: () => void;
+    (async () => {
+      unlistenLocation = await listen("debug-location", (event) => {
+        const payload = event.payload as {
+          file: string;
+          line: number;
+        };
+
+        console.log("Received debug-location event:", payload);
+
+        // Update execution position
+        setExecutionFile(payload.file);
+        setExecutionLine(payload.line);
+
+        // Extract just the filename from the path
+        const fileName = payload.file.split("/").pop();
+
+        // If the stopped file is different from the current file, try to open it
+        if (fileName && fileName !== selectedFile?.name) {
+          const fileEntry = files.find((f) => f.name === fileName);
+          if (fileEntry) {
+            handleFileSelect(fileEntry);
+          } else {
+            console.warn(`File ${fileName} not found in the workspace`);
+          }
+        }
+      });
+    })();
+
+    return () => {
+      if (unlistenLocation) {
+        unlistenLocation();
+      }
+    };
+  }, [files, selectedFile, handleFileSelect]);
+
   const handleBreakpointChange = (lineNumber: number) => {
-    const currentFileName = selectedFileRef.current.name;
+    const currentFileName = selectedFileRef.current?.name;
+    if (!currentFileName) return;
+
     if (!isDebugSessionActiveRef.current) {
       setQueuedBreakpoints((currentQueued) => {
         const exists = currentQueued.some(
@@ -212,6 +260,7 @@ export default function Home() {
           : [...currentActive, { line: lineNumber, file: currentFileName }];
 
         // Get full file path for the current file
+        if (!selectedFileRef.current) return newBreakpoints;
         const fullFilePath = fs.getFullPath(selectedFileRef.current.path);
 
         invoke("set_breakpoints", {
@@ -221,12 +270,13 @@ export default function Home() {
           ),
           filePath: fullFilePath, // Use full path instead of just the filename
         })
-          .then((data: { breakpoints?: IBreakpoint[] }) => {
-            if (data.breakpoints) {
+          .then((data) => {
+            const typedData = data as { breakpoints?: IBreakpoint[] };
+            if (typedData.breakpoints) {
               setActiveBreakpoints((current) =>
                 current.map((bp) => {
                   if (bp.file !== currentFileName) return bp;
-                  const verifiedBp = data.breakpoints!.find(
+                  const verifiedBp = typedData.breakpoints!.find(
                     (vbp: IBreakpoint) => vbp.line === bp.line,
                   );
                   return verifiedBp
@@ -306,7 +356,9 @@ export default function Home() {
         addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpResp)}`);
         if (bpResp.breakpoints) {
           setActiveBreakpoints((current) =>
-            current.filter((bp) => bp.file !== file).concat(bpResp.breakpoints),
+            current
+              .filter((bp) => bp.file !== file)
+              .concat(bpResp.breakpoints || []),
           );
         }
       }

@@ -119,14 +119,17 @@ impl DAPClient {
         let responses_arc = Arc::clone(&self.responses);
         let events_arc = Arc::clone(&self.events);
         let event_sender = self.event_sender.clone();
+        let writer_arc = Arc::clone(self.writer.as_ref().expect("Writer not set"));
+        let next_seq_arc = Arc::clone(&self.next_seq);
         // Clone the app_handle so it can be moved into the thread.
         let app_handle = self.app_handle.clone();
 
         self.receiver_handle = Some(thread::spawn(move || loop {
-            // Read header until we encounter "\r\n\r\n".
+            // Read header until we find the "\r\n\r\n" sequence.
             let header = {
                 let mut reader = reader_arc.lock().unwrap();
                 let mut header_bytes = Vec::new();
+                // Read one byte at a time until the header terminator is found.
                 loop {
                     let mut buf = [0u8; 1];
                     match reader.read_exact(&mut buf) {
@@ -149,14 +152,14 @@ impl DAPClient {
                 String::from_utf8_lossy(&header_bytes).to_string()
             };
 
-            // Extract the content length from the header.
+            // Parse Content-Length from header.
             let content_length = header
                 .lines()
                 .find(|line| line.to_lowercase().starts_with("content-length:"))
                 .and_then(|line| line[15..].trim().parse::<usize>().ok());
 
             if let Some(len) = content_length {
-                // Read the JSON body.
+                // Now, read the body.
                 let mut body_bytes = vec![0; len];
                 {
                     let mut reader = reader_arc.lock().unwrap();
@@ -174,29 +177,133 @@ impl DAPClient {
                 };
 
                 println!("<-- Received: {}", message_str);
+
                 if let Ok(msg) = serde_json::from_str::<DAPMessage>(&message_str) {
-                    // If the message is an event and its name is "terminated",
-                    // immediately emit the terminated status via the app_handle.
+                    // Handle events that require special processing
                     if msg.message_type == MessageType::Event {
                         if let Some(ref evt) = msg.event {
                             if evt == "terminated" {
-                                println!("Processing 'terminated' event. terminated set to true");
+                                println!("Processing 'terminated' event");
                                 let _ = app_handle.emit(
                                     "debug-status",
                                     serde_json::json!({"status": "Terminated"}),
                                 );
+                            } else if evt == "stopped" {
+                                // Handle the stopped event - extract file and line information
+                                if let Some(ref body) = msg.body {
+                                    println!("Processing 'stopped' event: {:?}", body);
+
+                                    // First emit the stopped status
+                                    let _ = app_handle.emit(
+                                        "debug-status",
+                                        serde_json::json!({"status": "Paused"}),
+                                    );
+
+                                    // Get the thread ID from the stopped event
+                                    if let Some(thread_id) =
+                                        body.get("threadId").and_then(|v| v.as_i64())
+                                    {
+                                        // Get the next sequence number for our request
+                                        let seq = {
+                                            let mut seq_lock = next_seq_arc.lock().unwrap();
+                                            let current = *seq_lock;
+                                            *seq_lock += 1;
+                                            current
+                                        };
+
+                                        // Create a stack trace request
+                                        let stack_req = DAPMessage {
+                                            seq,
+                                            message_type: MessageType::Request,
+                                            command: Some("stackTrace".to_string()),
+                                            request_seq: None,
+                                            success: None,
+                                            arguments: Some(serde_json::json!({
+                                                "threadId": thread_id,
+                                                "startFrame": 0,
+                                                "levels": 1
+                                            })),
+                                            body: None,
+                                            event: None,
+                                        };
+
+                                        // Send the stack trace request
+                                        let json = serde_json::to_string(&stack_req).unwrap();
+                                        let header =
+                                            format!("Content-Length: {}\r\n\r\n", json.len());
+
+                                        {
+                                            let mut writer = writer_arc.lock().unwrap();
+                                            let _ = writer.write_all(header.as_bytes());
+                                            let _ = writer.write_all(json.as_bytes());
+                                            let _ = writer.flush();
+                                        }
+
+                                        // Now wait for the response (with timeout)
+                                        let start = Instant::now();
+                                        let timeout_secs = 1.0; // 1 second timeout
+
+                                        while start.elapsed().as_secs_f64() < timeout_secs {
+                                            // Check if we got a response to our stack trace request
+                                            let mut stack_response = None;
+                                            {
+                                                let mut responses = responses_arc.lock().unwrap();
+                                                stack_response = responses.remove(&seq);
+                                            }
+
+                                            if let Some(stack_resp) = stack_response {
+                                                if let Some(stack_body) = stack_resp.body {
+                                                    if let Some(frames) = stack_body
+                                                        .get("stackFrames")
+                                                        .and_then(|sf| sf.as_array())
+                                                    {
+                                                        if let Some(frame) = frames.first() {
+                                                            // Extract source file and line
+                                                            let source = frame.get("source");
+                                                            let line = frame
+                                                                .get("line")
+                                                                .and_then(|l| l.as_i64());
+
+                                                            if let (Some(source), Some(line)) =
+                                                                (source, line)
+                                                            {
+                                                                let file_path = source
+                                                                    .get("path")
+                                                                    .and_then(|p| p.as_str());
+
+                                                                if let Some(file_path) = file_path {
+                                                                    // Emit the debug location event with file and line info
+                                                                    let _ = app_handle.emit(
+                                                                        "debug-location",
+                                                                        serde_json::json!({
+                                                                            "file": file_path,
+                                                                            "line": line
+                                                                        }),
+                                                                    );
+                                                                    println!("Emitted debug-location event: file={}, line={}",
+                                                                        file_path, line);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                break;
+                                            }
+                                            thread::sleep(Duration::from_millis(50));
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
 
-                    // For responses, store them keyed by their request_seq.
+                    // Handle responses and events as before
                     match msg.message_type {
                         MessageType::Response => {
                             if let Some(req_seq) = msg.request_seq {
                                 responses_arc.lock().unwrap().insert(req_seq, msg.clone());
                             }
                         }
-                        // For events, store them keyed by the event name.
                         MessageType::Event => {
                             if let Some(ref evt) = msg.event {
                                 events_arc
@@ -209,7 +316,8 @@ impl DAPClient {
                         }
                         _ => {}
                     }
-                    // Optionally send the message out through the channel.
+
+                    // Send the message to any external subscribers
                     let _ = event_sender.send(msg);
                 } else {
                     eprintln!("Error parsing message: {}", message_str);
@@ -217,6 +325,8 @@ impl DAPClient {
             } else {
                 eprintln!("No Content-Length found in header: {}", header);
             }
+
+            // Don't busy‐spin.
             thread::sleep(Duration::from_millis(10));
         }));
     }
@@ -235,6 +345,7 @@ impl DAPClient {
     }
 
     // wait_for_event: polls for an event by its name until it arrives or the timeout expires.
+    #[allow(dead_code)]
     pub fn wait_for_event(&self, name: &str, timeout_secs: f64) -> Option<DAPMessage> {
         let start = Instant::now();
         while start.elapsed().as_secs_f64() < timeout_secs {

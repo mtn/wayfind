@@ -60,14 +60,15 @@ async fn launch_debug_session(
     script_path: String,
     debug_state: tauri::State<'_, DebugSessionState>,
 ) -> Result<String, String> {
-    // 1. Find an available port to use for debugpy (starting at 5678)
+    // 1. Find an available port to use for debugpy (starting at 5679)
     let debugpy_port = crate::debugger::util::find_available_port(5678)
         .map_err(|e| format!("Could not find available port: {}", e))?;
 
     println!("Using port {} for debugpy", debugpy_port);
 
     // 2. Spawn the Python process running debugpy.
-    let mut child = Command::new("python")
+    // TODO need to not hardcode this :)
+    let mut child = Command::new("/Users/mtn/.pyenv/versions/dbg/bin/python")
         .args(&[
             "-Xfrozen_modules=off",
             "-u",

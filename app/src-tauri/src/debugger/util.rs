@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, TcpListener};
+use std::net::TcpListener;
 
 /// Find a free (available) TCP port starting at `start_port`.
 pub fn find_available_port(start_port: u16) -> std::io::Result<u16> {
