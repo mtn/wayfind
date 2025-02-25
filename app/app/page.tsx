@@ -211,12 +211,15 @@ export default function Home() {
             )
           : [...currentActive, { line: lineNumber, file: currentFileName }];
 
+        // Get full file path for the current file
+        const fullFilePath = fs.getFullPath(selectedFileRef.current.path);
+
         invoke("set_breakpoints", {
           token: sessionToken,
           breakpoints: newBreakpoints.filter(
             (bp) => bp.file === currentFileName,
           ),
-          filePath: currentFileName,
+          filePath: fullFilePath, // Use full path instead of just the filename
         })
           .then((data: { breakpoints?: IBreakpoint[] }) => {
             if (data.breakpoints) {
@@ -265,17 +268,6 @@ export default function Home() {
 
       addLog("Debug session launched successfully");
 
-      await invoke("configuration_done")
-        .then((response) => {
-          addLog("configurationDone: " + response);
-        })
-        .catch((error) => {
-          addLog(
-            "Failed configuration_done: " +
-              (error instanceof Error ? error.message : error),
-          );
-        });
-
       // Merge queued and active breakpoints and set them for the new session.
       const allBreakpoints = mergeBreakpoints(
         queuedBreakpoints,
@@ -288,15 +280,27 @@ export default function Home() {
       );
       for (const file of uniqueFiles) {
         const fileBreakpoints = allBreakpoints.filter((bp) => bp.file === file);
+
+        // Find the FileEntry with this name to get its path
+        const fileEntry = files.find((f) => f.name === file);
+        if (!fileEntry) {
+          addLog(`Could not find file entry for ${file}, skipping breakpoints`);
+          continue;
+        }
+
+        // Get the full filesystem path
+        const fullFilePath = fs.getFullPath(fileEntry.path);
+
         addLog(
-          `Setting breakpoints for ${file}: ${JSON.stringify(fileBreakpoints)}`,
+          `Setting breakpoints for ${file} (path: ${fullFilePath}): ${JSON.stringify(fileBreakpoints)}`,
         );
+
         const bpResp = await invoke<{ breakpoints?: IBreakpoint[] }>(
           "set_breakpoints",
           {
             token: sessionToken,
             breakpoints: fileBreakpoints,
-            filePath: file,
+            filePath: fullFilePath, // Use full path instead of just the file name
           },
         );
         addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpResp)}`);
@@ -306,6 +310,19 @@ export default function Home() {
           );
         }
       }
+
+      // Only now, after setting all breakpoints, call configuration_done
+      await invoke("configuration_done")
+        .then((response) => {
+          addLog("configurationDone: " + response);
+        })
+        .catch((error) => {
+          addLog(
+            "Failed configuration_done: " +
+              (error instanceof Error ? error.message : error),
+          );
+        });
+
       // The debug-status listener is now set up early using useEffect.
     } catch (error) {
       addLog(

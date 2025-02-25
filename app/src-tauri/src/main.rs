@@ -145,7 +145,10 @@ async fn launch_debug_session(
     }
 
     app_handle
-        .emit("debug-status", serde_json::json!({"status": "Running"}))
+        .emit(
+            "debug-status",
+            serde_json::json!({"status": "Initializing"}),
+        )
         .map_err(|e| e.to_string())?;
 
     println!("Debug session launched successfully");
@@ -154,7 +157,7 @@ async fn launch_debug_session(
 
 #[tauri::command]
 async fn set_breakpoints(
-    token: String,
+    _token: String,
     breakpoints: Vec<BreakpointInput>,
     file_path: String,
     debug_state: tauri::State<'_, DebugSessionState>,
@@ -186,6 +189,13 @@ async fn configuration_done(
         .configuration_done()
         .await
         .map_err(|e| format!("ConfigurationDone failed: {}", e))?;
+
+    // Update status to Running after configurationDone is sent
+    dap_client
+        .app_handle
+        .emit("debug-status", serde_json::json!({"status": "Running"}))
+        .map_err(|e| format!("Failed to emit status update: {}", e))?;
+
     Ok("configurationDone sent; target program is now running.".into())
 }
 
