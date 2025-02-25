@@ -32,7 +32,7 @@ async fn main() {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // Create DAP client and connect.
-    let client = DAPClient::new();
+    let mut client = DAPClient::new();
     client
         .connect("127.0.0.1", debugpy_port)
         .expect("Failed to connect");

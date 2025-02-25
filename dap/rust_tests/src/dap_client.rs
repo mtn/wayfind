@@ -84,7 +84,8 @@ pub struct DAPMessage {
 }
 
 pub struct DAPClient {
-    stream: Arc<Mutex<Option<TcpStream>>>,
+    writer: Option<Arc<Mutex<TcpStream>>>,
+    reader: Option<Arc<Mutex<BufReader<TcpStream>>>>,
     next_seq: Arc<Mutex<i32>>,
     responses: Arc<Mutex<HashMap<i32, DAPMessage>>>,
     events: Arc<Mutex<HashMap<String, Vec<DAPMessage>>>>,
@@ -94,7 +95,8 @@ pub struct DAPClient {
 impl DAPClient {
     pub fn new() -> Self {
         Self {
-            stream: Arc::new(Mutex::new(None)),
+            writer: None,
+            reader: None,
             next_seq: Arc::new(Mutex::new(1)),
             responses: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(Mutex::new(HashMap::new())),
@@ -102,18 +104,19 @@ impl DAPClient {
         }
     }
 
-    pub fn connect(&self, host: &str, port: u16) -> std::io::Result<()> {
+    pub fn connect(&mut self, host: &str, port: u16) -> std::io::Result<()> {
         let stream = TcpStream::connect((host, port))?;
-        *self.stream.lock().unwrap() = Some(stream);
+        self.writer = Some(Arc::new(Mutex::new(stream.try_clone()?)));
+        self.reader = Some(Arc::new(Mutex::new(BufReader::new(stream))));
         Ok(())
     }
 
     /// Sends a DAP message. Returns the assigned sequence number.
     pub fn send_message(&self, mut message: DAPMessage) -> std::io::Result<i32> {
         let seq = {
-            let mut seq = self.next_seq.lock().unwrap();
-            let current = *seq;
-            *seq += 1;
+            let mut seq_lock = self.next_seq.lock().unwrap();
+            let current = *seq_lock;
+            *seq_lock += 1;
             current
         };
 
@@ -126,58 +129,46 @@ impl DAPClient {
             seq, header, json
         );
 
-        let guard = self.stream.lock().unwrap();
-        if let Some(stream) = guard.as_ref() {
-            let mut stream = stream;
-            stream.write_all(header.as_bytes())?;
-            stream.write_all(json.as_bytes())?;
-            Ok(seq)
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected to debug adapter",
-            ))
-        }
+        let mut writer = self.writer.as_ref().unwrap().lock().unwrap();
+        writer.write_all(header.as_bytes())?;
+        writer.write_all(json.as_bytes())?;
+        writer.flush()?;
+        Ok(seq)
     }
 
     /// Starts a background receiver thread that continuously reads messages.
     pub fn start_receiver(&self) {
-        let stream = Arc::clone(&self.stream);
-        let responses = Arc::clone(&self.responses);
-        let events = Arc::clone(&self.events);
+        let reader_arc = Arc::clone(self.reader.as_ref().unwrap());
+        let responses_arc = Arc::clone(&self.responses);
+        let events_arc = Arc::clone(&self.events);
 
         let handle = thread::spawn(move || {
             loop {
                 let maybe_msg = {
-                    let guard = stream.lock().unwrap();
-                    if let Some(ref stream) = *guard {
-                        let mut reader = BufReader::new(stream);
-                        let mut header = String::new();
-                        loop {
-                            let mut line = String::new();
-                            if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                                break;
-                            }
-                            header.push_str(&line);
-                            if line == "\r\n" {
-                                break;
-                            }
+                    let mut reader = reader_arc.lock().unwrap();
+                    let mut header = String::new();
+                    loop {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                            break;
                         }
-                        if header.is_empty() {
-                            None
-                        } else if let Some(content_length) = header
-                            .lines()
-                            .find(|line| line.to_lowercase().starts_with("content-length:"))
-                            .and_then(|line| line[15..].trim().parse::<usize>().ok())
-                        {
-                            let mut body = vec![0; content_length];
-                            if reader.read_exact(&mut body).is_ok() {
-                                if let Ok(message_str) = String::from_utf8(body) {
-                                    println!("<-- Received: {}", message_str);
-                                    serde_json::from_str::<DAPMessage>(&message_str).ok()
-                                } else {
-                                    None
-                                }
+                        header.push_str(&line);
+                        if line == "\r\n" {
+                            break;
+                        }
+                    }
+                    if header.is_empty() {
+                        None
+                    } else if let Some(content_length) = header
+                        .lines()
+                        .find(|line| line.to_lowercase().starts_with("content-length:"))
+                        .and_then(|line| line[15..].trim().parse::<usize>().ok())
+                    {
+                        let mut body = vec![0; content_length];
+                        if reader.read_exact(&mut body).is_ok() {
+                            if let Ok(message_str) = String::from_utf8(body) {
+                                println!("<-- Received: {}", message_str);
+                                serde_json::from_str::<DAPMessage>(&message_str).ok()
                             } else {
                                 None
                             }
@@ -193,12 +184,12 @@ impl DAPClient {
                     match msg.message_type {
                         MessageType::Response => {
                             if let Some(req_seq) = msg.request_seq {
-                                responses.lock().unwrap().insert(req_seq, msg);
+                                responses_arc.lock().unwrap().insert(req_seq, msg);
                             }
                         }
                         MessageType::Event => {
                             if let Some(event_name) = &msg.event {
-                                events
+                                events_arc
                                     .lock()
                                     .unwrap()
                                     .entry(event_name.clone())
@@ -232,50 +223,41 @@ impl DAPClient {
     }
 
     fn read_message(&self) -> std::io::Result<DAPMessage> {
-        let guard = self.stream.lock().unwrap();
-        if let Some(stream) = guard.as_ref() {
-            let mut reader = BufReader::new(stream);
-
-            let mut header = String::new();
-            loop {
-                let mut line = String::new();
-                let bytes_read = reader.read_line(&mut line)?;
-                if bytes_read == 0 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "Connection closed while reading header",
-                    ));
-                }
-                header.push_str(&line);
-                if line == "\r\n" {
-                    break;
-                }
+        let mut reader = self.reader.as_ref().unwrap().lock().unwrap();
+        let mut header = String::new();
+        loop {
+            let mut line = String::new();
+            let bytes_read = reader.read_line(&mut line)?;
+            if bytes_read == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "Connection closed while reading header",
+                ));
             }
-
-            let content_length = header
-                .lines()
-                .find(|line| line.to_lowercase().starts_with("content-length:"))
-                .and_then(|line| line[15..].trim().parse::<usize>().ok())
-                .ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, "No content length found")
-                })?;
-
-            let mut body = vec![0; content_length];
-            reader.read_exact(&mut body)?;
-
-            let message = String::from_utf8(body)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-            println!("<-- Received: {}", message);
-
-            serde_json::from_str(&message)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected to debug adapter",
-            ))
+            header.push_str(&line);
+            if line == "\r\n" {
+                break;
+            }
         }
+
+        let content_length = header
+            .lines()
+            .find(|line| line.to_lowercase().starts_with("content-length:"))
+            .and_then(|line| line[15..].trim().parse::<usize>().ok())
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "No content length found")
+            })?;
+
+        let mut body = vec![0; content_length];
+        reader.read_exact(&mut body)?;
+
+        let message = String::from_utf8(body)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+        println!("<-- Received: {}", message);
+
+        serde_json::from_str(&message)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 
     // Updated initialize: using "arguments" instead of "body".
@@ -286,7 +268,6 @@ impl DAPClient {
             command: Some("initialize".to_string()),
             request_seq: None,
             success: None,
-            // Use arguments as in your Python code.
             arguments: Some(serde_json::json!({
                 "adapterID": "python",
                 "clientID": "dap_test_client",
