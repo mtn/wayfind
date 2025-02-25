@@ -156,6 +156,31 @@ export default function Home() {
     isDebugSessionActiveRef.current = isDebugSessionActive;
   }, [isDebugSessionActive]);
 
+  useEffect(() => {
+    let unlistenStatus: () => void;
+    (async () => {
+      unlistenStatus = await listen("debug-status", (event) => {
+        console.log("Handling debug status event", event);
+        const status = event.payload as string;
+        setDebugStatus(status.toLowerCase());
+
+        if (status === "running") {
+          setExecutionFile(null);
+          setExecutionLine(null);
+        } else if (status === "terminated") {
+          setExecutionFile(null);
+          setExecutionLine(null);
+          setIsDebugSessionActive(false);
+        }
+      });
+    })();
+    return () => {
+      if (unlistenStatus) {
+        unlistenStatus();
+      }
+    };
+  }, []);
+
   const handleBreakpointChange = (lineNumber: number) => {
     const currentFileName = selectedFileRef.current.name;
     if (!isDebugSessionActiveRef.current) {
@@ -249,27 +274,7 @@ export default function Home() {
           );
         });
 
-      const unlistenStatus = await listen("debug-status", (event) => {
-        const status = event.payload as {
-          status: string;
-          file?: string;
-          line?: number;
-        };
-        setDebugStatus(status.status.toLowerCase());
-
-        if (status.status === "Running") {
-          setExecutionFile(null);
-          setExecutionLine(null);
-        } else if (status.status === "Terminated") {
-          setExecutionFile(null);
-          setExecutionLine(null);
-          setIsDebugSessionActive(false);
-        }
-      });
-
-      return () => {
-        unlistenStatus();
-      };
+      // The debug-status listener is now set up early using useEffect.
     } catch (error) {
       addLog(
         `Failed launching debug session: ${
