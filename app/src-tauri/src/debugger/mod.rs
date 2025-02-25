@@ -1,15 +1,12 @@
-pub mod async_listener;
 pub mod client;
 pub mod util;
 
-use self::async_listener::async_listen_debugpy;
 use self::util::find_available_port;
 use serde::Serialize;
-use std::io::{BufRead, BufReader};
+use std::io::BufRead;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::Emitter;
-use tokio::spawn;
 
 #[derive(Debug, Serialize, Clone)]
 pub enum DebugStatus {
@@ -57,58 +54,40 @@ impl DebugManager {
             .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(|e| e.to_string())?;
-
         println!("Debugpy process started with PID: {}", child.id());
 
-        // Get stdout handle
+        // Capture stdout and emit events.
         let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-
-        // Get stderr handle
         let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
 
         let app_handle_clone = app_handle.clone();
-        // Spawn stdout reading thread
         std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    println!("Stdout: {}", line); // Debug log
-                    let _ = app_handle_clone.emit("program-output", line);
-                }
+            let reader = std::io::BufReader::new(stdout);
+            for line in reader.lines().flatten() {
+                println!("Stdout: {}", line);
+                let _ = app_handle_clone.emit("program-output", line);
             }
         });
 
         let app_handle_clone = app_handle.clone();
-        // Spawn stderr reading thread
         std::thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    println!("Stderr: {}", line); // Debug log
-                    let _ = app_handle_clone.emit("program-error", line);
-                }
+            let reader = std::io::BufReader::new(stderr);
+            for line in reader.lines().flatten() {
+                println!("Stderr: {}", line);
+                let _ = app_handle_clone.emit("program-error", line);
             }
         });
 
-        // Store the child process
+        // Store the child process.
         *self.process.lock().unwrap() = Some(child);
 
-        // Emit initial status
+        // Emit initial status.
         app_handle
             .emit("debug-status", DebugStatus::Running)
             .map_err(|e| e.to_string())?;
 
-        // TODO make this more robust
-        // Wait to give debugpy time to start up
+        // Wait briefly to give debugpy time to start.
         std::thread::sleep(std::time::Duration::from_secs(2));
-
-        // Spawn an asynchronous listener to receive messages from debugpy.
-        let addr = format!("127.0.0.1:{}", debugpy_port);
-        spawn(async move {
-            if let Err(e) = async_listen_debugpy(&addr).await {
-                eprintln!("Error in asynchronous debugpy listener: {}", e);
-            }
-        });
 
         Ok(())
     }

@@ -62,7 +62,7 @@ async fn launch_debug_session(
     debug_manager: tauri::State<'_, Arc<DebugManager>>,
     debug_state: tauri::State<'_, DebugSessionState>,
 ) -> Result<String, String> {
-    // 1. Find an available port to use for debugpy, e.g., starting at 5678:
+    // 1. Find an available port to use for debugpy (starting at 5678)
     let debugpy_port = crate::debugger::util::find_available_port(5678)
         .map_err(|e| format!("Could not find available port: {}", e))?;
 
@@ -109,35 +109,41 @@ async fn launch_debug_session(
         });
     }
 
+    // Give debugpy time to start up.
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // Spawn the asynchronous debugpy listener to stream incoming messages.
-    let addr = format!("127.0.0.1:{}", debugpy_port);
-    tokio::spawn(async move {
-        if let Err(e) = debugger::async_listener::async_listen_debugpy(&addr).await {
-            eprintln!("Error in asynchronous debugpy listener: {}", e);
-        }
-    });
+    // NOTE: The separate async listener has been removed.
+    // Instead, the newly created DAPClient will start its own receiver.
 
-    // 3. Create a new DAPClient and connect it.
-    let (dap_client, _rx) = DAPClient::new();
+    // 3. Create a new DAPClient, connect it, and start its receiver.
+    let (mut dap_client, _rx) = DAPClient::new();
     dap_client
         .connect("127.0.0.1", debugpy_port as u16)
         .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
 
-    dap_client
-        .initialize()
-        .await
-        .map_err(|e| format!("Initialize failed: {}", e))?;
-    dap_client
-        .attach("127.0.0.1", debugpy_port as u16)
-        .await
-        .map_err(|e| format!("Attach failed: {}", e))?;
-
+    // Start the receiver loop so incoming DAP messages get handled.
     {
-        let mut client_lock = debug_state.client.lock().await;
-        client_lock.replace(dap_client);
+        // We call start_receiver() on the mutable client.
+        let mut client = dap_client;
+        client.start_receiver();
+
+        // Initialize and attach.
+        client
+            .initialize()
+            .await
+            .map_err(|e| format!("Initialize failed: {}", e))?;
+        client
+            .attach("127.0.0.1", debugpy_port as u16)
+            .await
+            .map_err(|e| format!("Attach failed: {}", e))?;
+
+        // Store the DAPClient and the Python process in debug_state.
+        {
+            let mut client_lock = debug_state.client.lock().await;
+            client_lock.replace(client);
+        }
     }
+
     {
         let mut proc_lock = debug_state.process.lock().await;
         proc_lock.replace(child);

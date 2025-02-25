@@ -1,13 +1,13 @@
 use std::process::Child;
 use tokio::sync::Mutex;
 
-// Import your DAPClient type from your debugger client module:
+// Import your updated DAPClient from your debugger client module.
 use crate::debugger::client::DAPClient;
 
 pub struct DebugSessionState {
-    // Holds the active DAPClient (None until a session is launched)
+    // Holds the active DAPClient (None until a session is launched).
     pub client: Mutex<Option<DAPClient>>,
-    // Holds the active Python process (None until a session is launched)
+    // Holds the active Python process (None until a session is launched).
     pub process: Mutex<Option<Child>>,
 }
 
