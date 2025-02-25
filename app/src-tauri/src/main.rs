@@ -5,13 +5,11 @@ mod debugger;
 
 use debug_state::DebugSessionState;
 use debugger::client::DAPClient;
-use debugger::DebugManager;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::process::Command;
 use std::process::Stdio;
-use std::sync::Arc;
 use std::thread;
 use tauri::Emitter;
 
@@ -59,7 +57,6 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
 async fn launch_debug_session(
     app_handle: tauri::AppHandle,
     script_path: String,
-    _debug_manager: tauri::State<'_, Arc<DebugManager>>,
     debug_state: tauri::State<'_, DebugSessionState>,
 ) -> Result<String, String> {
     // 1. Find an available port to use for debugpy (starting at 5678)
@@ -171,20 +168,15 @@ async fn configuration_done(
 }
 
 #[tauri::command]
-async fn terminate_program(
-    _debug_manager: tauri::State<'_, Arc<DebugManager>>,
-) -> Result<String, String> {
-    // debug_manager::DebugManager::new().terminate()?;
+async fn terminate_program() -> Result<String, String> {
     Ok("Debug session terminated".into())
 }
 
 fn main() {
-    let debug_manager = Arc::new(DebugManager::new());
     let debug_session_state = DebugSessionState::new();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(debug_manager)
         .manage(debug_session_state)
         .invoke_handler(tauri::generate_handler![
             read_directory,
