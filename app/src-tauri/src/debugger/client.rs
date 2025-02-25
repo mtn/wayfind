@@ -119,8 +119,6 @@ impl DAPClient {
         let responses_arc = Arc::clone(&self.responses);
         let events_arc = Arc::clone(&self.events);
         let event_sender = self.event_sender.clone();
-        let writer_arc = Arc::clone(self.writer.as_ref().expect("Writer not set"));
-        let next_seq_arc = Arc::clone(&self.next_seq);
         // Clone the app_handle so it can be moved into the thread.
         let app_handle = self.app_handle.clone();
 
@@ -189,108 +187,27 @@ impl DAPClient {
                                     serde_json::json!({"status": "Terminated"}),
                                 );
                             } else if evt == "stopped" {
-                                // Handle the stopped event - extract file and line information
+                                // Handle the stopped event - extract thread ID and emit
                                 if let Some(ref body) = msg.body {
                                     println!("Processing 'stopped' event: {:?}", body);
 
-                                    // First emit the stopped status
-                                    let _ = app_handle.emit(
-                                        "debug-status",
-                                        serde_json::json!({"status": "Paused"}),
-                                    );
-
-                                    // Get the thread ID from the stopped event
+                                    // Emit the stopped status with the thread ID
                                     if let Some(thread_id) =
                                         body.get("threadId").and_then(|v| v.as_i64())
                                     {
-                                        // Get the next sequence number for our request
-                                        let seq = {
-                                            let mut seq_lock = next_seq_arc.lock().unwrap();
-                                            let current = *seq_lock;
-                                            *seq_lock += 1;
-                                            current
-                                        };
-
-                                        // Create a stack trace request
-                                        let stack_req = DAPMessage {
-                                            seq,
-                                            message_type: MessageType::Request,
-                                            command: Some("stackTrace".to_string()),
-                                            request_seq: None,
-                                            success: None,
-                                            arguments: Some(serde_json::json!({
-                                                "threadId": thread_id,
-                                                "startFrame": 0,
-                                                "levels": 1
-                                            })),
-                                            body: None,
-                                            event: None,
-                                        };
-
-                                        // Send the stack trace request
-                                        let json = serde_json::to_string(&stack_req).unwrap();
-                                        let header =
-                                            format!("Content-Length: {}\r\n\r\n", json.len());
-
-                                        {
-                                            let mut writer = writer_arc.lock().unwrap();
-                                            let _ = writer.write_all(header.as_bytes());
-                                            let _ = writer.write_all(json.as_bytes());
-                                            let _ = writer.flush();
-                                        }
-
-                                        // Now wait for the response (with timeout)
-                                        let start = Instant::now();
-                                        let timeout_secs = 1.0; // 1 second timeout
-
-                                        while start.elapsed().as_secs_f64() < timeout_secs {
-                                            // Check if we got a response to our stack trace request
-                                            let mut stack_response = None;
-                                            {
-                                                let mut responses = responses_arc.lock().unwrap();
-                                                stack_response = responses.remove(&seq);
-                                            }
-
-                                            if let Some(stack_resp) = stack_response {
-                                                if let Some(stack_body) = stack_resp.body {
-                                                    if let Some(frames) = stack_body
-                                                        .get("stackFrames")
-                                                        .and_then(|sf| sf.as_array())
-                                                    {
-                                                        if let Some(frame) = frames.first() {
-                                                            // Extract source file and line
-                                                            let source = frame.get("source");
-                                                            let line = frame
-                                                                .get("line")
-                                                                .and_then(|l| l.as_i64());
-
-                                                            if let (Some(source), Some(line)) =
-                                                                (source, line)
-                                                            {
-                                                                let file_path = source
-                                                                    .get("path")
-                                                                    .and_then(|p| p.as_str());
-
-                                                                if let Some(file_path) = file_path {
-                                                                    // Emit the debug location event with file and line info
-                                                                    let _ = app_handle.emit(
-                                                                        "debug-location",
-                                                                        serde_json::json!({
-                                                                            "file": file_path,
-                                                                            "line": line
-                                                                        }),
-                                                                    );
-                                                                    println!("Emitted debug-location event: file={}, line={}",
-                                                                        file_path, line);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                break;
-                                            }
-                                            thread::sleep(Duration::from_millis(50));
-                                        }
+                                        let _ = app_handle.emit(
+                                            "debug-status",
+                                            serde_json::json!({
+                                                "status": "Paused",
+                                                "threadId": thread_id
+                                            }),
+                                        );
+                                    } else {
+                                        // No thread ID, just emit paused status
+                                        let _ = app_handle.emit(
+                                            "debug-status",
+                                            serde_json::json!({"status": "Paused"}),
+                                        );
                                     }
                                 }
                             }
@@ -456,6 +373,33 @@ impl DAPClient {
             Ok(response)
         } else {
             Err("Timeout waiting for setBreakpoints response".into())
+        }
+    }
+
+    // stack_trace: sends a "stackTrace" request and waits for its response.
+    pub async fn stack_trace(
+        &self,
+        thread_id: i64,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let seq = self.send_message(DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("stackTrace".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(serde_json::json!({
+                "threadId": thread_id,
+                "startFrame": 0,
+                "levels": 1
+            })),
+            body: None,
+            event: None,
+        })?;
+
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for stackTrace response".into())
         }
     }
 }

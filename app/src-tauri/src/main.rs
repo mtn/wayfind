@@ -201,6 +201,51 @@ async fn configuration_done(
 }
 
 #[tauri::command]
+async fn get_paused_location(
+    debug_state: tauri::State<'_, DebugSessionState>,
+    thread_id: i64,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+
+    match dap_client.stack_trace(thread_id).await {
+        Ok(stack_resp) => {
+            if let Some(stack_body) = stack_resp.body {
+                if let Some(frames) = stack_body.get("stackFrames").and_then(|sf| sf.as_array()) {
+                    if let Some(frame) = frames.first() {
+                        // Extract source file and line
+                        let source = frame.get("source");
+                        let line = frame.get("line").and_then(|l| l.as_i64());
+
+                        if let (Some(source), Some(line)) = (source, line) {
+                            let file_path = source.get("path").and_then(|p| p.as_str());
+
+                            if let Some(file_path) = file_path {
+                                // Emit the debug location event with file and line info
+                                let _ = app_handle.emit(
+                                    "debug-location",
+                                    serde_json::json!({
+                                        "file": file_path,
+                                        "line": line
+                                    }),
+                                );
+                                println!(
+                                    "Emitted debug-location event: file={}, line={}",
+                                    file_path, line
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        Err(e) => Err(format!("Error getting stack trace: {}", e)),
+    }
+}
+
+#[tauri::command]
 async fn terminate_program() -> Result<String, String> {
     Ok("Debug session terminated".into())
 }
@@ -217,6 +262,7 @@ fn main() {
             set_breakpoints,
             configuration_done,
             terminate_program,
+            get_paused_location,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

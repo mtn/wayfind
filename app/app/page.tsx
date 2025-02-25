@@ -162,15 +162,17 @@ export default function Home() {
     isDebugSessionActiveRef.current = isDebugSessionActive;
   }, [isDebugSessionActive]);
 
+  // Listen for debug status events
   useEffect(() => {
     let unlistenStatus: () => void;
     (async () => {
       unlistenStatus = await listen("debug-status", (event) => {
         const payload = event.payload as {
           status: string;
+          threadId?: number;
         };
-        const status = payload.status;
-        setDebugStatus(status.toLowerCase());
+        const status = payload.status.toLowerCase();
+        setDebugStatus(status);
 
         if (status === "running") {
           setExecutionFile(null);
@@ -180,10 +182,23 @@ export default function Home() {
           setExecutionLine(null);
           setIsDebugSessionActive(false);
         } else if (status === "paused") {
+          // When paused, force watch expressions to update
           forceWatchEvaluation();
+
+          // If we have a threadId, request the current location
+          console.log(
+            "about to get paused location, thread id:",
+            payload.threadId,
+          );
+          if (payload.threadId) {
+            invoke("get_paused_location", { threadId: payload.threadId }).catch(
+              (err) => console.error("Failed to get paused location:", err),
+            );
+          }
         }
       });
     })();
+
     return () => {
       if (unlistenStatus) {
         unlistenStatus();
@@ -191,7 +206,7 @@ export default function Home() {
     };
   }, []);
 
-  // Add new listener for debug-location events
+  // Listen for debug location events
   useEffect(() => {
     let unlistenLocation: () => void;
     (async () => {
