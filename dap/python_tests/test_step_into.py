@@ -223,6 +223,26 @@ def send_configuration_done_request(sock):
     send_dap_message(sock, conf_req)
     return conf_seq
 
+def send_step_in_request(sock, thread_id, target_id=None, granularity="statement"):
+    """Send the 'stepIn' request."""
+    seq = next_sequence()
+    req = {
+        "seq": seq,
+        "type": "request",
+        "command": "stepIn",
+        "arguments": {
+            "threadId": thread_id,
+            "granularity": granularity
+        }
+    }
+    # If the caller wishes to specify a particular target,
+    # add it into the arguments.
+    if target_id is not None:
+        req["arguments"]["targetId"] = target_id
+
+    send_dap_message(sock, req)
+    return seq
+
 def request_stack_trace(sock, thread_id, start_frame=0, levels=1):
     """Send a 'stackTrace' request and return its response."""
     st_seq = next_sequence()
@@ -257,7 +277,7 @@ def main():
     # Step 1: Launch target script with debugpy
     debugpy_port = 5678
     target_script = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "test_data", "a.py")
+        os.path.join(os.path.dirname(__file__), "..", "test_data", "a.py")
     )
     proc, output_buffer, output_thread = launch_target_script_with_debugpy(target_script, debugpy_port)
 
@@ -276,7 +296,8 @@ def main():
     print("Initialization complete")
 
     # Step 5: Send setBreakpoints
-    bp_seq = send_set_breakpoints_request(sock, target_script, [19])
+    bp_line = 24
+    bp_seq = send_set_breakpoints_request(sock, target_script, [bp_line])
     bp_resp = wait_for_response(bp_seq)
     print("Breakpoints response:", bp_resp)
     if not bp_resp.get("success"):
@@ -301,31 +322,19 @@ def main():
     frame_id = frames[0].get("id") if frames else None
     print("Using frameId:", frame_id)
     line_num = st_resp["body"]["stackFrames"][0]["line"]
-    assert line_num == 19
+    assert line_num == bp_line
 
-    # Set another breakpoint
-    bp_seq = send_set_breakpoints_request(sock, target_script, [20])
-    bp_resp = wait_for_response(bp_seq)
-    print("Breakpoints response:", bp_resp)
-    if not bp_resp.get("success"):
-        print("Error setting breakpoints:", bp_resp.get("message"))
-
-    # Continue from line 19 to line 20
-    cont_seq = send_continue_request(sock, thread_id)
-    cont_resp = wait_for_response(cont_seq)
-    print("Continue response:", cont_resp)
-
-    print("Waiting for the target to hit the breakpoint (stopped event)...")
-    stopped_event = wait_for_event("stopped", timeout=15)
-    print("Received stopped event:", stopped_event)
-    thread_id = stopped_event.get("body", {}).get("threadId", 1)
+    # Step over
+    in_seq = send_step_in_request(sock, thread_id)
+    in_resp = wait_for_response(in_seq)
+    print("In response:", in_resp)
 
     # Get stack trace, verify line number
     st_seq = request_stack_trace(sock, thread_id)
     st_resp = wait_for_response(st_seq)
     line_num = st_resp["body"]["stackFrames"][0]["line"]
     print(f"stopped on line {line_num}")
-    assert line_num == 20
+    assert line_num == 6
 
     # Step 9: Continue again
     cont_seq = send_continue_request(sock, thread_id)

@@ -107,8 +107,7 @@ def main():
     # Buffer to capture the output of the target script
     output_buffer = []
 
-    # Adjust the target path (a.py should be in test_data subfolder).
-    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data", "a.py"))
+    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "test_data", "a.py"))
     debugpy_port = 5678
 
     # Step 1: Launch target script with debugpy.
