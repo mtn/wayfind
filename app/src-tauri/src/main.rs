@@ -112,9 +112,6 @@ async fn launch_debug_session(
     // Give debugpy time to start up.
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // NOTE: The separate async listener has been removed.
-    // Instead, the newly created DAPClient will start its own receiver.
-
     // 3. Create a new DAPClient, connect it, and start its receiver.
     let (mut dap_client, _rx) = DAPClient::new(app_handle.clone());
     dap_client
