@@ -1,28 +1,22 @@
 "use client";
 
-import { useState } from "react";
 import { FileIcon, FolderIcon, FolderOpen } from "lucide-react";
 import { FileEntry } from "@/lib/fileSystem";
 import { Button } from "./ui/button";
 
 interface FileTreeProps {
   files: FileEntry[];
+  selectedFilePath?: string;
   onSelectFile: (file: FileEntry) => void;
   onOpenWorkspace: () => void;
 }
 
 export function FileTree({
   files,
+  selectedFilePath,
   onSelectFile,
   onOpenWorkspace,
 }: FileTreeProps) {
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-
-  const handleSelectFile = (file: FileEntry) => {
-    setSelectedFile(file.path);
-    onSelectFile(file);
-  };
-
   return (
     <div className="p-2 flex flex-col h-full">
       <div className="flex items-center justify-between p-2">
@@ -41,10 +35,10 @@ export function FileTree({
         {files.map((file) => (
           <li
             key={file.path}
-            onClick={() => handleSelectFile(file)}
+            onClick={() => onSelectFile(file)}
             className={`
               flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer
-              ${selectedFile === file.path ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}
+              ${selectedFilePath === file.path ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}
             `}
           >
             {file.type === "directory" ? (

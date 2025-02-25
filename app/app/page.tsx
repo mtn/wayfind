@@ -11,11 +11,10 @@ import WatchExpressions, {
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { OutputViewer } from "@/components/OutputViewer";
 import { CallStack } from "@/components/CallStack";
-import { apiUrl } from "@/lib/utils";
-import path from "path";
 import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export interface IBreakpoint {
   line: number;
@@ -23,55 +22,14 @@ export interface IBreakpoint {
   file?: string;
 }
 
-const cPy: FileEntry = {
-  name: "c.py",
-  content: `from d import add_numbers
-
-def compute_fibonacci(n):
-  if n <= 0:
-      return []
-  elif n == 1:
-      return [0]
-  fib_sequence = [0, 1]
-  for i in range(2, n):
-      next_val = fib_sequence[i - 1] + fib_sequence[i - 2]
-      fib_sequence.append(next_val)
-  return fib_sequence
-
-def main():
-    print("Starting test script for debugger step-through...")
-    a, b = 3, 4
-    print("Adding numbers:", a, "and", b)
-    result = add_numbers(a, b)
-    print("Result of add_numbers:", result)
-    n = 10
-    print("Computing Fibonacci sequence for first", n, "terms")
-    fib_series = compute_fibonacci(n)
-    print("Fibonacci sequence:", fib_series)
-    print("Test script finished.")
-
-if __name__ == '__main__':
-  main()`,
-  path: "/c.py",
-  type: "file",
-};
-
-const dPy: FileEntry = {
-  name: "d.py",
-  content: `
-def add_numbers(a, b):
-  total = a + b
-  return total`,
-  path: "/d.py",
-  type: "file",
-};
-
-const initialFiles = [cPy, dPy];
+const initialFiles: FileEntry[] = [];
 
 export default function Home() {
   const [fs, setFs] = useState(() => new InMemoryFileSystem(initialFiles));
   const [files, setFiles] = useState<FileEntry[]>(initialFiles);
-  const [selectedFile, setSelectedFile] = useState<FileEntry>(files[0]);
+  const [selectedFile, setSelectedFile] = useState<FileEntry | undefined>(
+    undefined,
+  );
 
   const selectedFileRef = useRef(selectedFile);
   useEffect(() => {
@@ -86,45 +44,35 @@ export default function Home() {
     loadFiles();
   }, [fs]);
 
-  // New state variable to store the session token.
   const [sessionToken, setSessionToken] = useState<string>("");
 
-  // Breakpoint handling: separate queued vs. active sets, now with file info.
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
 
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   const [debugStatus, setDebugStatus] = useState("inactive");
 
-  // Execution status state.
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
-  // A state to accumulate debug log messages, which will display only in the Status tab.
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const addLog = (msg: string) => setDebugLog((prev) => [...prev, msg]);
 
-  // Create a ref for WatchExpressions.
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
 
-  // State to manage the selected tab in the debug panel.
-  // We offer three tabs: Status, Watches, and Call Stack.
   const [selectedTab, setSelectedTab] = useState("status");
 
-  // Function to force evaluation: called by status updates.
   const forceWatchEvaluation = () => {
     if (watchExpressionsRef.current) {
       watchExpressionsRef.current.reevaluate();
     }
   };
 
-  // Helper: merge queued + active so Monaco shows all breakpoints.
   function mergeBreakpoints(
     queued: IBreakpoint[],
     active: IBreakpoint[],
   ): IBreakpoint[] {
     const merged = new Map<string, IBreakpoint>();
-    // Use a unique composite key for each breakpoint: file:line
     for (const bp of queued) {
       if (bp.file) {
         merged.set(`${bp.file}:${bp.line}`, bp);
@@ -143,11 +91,14 @@ export default function Home() {
       const freshFile = await fs.getFile(file.path);
       if (freshFile) {
         setSelectedFile(freshFile);
+        console.log("Selected file full path:", fs.getFullPath(freshFile.path));
       }
     }
   };
 
   const handleFileChange = async (newContent: string) => {
+    if (selectedFile === undefined) return;
+
     await fs.updateFile(selectedFile.path, newContent);
     const entries = await fs.getEntries("/");
     setFiles(entries);
@@ -165,26 +116,29 @@ export default function Home() {
       });
 
       if (selected) {
-        const entries = await invoke("read_directory", {
+        const entries = await invoke<
+          Array<{
+            name: string;
+            path: string;
+            is_dir: boolean;
+            content?: string;
+          }>
+        >("read_directory", {
           path: selected,
         });
 
-        // Convert the entries to FileEntry format for InMemoryFileSystem
-        const newFiles = entries.map((entry: any) => ({
+        const newFiles = entries.map((entry) => ({
           name: entry.name,
-          path: `/${entry.name}`, // Ensure path starts with /
-          type: entry.is_dir ? "directory" : "file",
-          content: entry.content || "", // Include content if it exists
+          path: `/${entry.name}`,
+          type: entry.is_dir ? ("directory" as const) : ("file" as const),
+          content: entry.content || "",
         }));
 
-        // Create a new InMemoryFileSystem with the files
-        const newFs = new InMemoryFileSystem(newFiles);
-        setFs(newFs); // You'll need to make fs state mutable with useState
+        const newFs = new InMemoryFileSystem(newFiles, selected);
+        setFs(newFs);
 
-        // Update the files state
         setFiles(newFiles);
 
-        // Select the first file if available
         if (newFiles.length > 0) {
           const firstFile = newFiles.find((f) => f.type === "file");
           if (firstFile) {
@@ -197,11 +151,37 @@ export default function Home() {
     }
   };
 
-  // Toggle a breakpoint.
   const isDebugSessionActiveRef = useRef(isDebugSessionActive);
   useEffect(() => {
     isDebugSessionActiveRef.current = isDebugSessionActive;
   }, [isDebugSessionActive]);
+
+  useEffect(() => {
+    let unlistenStatus: () => void;
+    (async () => {
+      unlistenStatus = await listen("debug-status", (event) => {
+        const payload = event.payload as {
+          status: string;
+        };
+        const status = payload.status;
+        setDebugStatus(status.toLowerCase());
+
+        if (status === "running") {
+          setExecutionFile(null);
+          setExecutionLine(null);
+        } else if (status === "terminated") {
+          setExecutionFile(null);
+          setExecutionLine(null);
+          setIsDebugSessionActive(false);
+        }
+      });
+    })();
+    return () => {
+      if (unlistenStatus) {
+        unlistenStatus();
+      }
+    };
+  }, []);
 
   const handleBreakpointChange = (lineNumber: number) => {
     const currentFileName = selectedFileRef.current.name;
@@ -230,21 +210,15 @@ export default function Home() {
               (bp) => !(bp.line === lineNumber && bp.file === currentFileName),
             )
           : [...currentActive, { line: lineNumber, file: currentFileName }];
-        fetch(
-          apiUrl(`/api/debug?action=setBreakpoints&token=${sessionToken}`),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              breakpoints: newBreakpoints.filter(
-                (bp) => bp.file === currentFileName,
-              ),
-              filePath: currentFileName,
-            }),
-          },
-        )
-          .then((response) => response.json())
-          .then((data) => {
+
+        invoke("set_breakpoints", {
+          token: sessionToken,
+          breakpoints: newBreakpoints.filter(
+            (bp) => bp.file === currentFileName,
+          ),
+          filePath: currentFileName,
+        })
+          .then((data: { breakpoints?: IBreakpoint[] }) => {
             if (data.breakpoints) {
               setActiveBreakpoints((current) =>
                 current.map((bp) => {
@@ -267,187 +241,75 @@ export default function Home() {
     }
   };
 
-  // Called when the user presses "Launch Debug Session".
   const handleDebugSessionStart = async (force: boolean = false) => {
     if (!force && isDebugSessionActive && debugStatus !== "terminated") {
       addLog("Debug session is already launching or active, skipping");
       return;
     }
 
-    // Create a local copy of breakpoints we want to set in the new session
-    let breakpointsToSet: IBreakpoint[] = [];
-    if (force || debugStatus === "terminated" || !isDebugSessionActive) {
-      // Combine active breakpoints into the queued ones for the new session
-      breakpointsToSet = [...activeBreakpoints]; // Keep a local copy
-
-      // Update state for next render
-      setQueuedBreakpoints(activeBreakpoints);
-      setActiveBreakpoints([]);
-      setSessionToken("");
+    if (!selectedFile || selectedFile.type !== "file") {
+      addLog("No file selected to run");
+      return;
     }
 
     setIsDebugSessionActive(true);
     addLog("Launching debug session...");
+
     try {
-      const launchResp = await fetch(apiUrl(`/api/debug?action=launch`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entryScript: "c.py" }),
+      const scriptPath = fs.getFullPath(selectedFile.path);
+      addLog(`Running script: ${scriptPath}`);
+
+      await invoke("launch_debug_session", {
+        scriptPath,
       });
-      const launchData = await launchResp.json();
-      setSessionToken(launchData.token);
-      addLog(`Session launched: ${launchData.message}`);
 
-      // Use our local copy plus any existing queued breakpoints
-      const allBreakpoints = [...breakpointsToSet, ...queuedBreakpoints];
+      addLog("Debug session launched successfully");
 
-      // Set breakpoints for each file
-      const uniqueFiles = Array.from(
-        new Set(
-          allBreakpoints.map((bp) => bp.file).filter(Boolean),
-        ) as Set<string>,
-      );
+      await invoke("configuration_done")
+        .then((response) => {
+          addLog("configurationDone: " + response);
+        })
+        .catch((error) => {
+          addLog(
+            "Failed configuration_done: " +
+              (error instanceof Error ? error.message : error),
+          );
+        });
 
-      for (const file of uniqueFiles) {
-        const fileBreakpoints = allBreakpoints.filter((bp) => bp.file === file);
-        if (fileBreakpoints.length === 0) continue;
-
-        addLog(
-          `Setting breakpoints for ${file}: ${JSON.stringify(fileBreakpoints)}`,
-        );
-        const bpResp = await fetch(
-          apiUrl(`/api/debug?action=setBreakpoints&token=${launchData.token}`),
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              breakpoints: fileBreakpoints,
-              filePath: file,
-            }),
-          },
-        );
-        const bpData = await bpResp.json();
-        addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpData)}`);
-        if (bpData.breakpoints) {
-          setActiveBreakpoints((current) => [
-            ...current,
-            ...fileBreakpoints.map((bp) => ({
-              ...bp,
-              verified: bpData.breakpoints.find(
-                (vbp: IBreakpoint) => vbp.line === bp.line,
-              )?.verified,
-            })),
-          ]);
-        }
-      }
-
-      setQueuedBreakpoints([]); // Clear queued breakpoints after setting them
-
-      const confResp = await fetch(
-        apiUrl(`/api/debug?action=configurationDone&token=${launchData.token}`),
-        {
-          method: "POST",
-        },
-      );
-      const confData = await confResp.json();
-      addLog(`configurationDone response: ${JSON.stringify(confData)}`);
+      // The debug-status listener is now set up early using useEffect.
     } catch (error) {
       addLog(
         `Failed launching debug session: ${
           error instanceof Error ? error.message : error
         }`,
       );
+      setIsDebugSessionActive(false);
     }
   };
 
-  // Listen for debug status updates using Server-Sent Events (SSE) if a debug session is active.
-  useEffect(() => {
-    if (isDebugSessionActive && sessionToken) {
-      const eventSource = new EventSource(
-        apiUrl("/api/debug?action=status&token=" + sessionToken),
-      );
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.status === "paused" && data.file && data.line) {
-            setExecutionFile(data.file);
-            setExecutionLine(data.line);
-            setDebugStatus("paused");
-            forceWatchEvaluation();
-
-            const dfile = path.basename(data.file);
-            if (dfile !== selectedFile.name) {
-              const newFile = files.find((f) => f.name === dfile);
-              if (newFile) {
-                setSelectedFile(newFile);
-              }
-            }
-          } else if (data.status === "terminated") {
-            setExecutionFile(null);
-            setExecutionLine(null);
-            setDebugStatus("terminated");
-          } else if (data.status === "running") {
-            setExecutionFile(null);
-            setExecutionLine(null);
-            setDebugStatus("running");
-          } else {
-            setExecutionFile(null);
-            setExecutionLine(null);
-            setDebugStatus("inactive");
-          }
-        } catch (error) {
-          console.error("Error parsing status event data:", error);
-        }
-      };
-      eventSource.onerror = (e) => {
-        console.error("Status SSE encountered an error:", e);
-        eventSource.close();
-      };
-      return () => {
-        eventSource.close();
-      };
-    } else {
-      setExecutionFile(null);
-      setExecutionLine(null);
-      setDebugStatus("inactive");
-    }
-  }, [isDebugSessionActive, sessionToken]);
-
   const evaluateExpression = async (expression: string) => {
     try {
-      const res = await fetch(
-        apiUrl("/api/debug?action=evaluate&token=" + sessionToken),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ expression, threadId: 1 }),
-        },
-      );
-      const data = await res.json();
-      return data.result;
+      const result = await invoke<string>("evaluate_expression", {
+        expression,
+      });
+      return result;
     } catch (e) {
       addLog(`Evaluation error: ${e instanceof Error ? e.message : e}`);
       return "";
     }
   };
 
-  // onContinue callback for ChatInterface.
-  const handleContinue = () => {
-    fetch(apiUrl("/api/debug?action=continue&token=" + sessionToken), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ threadId: 1 }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        addLog(`Continue result: ${JSON.stringify(data.result)}`);
-      })
-      .catch((err) => {
-        addLog(`Continue failed: ${err}`);
-        console.error("Continue failed:", err);
-      });
+  const handleContinue = async () => {
+    try {
+      await invoke("continue_execution");
+      addLog("Continuing execution");
+    } catch (err) {
+      addLog(`Continue failed: ${err}`);
+      console.error("Continue failed:", err);
+    }
   };
 
+  const hasWorkspace = Boolean(fs.getWorkspacePath());
   return (
     <div className="h-screen flex flex-col">
       <ResizablePanelGroup direction="horizontal">
@@ -459,6 +321,7 @@ export default function Home() {
               <div className="h-full border-b">
                 <FileTree
                   files={files}
+                  selectedFilePath={selectedFile?.path}
                   onSelectFile={handleFileSelect}
                   onOpenWorkspace={handleOpenWorkspace}
                 />
@@ -474,6 +337,7 @@ export default function Home() {
                     debugStatus={debugStatus}
                     sessionToken={sessionToken}
                     addLog={addLog}
+                    hasWorkspace={hasWorkspace}
                   />
                 </div>
                 {/* Tab Header */}
@@ -541,7 +405,7 @@ export default function Home() {
             {/* Section 3: Outputs */}
             <ResizablePanel defaultSize={20} minSize={10}>
               <div className="h-full">
-                <OutputViewer sessionToken={sessionToken} />
+                <OutputViewer />
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -552,17 +416,17 @@ export default function Home() {
             <ResizablePanel defaultSize={60}>
               <div className="h-full">
                 <MonacoEditorWrapper
-                  content={selectedFile.content || ""}
+                  content={selectedFile?.content || ""}
                   language="python"
                   onChange={handleFileChange}
                   breakpoints={mergeBreakpoints(
                     queuedBreakpoints,
                     activeBreakpoints,
-                  ).filter((bp) => bp.file === selectedFile.name)}
+                  ).filter((bp) => bp.file === selectedFile?.name)}
                   onBreakpointChange={handleBreakpointChange}
                   executionFile={executionFile}
                   executionLine={executionLine}
-                  currentFile={selectedFile.name}
+                  currentFile={selectedFile?.name}
                 />
               </div>
             </ResizablePanel>

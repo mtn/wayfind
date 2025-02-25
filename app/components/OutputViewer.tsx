@@ -1,65 +1,39 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiUrl } from "@/lib/utils";
+import { listen } from "@tauri-apps/api/event";
 
-interface OutputViewerProps {
-  sessionToken?: string;
-}
-
-export function OutputViewer({ sessionToken }: OutputViewerProps) {
+export function OutputViewer() {
   const [output, setOutput] = useState<string[]>([]);
 
   useEffect(() => {
-    console.log("OutputViewer mounted");
-    let eventSource: EventSource;
+    // Listen for program output
+    const unlistenOutput = listen("program-output", (event) => {
+      setOutput((prev) => [...prev, event.payload as string]);
+    });
 
-    // Function to create new EventSource connection
-    const connectEventSource = () => {
-      const eventSourceUrl = sessionToken
-        ? `/api/debug/outputs?token=${sessionToken}`
-        : "/api/debug/outputs";
-
-      eventSource = new EventSource(apiUrl(eventSourceUrl));
-
-      eventSource.onopen = (event) => {
-        console.log("SSE connection for output streaming opened", event);
-      };
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          setOutput((prev) => [...prev, data]);
-        } catch {
-          setOutput((prev) => [...prev, event.data]);
-        }
-      };
-
-      eventSource.onerror = () => {
-        console.error("EventSource failed - attempting reconnect in 1s");
-        eventSource.close();
-        setTimeout(connectEventSource, 1000);
-      };
-    };
-
-    // Initial connection
-    connectEventSource();
+    // Listen for program errors
+    const unlistenError = listen("program-error", (event) => {
+      setOutput((prev) => [...prev, `[ERROR] ${event.payload as string}`]);
+    });
 
     return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
+      // Cleanup listeners
+      unlistenOutput.then((fn) => fn());
+      unlistenError.then((fn) => fn());
     };
-  }, [sessionToken]);
+  }, []);
 
   return (
     <div className="p-2 bg-gray-100 h-full overflow-auto text-xs flex flex-col">
       <h2 className="font-bold mb-2">Outputs</h2>
-      {output.map((line, index) => (
-        <div key={index} className="whitespace-pre-wrap">
-          {line}
-        </div>
-      ))}
+      <div className="font-mono">
+        {output.map((line, index) => (
+          <div key={index} className="whitespace-pre-wrap">
+            {line}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

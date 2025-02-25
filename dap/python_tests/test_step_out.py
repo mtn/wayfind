@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-A minimal DAP client test script for testing the terminate request:
+A minimal DAP client test script for step out:
+ – launches the target script (a.py) with debugpy;
+ – connects over TCP;
+ – sends initialize and attach requests;
+ – sets a breakpoint and calls configurationDone;
+ – waits for a breakpoint hit (stopped event);
+ – requests a stack trace to obtain a frame id;
+ – calls stepOut (the step out request);
+ – waits for the new stack trace and verifies that step out occurred;
+ – continues until termination.
 
-  – Launch the target script (a.py) with debugpy.
-  – Connect over TCP.
-  – Send initialize and attach requests.
-  – Send setBreakpoints and configurationDone requests.
-  – Wait for the debuggee to hit a breakpoint (stopped event).
-  – Then send a terminate request.
-  – Wait for a "terminated" event and exit.
-
-This demonstrates how a DAP client can gracefully terminate the session.
+Note: This is a bare‐bones test implementation for demonstration.
 """
 
 import os
@@ -22,7 +23,7 @@ import threading
 import time
 import re
 
-# Global variables for DAP messaging
+# Global variables to help manage DAP messages
 next_seq = 1
 responses = {}
 events = {}
@@ -38,11 +39,11 @@ def send_dap_message(sock, message):
     """Send a DAP message over the socket with the required headers."""
     data = json.dumps(message)
     header = f"Content-Length: {len(data)}\r\n\r\n"
-    sock.sendall(header.encode("utf-8") + data.encode("utf-8"))
+    sock.sendall(header.encode('utf-8') + data.encode('utf-8'))
     print(f"--> Sent (seq {message.get('seq')}, cmd: {message.get('command')}): {data}\n")
 
 def read_dap_message(sock):
-    """Read a full DAP message from the socket; blocks until message is complete."""
+    """Read a single DAP message from the socket. Blocks until a full message is read."""
     header = b""
     while b"\r\n\r\n" not in header:
         chunk = sock.recv(1)
@@ -57,17 +58,17 @@ def read_dap_message(sock):
     body = b""
     while len(body) < length:
         body += sock.recv(length - len(body))
-    message = json.loads(body.decode("utf-8"))
+    message = json.loads(body.decode('utf-8'))
     print(f"<-- Received: {json.dumps(message)}\n")
     return message
 
 def dap_receiver(sock):
-    """Continuously read DAP messages and store responses and events globally."""
+    """Continuously reads DAP messages and categorizes them into global dicts."""
     while True:
         try:
             msg = read_dap_message(sock)
         except Exception as ex:
-            print("Receiver terminating:", ex)
+            print("Receiver terminating.", ex)
             break
         msg_type = msg.get("type")
         if msg_type == "response":
@@ -76,10 +77,10 @@ def dap_receiver(sock):
         elif msg_type == "event":
             events.setdefault(msg.get("event"), []).append(msg)
         else:
-            print("Unknown message type:", msg)
+            print("Unknown message type", msg)
 
 def wait_for_event(event_name, timeout=10):
-    """Wait until a DAP event with the given name is received."""
+    """Wait for a specific event to appear in the global 'events' dict."""
     t0 = time.time()
     while time.time() - t0 < timeout:
         if event_name in events and events[event_name]:
@@ -88,7 +89,7 @@ def wait_for_event(event_name, timeout=10):
     raise TimeoutError(f"Timeout waiting for event {event_name}")
 
 def wait_for_response(seq, timeout=10):
-    """Wait until the response for the given sequence is received."""
+    """Wait for the response corresponding to the given sequence number."""
     t0 = time.time()
     while time.time() - t0 < timeout:
         if seq in responses:
@@ -97,7 +98,7 @@ def wait_for_response(seq, timeout=10):
     raise TimeoutError(f"Timeout waiting for response to seq {seq}")
 
 def stream_output(proc, buffer):
-    """Continuously read lines from proc.stdout and append them to buffer."""
+    """Continuously read lines from proc.stdout and append them to the buffer."""
     for line in iter(proc.stdout.readline, ''):
         if not line:
             break
@@ -108,8 +109,8 @@ def stream_output(proc, buffer):
 
 def launch_target_script_with_debugpy(target_script, debugpy_port):
     """
-    Launch the target script (a.py) with debugpy listening on the specified port.
-    Returns a tuple: (subprocess.Popen, output_buffer, output_thread).
+    Launch the target script with debugpy listening on the specified port.
+    Returns a tuple of (subprocess.Popen, output_buffer, output_thread).
     """
     output_buffer = []
     launcher_cmd = [
@@ -126,15 +127,19 @@ def launch_target_script_with_debugpy(target_script, debugpy_port):
         universal_newlines=True,
         bufsize=1
     )
-    output_thread = threading.Thread(target=stream_output, args=(proc, output_buffer), daemon=True)
+    output_thread = threading.Thread(
+        target=stream_output,
+        args=(proc, output_buffer),
+        daemon=True
+    )
     output_thread.start()
-    # Allow the script time to start
+    # Give the process some time to start up
     time.sleep(1)
     return proc, output_buffer, output_thread
 
 def connect_to_debugpy(debugpy_port):
     """
-    Connect to debugpy over TCP and launch the receiver thread.
+    Create a socket connection to debugpy on the specified port and start a receiver thread.
     Returns (sock, recv_thread).
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -145,9 +150,7 @@ def connect_to_debugpy(debugpy_port):
     return sock, recv_thread
 
 def send_initialize_request(sock):
-    """
-    Send the 'initialize' request to the debug adapter and wait for its response.
-    """
+    """Send the 'initialize' request and wait for response."""
     init_seq = next_sequence()
     init_req = {
         "seq": init_seq,
@@ -168,9 +171,7 @@ def send_initialize_request(sock):
     return wait_for_response(init_seq)
 
 def send_attach_request(sock, debugpy_port):
-    """
-    Send the 'attach' request with host and port.
-    """
+    """Send the 'attach' request."""
     attach_seq = next_sequence()
     attach_req = {
         "seq": attach_seq,
@@ -185,9 +186,7 @@ def send_attach_request(sock, debugpy_port):
     time.sleep(0.2)
 
 def send_set_breakpoints_request(sock, target_script, lines):
-    """
-    Send 'setBreakpoints' request for specified lines in target_script.
-    """
+    """Send a 'setBreakpoints' request for the given lines."""
     bp_seq = next_sequence()
     set_bp_req = {
         "seq": bp_seq,
@@ -206,9 +205,7 @@ def send_set_breakpoints_request(sock, target_script, lines):
     return bp_seq
 
 def send_configuration_done_request(sock):
-    """
-    Send the 'configurationDone' request.
-    """
+    """Send the 'configurationDone' request."""
     conf_seq = next_sequence()
     conf_req = {
         "seq": conf_seq,
@@ -219,80 +216,126 @@ def send_configuration_done_request(sock):
     send_dap_message(sock, conf_req)
     return conf_seq
 
-def send_terminate_request(sock):
-    """
-    Send the 'terminate' request to the debug adapter.
-    According to the spec, this is just an acknowledgement – the adapter will then send
-    a 'terminated' event.
-    """
-    term_seq = next_sequence()
-    term_req = {
-        "seq": term_seq,
+def send_step_out_request(sock, thread_id, granularity="statement"):
+    """Send the 'stepOut' request for the given thread."""
+    seq = next_sequence()
+    req = {
+        "seq": seq,
         "type": "request",
-        "command": "terminate",
+        "command": "stepOut",
         "arguments": {
-            "restart": False
+            "threadId": thread_id,
+            "granularity": granularity
         }
     }
-    send_dap_message(sock, term_req)
-    return term_seq
+    send_dap_message(sock, req)
+    return seq
+
+def request_stack_trace(sock, thread_id, start_frame=0, levels=1):
+    """Send a 'stackTrace' request."""
+    st_seq = next_sequence()
+    st_req = {
+        "seq": st_seq,
+        "type": "request",
+        "command": "stackTrace",
+        "arguments": {
+            "threadId": thread_id,
+            "startFrame": start_frame,
+            "levels": levels
+        }
+    }
+    send_dap_message(sock, st_req)
+    return st_seq
+
+def send_continue_request(sock, thread_id):
+    """Send a 'continue' request for the thread."""
+    cont_seq = next_sequence()
+    cont_req = {
+        "seq": cont_seq,
+        "type": "request",
+        "command": "continue",
+        "arguments": {"threadId": thread_id}
+    }
+    send_dap_message(sock, cont_req)
+    return cont_seq
 
 # ------------------ Main Function ------------------ #
 
 def main():
+    # Step 1: Launch target script with debugpy
     debugpy_port = 5678
-    # Change the target script path as needed. Here we assume a.py is in test_data subfolder.
-    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "test_data", "a.py"))
-
-    # Launch the target with debugpy.
+    target_script = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "test_data", "a.py")
+    )
     proc, output_buffer, output_thread = launch_target_script_with_debugpy(target_script, debugpy_port)
 
-    # Connect to the debug adapter.
+    # Step 2: Connect to debugpy
     sock, recv_thread = connect_to_debugpy(debugpy_port)
 
-    # Send initialize request.
+    # Step 3: Send initialize
     init_resp = send_initialize_request(sock)
     print("Received initialize response:", init_resp)
 
-    # Send attach request.
+    # Step 4: Send attach request
     send_attach_request(sock, debugpy_port)
 
-    # Wait for "initialized" event.
+    # Wait for the "initialized" event
     _ = wait_for_event("initialized")
     print("Initialization complete")
 
-    # Set a breakpoint – here, for example, at line 24 in a.py.
-    bp_line = 24
+    # Step 5: Send setBreakpoints (set at line 24)
+    bp_line = 10
     bp_seq = send_set_breakpoints_request(sock, target_script, [bp_line])
     bp_resp = wait_for_response(bp_seq)
     print("Breakpoints response:", bp_resp)
     if not bp_resp.get("success"):
         print("Error setting breakpoints:", bp_resp.get("message"))
 
-    # Send configurationDone request.
+    # Step 6: Send configurationDone
     conf_seq = send_configuration_done_request(sock)
     conf_resp = wait_for_response(conf_seq)
     print("ConfigurationDone response:", conf_resp)
 
-    # Wait for the target script to hit the breakpoint.
-    print("Waiting for stopped event (target hit breakpoint)...")
+    # Step 7: Wait for the "stopped" event
+    print("Waiting for the target to hit the breakpoint (stopped event)...")
     stopped_event = wait_for_event("stopped", timeout=15)
     print("Received stopped event:", stopped_event)
+    thread_id = stopped_event.get("body", {}).get("threadId", 1)
 
-    # Now send the terminate request.
-    print("Sending terminate request...")
-    term_seq = send_terminate_request(sock)
-    term_resp = wait_for_response(term_seq, timeout=15)
-    print("Terminate response:", term_resp)
+    # Request a stack trace to get the correct frame id
+    st_seq = request_stack_trace(sock, thread_id)
+    st_resp = wait_for_response(st_seq)
+    print("StackTrace response:", st_resp)
+    frames = st_resp.get("body", {}).get("stackFrames", [])
+    if not frames:
+        raise RuntimeError("No stack frames received")
+    frame_id = frames[0].get("id")
+    print("Using frameId:", frame_id)
+    line_num = frames[0]["line"]
+    assert line_num == bp_line
 
-    # Finally, wait for the terminated event.
-    terminated_event = wait_for_event("terminated", timeout=15)
-    print("Received terminated event:", terminated_event)
+    # Step 8: Now perform step out.
+    step_out_seq = send_step_out_request(sock, thread_id)
+    step_out_resp = wait_for_response(step_out_seq)
+    print("StepOut response:", step_out_resp)
 
-    # Cleanup: close socket and join output thread.
+    # Verify new position after stepOut by requesting a new stack trace.
+    st_seq = request_stack_trace(sock, thread_id)
+    st_resp = wait_for_response(st_seq)
+    new_line_num = st_resp["body"]["stackFrames"][0]["line"]
+    print(f"After step out, stopped on line {new_line_num}")
+    assert new_line_num == 24
+
+    # Step 9: Continue execution.
+    cont_seq = send_continue_request(sock, thread_id)
+    cont_resp = wait_for_response(cont_seq)
+    print("Continue response:", cont_resp)
+
+    # Wait for termination.
+    _ = wait_for_event("terminated")
     sock.close()
-    output_thread.join(timeout=1.0)
 
+    output_thread.join(timeout=1.0)
     print("\n----- Captured Target Output -----")
     for line in output_buffer:
         print(line)
