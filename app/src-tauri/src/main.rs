@@ -147,8 +147,8 @@ async fn launch_debug_session(
     }
 
     app_handle
-        .emit("debug-status", "Running")
-        .map_err(|e| format!("Failed to emit status: {}", e))?;
+        .emit("debug-status", serde_json::json!({"status": "Running"}))
+        .map_err(|e| e.to_string())?;
 
     println!("Debug session launched successfully");
     Ok("Debug session launched successfully".into())

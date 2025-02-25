@@ -160,7 +160,10 @@ export default function Home() {
     let unlistenStatus: () => void;
     (async () => {
       unlistenStatus = await listen("debug-status", (event) => {
-        const status = event.payload as string;
+        const payload = event.payload as {
+          status: string;
+        };
+        const status = payload.status;
         setDebugStatus(status.toLowerCase());
 
         if (status === "running") {

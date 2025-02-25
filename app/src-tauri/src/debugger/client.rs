@@ -174,7 +174,6 @@ impl DAPClient {
                     // immediately emit the terminated status via the app_handle.
                     if msg.message_type == MessageType::Event {
                         if let Some(ref evt) = msg.event {
-                            println!("EVENT: {:?}", evt);
                             if evt == "terminated" {
                                 println!("Processing 'terminated' event. terminated set to true");
                                 let _ = app_handle.emit(
@@ -254,7 +253,7 @@ impl DAPClient {
             command: Some("initialize".to_string()),
             request_seq: None,
             success: None,
-            body: Some(serde_json::json!({
+            arguments: Some(serde_json::json!({
                 "adapterID": "python",
                 "clientID": "dap_test_client",
                 "clientName": "DAP Test",
@@ -264,8 +263,8 @@ impl DAPClient {
                 "supportsVariableType": true,
                 "supportsEvaluateForHovers": true
             })),
+            body: None,
             event: None,
-            arguments: None,
         })?;
         if let Some(response) = self.wait_for_response(seq, 10.0).await {
             Ok(response)
@@ -302,9 +301,9 @@ impl DAPClient {
             command: Some("configurationDone".to_string()),
             request_seq: None,
             success: None,
+            arguments: Some(serde_json::json!({})),
             body: None,
             event: None,
-            arguments: None,
         })?;
         if let Some(response) = self.wait_for_response(seq, 10.0).await {
             Ok(response)

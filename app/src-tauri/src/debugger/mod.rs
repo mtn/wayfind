@@ -83,7 +83,7 @@ impl DebugManager {
 
         // Emit initial status.
         app_handle
-            .emit("debug-status", DebugStatus::Running)
+            .emit("debug-status", serde_json::json!({"status": "Running"}))
             .map_err(|e| e.to_string())?;
 
         // Wait briefly to give debugpy time to start.
