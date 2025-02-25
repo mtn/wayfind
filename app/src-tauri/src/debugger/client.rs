@@ -30,6 +30,11 @@ pub struct DAPMessage {
     pub arguments: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BreakpointInput {
+    pub line: u32,
+}
+
 pub struct DAPClient {
     // The writer is used to send messages.
     writer: Option<Arc<Mutex<TcpStream>>>,
@@ -309,6 +314,37 @@ impl DAPClient {
             Ok(response)
         } else {
             Err("Timeout waiting for configurationDone response".into())
+        }
+    }
+
+    // set_breakpoints: sends a "setBreakpoints" request and waits for its response.
+    pub async fn set_breakpoints(
+        &self,
+        file_path: String,
+        breakpoints: Vec<BreakpointInput>,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("setBreakpoints".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(serde_json::json!({
+                "source": {
+                    "path": file_path,
+                    "name": file_path.split('/').last().unwrap_or("unknown")
+                },
+                "breakpoints": breakpoints,
+                "sourceModified": false
+            })),
+            body: None,
+            event: None,
+        };
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for setBreakpoints response".into())
         }
     }
 }

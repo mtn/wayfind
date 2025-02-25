@@ -4,7 +4,8 @@ mod debug_state;
 mod debugger;
 
 use debug_state::DebugSessionState;
-use debugger::client::DAPClient;
+use debugger::client::{BreakpointInput, DAPClient};
+use serde_json::Value;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -152,6 +153,27 @@ async fn launch_debug_session(
 }
 
 #[tauri::command]
+async fn set_breakpoints(
+    token: String,
+    breakpoints: Vec<BreakpointInput>,
+    file_path: String,
+    debug_state: tauri::State<'_, DebugSessionState>,
+) -> Result<Value, String> {
+    println!("Setting breakpoints");
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+    let response = dap_client
+        .set_breakpoints(file_path.clone(), breakpoints)
+        .await
+        .map_err(|e| format!("Failed to set breakpoints: {}", e))?;
+    if let Some(body) = response.body {
+        Ok(body)
+    } else {
+        Err("No breakpoints information in response.".into())
+    }
+}
+
+#[tauri::command]
 async fn configuration_done(
     debug_state: tauri::State<'_, DebugSessionState>,
 ) -> Result<String, String> {
@@ -181,6 +203,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             read_directory,
             launch_debug_session,
+            set_breakpoints,
             configuration_done,
             terminate_program,
         ])

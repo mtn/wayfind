@@ -223,7 +223,7 @@ export default function Home() {
               setActiveBreakpoints((current) =>
                 current.map((bp) => {
                   if (bp.file !== currentFileName) return bp;
-                  const verifiedBp = data.breakpoints.find(
+                  const verifiedBp = data.breakpoints!.find(
                     (vbp: IBreakpoint) => vbp.line === bp.line,
                   );
                   return verifiedBp
@@ -276,6 +276,36 @@ export default function Home() {
           );
         });
 
+      // Merge queued and active breakpoints and set them for the new session.
+      const allBreakpoints = mergeBreakpoints(
+        queuedBreakpoints,
+        activeBreakpoints,
+      );
+      setQueuedBreakpoints([]);
+
+      const uniqueFiles = Array.from(
+        new Set(allBreakpoints.map((bp) => bp.file).filter(Boolean)),
+      );
+      for (const file of uniqueFiles) {
+        const fileBreakpoints = allBreakpoints.filter((bp) => bp.file === file);
+        addLog(
+          `Setting breakpoints for ${file}: ${JSON.stringify(fileBreakpoints)}`,
+        );
+        const bpResp = await invoke<{ breakpoints?: IBreakpoint[] }>(
+          "set_breakpoints",
+          {
+            token: sessionToken,
+            breakpoints: fileBreakpoints,
+            filePath: file,
+          },
+        );
+        addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpResp)}`);
+        if (bpResp.breakpoints) {
+          setActiveBreakpoints((current) =>
+            current.filter((bp) => bp.file !== file).concat(bpResp.breakpoints),
+          );
+        }
+      }
       // The debug-status listener is now set up early using useEffect.
     } catch (error) {
       addLog(
