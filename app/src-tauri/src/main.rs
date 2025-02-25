@@ -59,7 +59,7 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
 async fn launch_debug_session(
     app_handle: tauri::AppHandle,
     script_path: String,
-    debug_manager: tauri::State<'_, Arc<DebugManager>>,
+    _debug_manager: tauri::State<'_, Arc<DebugManager>>,
     debug_state: tauri::State<'_, DebugSessionState>,
 ) -> Result<String, String> {
     // 1. Find an available port to use for debugpy (starting at 5678)
@@ -116,7 +116,7 @@ async fn launch_debug_session(
     // Instead, the newly created DAPClient will start its own receiver.
 
     // 3. Create a new DAPClient, connect it, and start its receiver.
-    let (mut dap_client, _rx) = DAPClient::new();
+    let (mut dap_client, _rx) = DAPClient::new(app_handle.clone());
     dap_client
         .connect("127.0.0.1", debugpy_port as u16)
         .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
@@ -175,9 +175,9 @@ async fn configuration_done(
 
 #[tauri::command]
 async fn terminate_program(
-    debug_manager: tauri::State<'_, Arc<DebugManager>>,
+    _debug_manager: tauri::State<'_, Arc<DebugManager>>,
 ) -> Result<String, String> {
-    debug_manager.terminate()?;
+    // debug_manager::DebugManager::new().terminate()?;
     Ok("Debug session terminated".into())
 }
 

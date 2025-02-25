@@ -5,9 +5,11 @@ use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use tauri::AppHandle;
+use tauri::Emitter;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")] // This tells serde to use lowercase strings.
 pub enum MessageType {
     Request,
@@ -43,11 +45,14 @@ pub struct DAPClient {
     receiver_handle: Option<thread::JoinHandle<()>>,
     // event_sender: an optional channel sender that you can use if you want to propagate messages externally.
     event_sender: mpsc::UnboundedSender<DAPMessage>,
+    // app_handle: the Tauri AppHandle used to emit IPC events.
+    pub app_handle: AppHandle,
 }
 
 impl DAPClient {
     // Create a new client along with an mpsc receiver for external subscribers.
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<DAPMessage>) {
+    // This version requires an AppHandle to be provided.
+    pub fn new(app_handle: AppHandle) -> (Self, mpsc::UnboundedReceiver<DAPMessage>) {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let client = Self {
@@ -58,6 +63,7 @@ impl DAPClient {
             events: Arc::new(Mutex::new(HashMap::new())),
             receiver_handle: None,
             event_sender: tx,
+            app_handle,
         };
 
         (client, rx)
@@ -108,6 +114,8 @@ impl DAPClient {
         let responses_arc = Arc::clone(&self.responses);
         let events_arc = Arc::clone(&self.events);
         let event_sender = self.event_sender.clone();
+        // Clone the app_handle so it can be moved into the thread.
+        let app_handle = self.app_handle.clone();
 
         self.receiver_handle = Some(thread::spawn(move || loop {
             // Read header until we encounter "\r\n\r\n".
@@ -162,6 +170,21 @@ impl DAPClient {
 
                 println!("<-- Received: {}", message_str);
                 if let Ok(msg) = serde_json::from_str::<DAPMessage>(&message_str) {
+                    // If the message is an event and its name is "terminated",
+                    // immediately emit the terminated status via the app_handle.
+                    if msg.message_type == MessageType::Event {
+                        if let Some(ref evt) = msg.event {
+                            println!("EVENT: {:?}", evt);
+                            if evt == "terminated" {
+                                println!("Processing 'terminated' event. terminated set to true");
+                                let _ = app_handle.emit(
+                                    "debug-status",
+                                    serde_json::json!({"status": "Terminated"}),
+                                );
+                            }
+                        }
+                    }
+
                     // For responses, store them keyed by their request_seq.
                     match msg.message_type {
                         MessageType::Response => {
