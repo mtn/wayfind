@@ -578,6 +578,44 @@ impl DAPClient {
         }
     }
 
+    pub async fn evaluate(
+        &self,
+        expression: &str,
+        frame_id: Option<i32>,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        // Build arguments according to DAP spec.
+        // Default context is "repl"; if a frame id is provided we override context to "hover".
+        let mut args_json = serde_json::json!({
+            "expression": expression,
+            "context": "repl"
+        });
+
+        if let Some(fid) = frame_id {
+            if let serde_json::Value::Object(ref mut map) = args_json {
+                map.insert("frameId".to_string(), serde_json::json!(fid));
+                map.insert("context".to_string(), serde_json::json!("hover"));
+            }
+        }
+
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("evaluate".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(args_json),
+            body: None,
+            event: None,
+        };
+
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for evaluate response".into())
+        }
+    }
+
     pub async fn terminate(&self) -> Result<DAPMessage, Box<dyn std::error::Error>> {
         let seq = self.send_message(DAPMessage {
             seq: -1,

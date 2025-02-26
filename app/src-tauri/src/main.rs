@@ -3,7 +3,7 @@
 mod debug_state;
 mod debugger;
 
-use debug_state::DebugSessionState;
+use debug_state::{DebugSessionState, DebuggerState};
 use debugger::client::{emit_status_update, BreakpointInput, DAPClient};
 use serde_json::Value;
 use std::fs;
@@ -305,6 +305,58 @@ async fn step_out(
 }
 
 #[tauri::command]
+async fn evaluate_expression(
+    expression: String,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
+) -> Result<String, String> {
+    // Get the DAP client
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+
+    // Instead of needing the current state, simply hardcode the threadId as 1.
+    // TODO get rid of this hardcoding
+    // Also, we ask the DAP client for a stack trace so we can extract a frame id.
+    let frame_id = match dap_client.stack_trace(1).await {
+        Ok(st_resp) => {
+            if let Some(body) = st_resp.body {
+                if let Some(stack_frames) = body.get("stackFrames").and_then(|sf| sf.as_array()) {
+                    if let Some(first_frame) = stack_frames.first() {
+                        // Extract the frame id
+                        first_frame
+                            .get("id")
+                            .and_then(|v| v.as_i64())
+                            .map(|id| id as i32)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        Err(e) => {
+            println!("Failed to get stack trace: {}", e);
+            None
+        }
+    };
+
+    // Now call the evaluate command, passing in the frame id (if we obtained one)
+    let eval_resp = dap_client
+        .evaluate(&expression, frame_id)
+        .await
+        .map_err(|e| format!("Failed to evaluate expression: {}", e))?;
+
+    if let Some(body) = eval_resp.body {
+        if let Some(result_val) = body.get("result") {
+            return Ok(result_val.to_string());
+        }
+    }
+    Err("No result returned from evaluate".into())
+}
+
+#[tauri::command]
 async fn terminate_program(
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
     app_handle: tauri::AppHandle,
@@ -361,6 +413,7 @@ fn main() {
             step_in,
             step_over,
             step_out,
+            evaluate_expression,
             terminate_program,
         ])
         .run(tauri::generate_context!())
