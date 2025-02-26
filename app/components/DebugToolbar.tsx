@@ -114,10 +114,16 @@ export function DebugToolbar({
 
   async function handleStepOut() {
     try {
-      await invoke("step_out", { threadId: 1 });
+      // Call the step_out command we just implemented
+      await invoke("step_out", {
+        threadId: 1,
+        granularity: "statement", // Default granularity
+      });
+      addLog("Stepping out of current function");
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error stepping out:", errMsg);
+      addLog(`Failed to step out: ${errMsg}`);
     }
   }
 

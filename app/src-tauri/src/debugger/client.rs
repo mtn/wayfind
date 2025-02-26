@@ -543,4 +543,38 @@ impl DAPClient {
             Err("Timeout waiting for next response".into())
         }
     }
+
+    pub async fn step_out(
+        &self,
+        thread_id: i64,
+        granularity: Option<&str>,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let mut args = serde_json::json!({
+            "threadId": thread_id
+        });
+
+        // Add granularity if provided
+        if let Some(g) = granularity {
+            if let serde_json::Value::Object(ref mut map) = args {
+                map.insert("granularity".to_string(), serde_json::json!(g));
+            }
+        }
+
+        let seq = self.send_message(DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("stepOut".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(args),
+            body: None,
+            event: None,
+        })?;
+
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for stepOut response".into())
+        }
+    }
 }

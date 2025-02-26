@@ -288,6 +288,23 @@ async fn step_over(
 }
 
 #[tauri::command]
+async fn step_out(
+    thread_id: i64,
+    granularity: Option<String>,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
+) -> Result<String, String> {
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+    match dap_client.step_out(thread_id, granularity.as_deref()).await {
+        Ok(_) => {
+            // Do not manually emit "running" status; canonical events will update the state.
+            Ok("Step out executed".into())
+        }
+        Err(e) => Err(format!("Failed to step out: {}", e)),
+    }
+}
+
+#[tauri::command]
 async fn terminate_program(
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
     app_handle: tauri::AppHandle,
@@ -313,6 +330,7 @@ fn main() {
             continue_debug,
             step_in,
             step_over,
+            step_out,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
