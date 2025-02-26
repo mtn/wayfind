@@ -1,17 +1,16 @@
 use std::process::Child;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // Import your updated DAPClient from your debugger client module.
 use crate::debugger::client::DAPClient;
 
 pub struct DebugSessionState {
-    // Holds the active DAPClient (None until a session is launched).
     pub client: Mutex<Option<DAPClient>>,
-    // Holds the active Python process (None until a session is launched).
     pub process: Mutex<Option<Child>>,
-    // Sequence counter for status updates to handle race conditions
-    pub status_seq: AtomicU64,
+    // Wrap in Arc
+    pub status_seq: Arc<AtomicU64>,
 }
 
 impl DebugSessionState {
@@ -19,7 +18,8 @@ impl DebugSessionState {
         DebugSessionState {
             client: Mutex::new(None),
             process: Mutex::new(None),
-            status_seq: AtomicU64::new(0),
+            // Initialize as Arc
+            status_seq: Arc::new(AtomicU64::new(0)),
         }
     }
 

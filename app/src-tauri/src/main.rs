@@ -11,6 +11,7 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::thread;
 use tauri::Emitter;
 
@@ -117,11 +118,15 @@ async fn launch_debug_session(
         .connect("127.0.0.1", debugpy_port as u16)
         .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
 
+    // Get a clone of the status_seq counter for the receiver thread
+    let status_seq = Arc::clone(&debug_state.status_seq);
+
     // Start the receiver loop so incoming DAP messages get handled.
     {
         // We call start_receiver() on the mutable client.
         let mut client = dap_client;
-        client.start_receiver();
+        // Pass the status_seq to start_receiver
+        client.start_receiver(Some(status_seq));
 
         // Initialize and attach.
         client

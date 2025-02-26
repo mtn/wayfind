@@ -115,6 +115,7 @@ impl DAPClient {
     }
 
     // Get a reference to the status sequence counter
+    #[allow(dead_code)]
     pub fn get_status_seq(&self) -> &Arc<AtomicU64> {
         &self.status_seq
     }
@@ -156,14 +157,18 @@ impl DAPClient {
     }
 
     // start_receiver: spawns a dedicated thread to continuously read incoming messages.
-    pub fn start_receiver(&mut self) {
+    pub fn start_receiver(&mut self, external_status_seq: Option<Arc<AtomicU64>>) {
         let reader_arc = Arc::clone(self.reader.as_ref().expect("Reader not set"));
         let responses_arc = Arc::clone(&self.responses);
         let events_arc = Arc::clone(&self.events);
         let event_sender = self.event_sender.clone();
         // Clone the app_handle so it can be moved into the thread.
         let app_handle = self.app_handle.clone();
-        let status_seq = Arc::clone(&self.status_seq);
+        // Use external status sequence counter if provided, otherwise use the one from the client
+        let status_seq = match external_status_seq {
+            Some(seq) => seq,
+            None => Arc::clone(&self.status_seq),
+        };
 
         self.receiver_handle = Some(thread::spawn(move || loop {
             // Read header until we find the "\r\n\r\n" sequence.
