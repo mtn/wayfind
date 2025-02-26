@@ -51,6 +51,8 @@ export default function Home() {
 
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   const [debugStatus, setDebugStatus] = useState("inactive");
+  // Add ref for tracking the latest debug status
+  const debugStatusRef = useRef("inactive");
 
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
@@ -61,6 +63,11 @@ export default function Home() {
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
 
   const [selectedTab, setSelectedTab] = useState("status");
+
+  // Update ref whenever the state changes
+  useEffect(() => {
+    debugStatusRef.current = debugStatus;
+  }, [debugStatus]);
 
   const forceWatchEvaluation = () => {
     if (watchExpressionsRef.current) {
@@ -167,11 +174,31 @@ export default function Home() {
     let unlistenStatus: () => void;
     (async () => {
       unlistenStatus = await listen("debug-status", (event) => {
+        console.log("Debug status event received:", event);
         const payload = event.payload as {
           status: string;
+          src: string;
           threadId?: number;
         };
         const status = payload.status.toLowerCase();
+
+        // Use ref to check current status, not the state
+        // configurationDone sends a running status, but if a breakpoint was set, this might come after we've already
+        // gotten a paused status
+        if (
+          status === "running" &&
+          payload.src === "configuration_done" &&
+          debugStatusRef.current === "paused"
+        ) {
+          console.log(
+            "Ignoring running status from configuration_done because current status is paused:",
+            debugStatusRef.current,
+          );
+          return;
+        }
+
+        // Update both the ref and the state
+        debugStatusRef.current = status;
         setDebugStatus(status);
 
         if (status === "running") {
@@ -185,11 +212,6 @@ export default function Home() {
           // When paused, force watch expressions to update
           forceWatchEvaluation();
 
-          // If we have a threadId, request the current location
-          console.log(
-            "about to get paused location, thread id:",
-            payload.threadId,
-          );
           if (payload.threadId) {
             invoke("get_paused_location", { threadId: payload.threadId }).catch(
               (err) => console.error("Failed to get paused location:", err),
@@ -204,7 +226,7 @@ export default function Home() {
         unlistenStatus();
       }
     };
-  }, []);
+  }, []); // Remove debugStatus dependency since we now use ref
 
   // Listen for debug location events
   useEffect(() => {

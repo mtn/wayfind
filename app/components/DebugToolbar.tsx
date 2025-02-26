@@ -39,6 +39,7 @@ export function DebugToolbar({
   const isSessionActive =
     debugStatus !== "inactive" && debugStatus !== "terminated";
   const isPaused = debugStatus === "paused";
+  console.log("DEBUG STATUS:", debugStatus);
 
   async function handleLaunch() {
     try {

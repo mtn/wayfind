@@ -148,7 +148,7 @@ async fn launch_debug_session(
     app_handle
         .emit(
             "debug-status",
-            serde_json::json!({"status": "Initializing"}),
+            serde_json::json!({"status": "initializing", "src": "launch_debug_session"}),
         )
         .map_err(|e| e.to_string())?;
 
@@ -194,7 +194,10 @@ async fn configuration_done(
     // Update status to Running after configurationDone is sent
     dap_client
         .app_handle
-        .emit("debug-status", serde_json::json!({"status": "Running"}))
+        .emit(
+            "debug-status",
+            serde_json::json!({"status": "running", "src": "configuration_done"}),
+        )
         .map_err(|e| format!("Failed to emit status update: {}", e))?;
 
     Ok("configurationDone sent; target program is now running.".into())

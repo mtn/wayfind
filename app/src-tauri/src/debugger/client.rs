@@ -184,7 +184,7 @@ impl DAPClient {
                                 println!("Processing 'terminated' event");
                                 let _ = app_handle.emit(
                                     "debug-status",
-                                    serde_json::json!({"status": "Terminated"}),
+                                    serde_json::json!({"status": "terminated", "src": "msg_handler"}),
                                 );
                             } else if evt == "stopped" {
                                 // Handle the stopped event - extract thread ID and emit
@@ -198,15 +198,16 @@ impl DAPClient {
                                         let _ = app_handle.emit(
                                             "debug-status",
                                             serde_json::json!({
-                                                "status": "Paused",
-                                                "threadId": thread_id
+                                                "status": "paused",
+                                                "threadId": thread_id,
+                                                "src": "msg_handler"
                                             }),
                                         );
                                     } else {
                                         // No thread ID, just emit paused status
                                         let _ = app_handle.emit(
                                             "debug-status",
-                                            serde_json::json!({"status": "Paused"}),
+                                            serde_json::json!({"status": "paused", "src": "msg_handler"}),
                                         );
                                     }
                                 }
