@@ -309,8 +309,39 @@ async fn terminate_program(
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    // Emit terminated status with sequence number
-    emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
+    let client_lock = debug_state.client.lock().await;
+
+    if let Some(client) = client_lock.as_ref() {
+        // Send the terminate request
+        // Note: We're properly handling the error here by converting it to a String
+        match client.terminate().await {
+            Ok(_) => {
+                println!("Terminate request sent successfully");
+            }
+            Err(e) => {
+                // Convert the boxed error to a String right away
+                let error_str = e.to_string();
+                println!("Error sending terminate request: {}", error_str);
+
+                // Emit terminated status in case of error
+                emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
+
+                // Try to kill the process directly
+                // We need to drop the client_lock before acquiring process_lock to avoid deadlock
+            }
+        }
+    } else {
+        // No active debug session, just emit terminated status
+        emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
+    }
+
+    // After we're done with client_lock, it's safe to acquire process_lock
+    let mut proc_lock = debug_state.process.lock().await;
+    if let Some(child) = proc_lock.as_mut() {
+        let _ = child.kill();
+    }
+    *proc_lock = None;
+
     Ok("Debug session terminated".into())
 }
 
@@ -325,12 +356,12 @@ fn main() {
             launch_debug_session,
             set_breakpoints,
             configuration_done,
-            terminate_program,
             get_paused_location,
             continue_debug,
             step_in,
             step_over,
             step_out,
+            terminate_program,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

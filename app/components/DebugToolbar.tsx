@@ -143,9 +143,11 @@ export function DebugToolbar({
   async function handleTerminate() {
     try {
       await invoke("terminate_program");
+      addLog("Terminating debug session");
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error("Error stopping:", errMsg);
+      console.error("Error terminating session:", errMsg);
+      addLog(`Failed to terminate: ${errMsg}`);
     }
   }
 
@@ -242,7 +244,7 @@ export function DebugToolbar({
               </Button>
               <Button
                 onClick={handleTerminate}
-                disabled={!isPaused}
+                disabled={!isSessionActive} // Enable whenever a session is active
                 title="Stop"
               >
                 <Square className="h-4 w-4" />
