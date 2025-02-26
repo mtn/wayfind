@@ -14,6 +14,7 @@ const router = Router();
 // This endpoint accepts a POST with a JSON body containing "messages"
 // and returns a streaming response from OpenAI.
 router.post("/", async (req: Request, res: Response) => {
+  console.log("Hit the endpoint");
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     res.status(405).json({ error: "Method Not Allowed" });
