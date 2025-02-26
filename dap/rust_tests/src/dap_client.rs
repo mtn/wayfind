@@ -444,6 +444,7 @@ impl DAPClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn step_in(
         &self,
         thread_id: i32,
@@ -480,6 +481,7 @@ impl DAPClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn next(&self, thread_id: i32) -> Result<DAPMessage, Box<dyn std::error::Error>> {
         let req = DAPMessage {
             seq: -1,
@@ -502,6 +504,7 @@ impl DAPClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn step_out(
         &self,
         thread_id: i32,

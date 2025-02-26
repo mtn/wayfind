@@ -3,7 +3,7 @@
 mod debug_state;
 mod debugger;
 
-use debug_state::{DebugSessionState, DebuggerState};
+use debug_state::DebugSessionState;
 use debugger::client::{emit_status_update, BreakpointInput, DAPClient};
 use serde_json::Value;
 use std::fs;

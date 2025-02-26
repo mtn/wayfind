@@ -126,11 +126,6 @@ impl DAPClient {
         &self.status_seq
     }
 
-    // Emit a status update (using the common function defined above)
-    pub fn emit_status(&self, status: &str, thread_id: Option<i64>) -> Result<(), String> {
-        emit_status_update(&self.app_handle, &self.status_seq, status, thread_id)
-    }
-
     // send_message: assigns a sequence number, serializes the message along with a header, and writes it to the stream.
     // Returns the assigned sequence number.
     pub fn send_message(&self, mut message: DAPMessage) -> std::io::Result<i32> {

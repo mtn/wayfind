@@ -1,6 +1,6 @@
 use parking_lot::RwLock;
 use std::process::Child;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -11,7 +11,6 @@ use crate::debugger::client::DAPClient;
 pub enum DebuggerState {
     NotStarted,
     Configuring,
-    Initializing,
     Running,
     Paused { reason: String, thread_id: i64 },
     Terminated,
@@ -34,11 +33,6 @@ impl DebugSessionState {
             status_seq: Arc::new(AtomicU64::new(0)),
             state: RwLock::new(DebuggerState::NotStarted),
         }
-    }
-
-    // Get the next sequence number for status updates
-    pub fn next_status_seq(&self) -> u64 {
-        self.status_seq.fetch_add(1, Ordering::SeqCst)
     }
 
     pub fn handle_dap_event(&self, msg: &crate::debugger::client::DAPMessage) {
@@ -76,9 +70,5 @@ impl DebugSessionState {
     pub fn handle_configuration_done(&self) {
         let mut guard = self.state.write();
         *guard = DebuggerState::Running;
-    }
-
-    pub fn current_state(&self) -> DebuggerState {
-        self.state.read().clone()
     }
 }

@@ -3,7 +3,6 @@ mod dap_client;
 use crate::dap_client::DAPClient;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::thread;
 use std::time::Duration;
 
 #[tokio::main]
@@ -55,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Failed to send attach");
 
     // Wait for the 'initialized' event
-    if let Some(initialized) = client.wait_for_event("initialized", 10.0) {
+    if let Some(_) = client.wait_for_event("initialized", 10.0) {
         println!("Initialization complete");
     } else {
         println!("Timed out waiting for 'initialized' event");
