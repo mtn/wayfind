@@ -94,10 +94,17 @@ export function DebugToolbar({
 
   async function handleStepIn() {
     try {
-      await invoke("step_in", { threadId: 1 });
+      console.log("Clicked step in");
+      // Call the step_in command we just implemented
+      await invoke("step_in", {
+        threadId: 1,
+        granularity: "statement", // Default granularity
+      });
+      addLog("Stepping into next function");
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error stepping into:", errMsg);
+      addLog(`Failed to step in: ${errMsg}`);
     }
   }
 

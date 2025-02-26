@@ -4,7 +4,7 @@ mod debug_state;
 mod debugger;
 
 use debug_state::DebugSessionState;
-use debugger::client::{BreakpointInput, DAPClient};
+use debugger::client::{emit_status_update, BreakpointInput, DAPClient};
 use serde_json::Value;
 use std::fs;
 use std::io::BufRead;
@@ -145,12 +145,8 @@ async fn launch_debug_session(
         proc_lock.replace(child);
     }
 
-    app_handle
-        .emit(
-            "debug-status",
-            serde_json::json!({"status": "initializing", "src": "launch_debug_session"}),
-        )
-        .map_err(|e| e.to_string())?;
+    // Use the new function to emit status with sequence number
+    emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
 
     println!("Debug session launched successfully");
     Ok("Debug session launched successfully".into())
@@ -191,14 +187,13 @@ async fn configuration_done(
         .await
         .map_err(|e| format!("ConfigurationDone failed: {}", e))?;
 
-    // Update status to Running after configurationDone is sent
-    dap_client
-        .app_handle
-        .emit(
-            "debug-status",
-            serde_json::json!({"status": "running", "src": "configuration_done"}),
-        )
-        .map_err(|e| format!("Failed to emit status update: {}", e))?;
+    // Use the new function to emit status with sequence number
+    emit_status_update(
+        &dap_client.app_handle,
+        &debug_state.status_seq,
+        "running",
+        None,
+    )?;
 
     Ok("configurationDone sent; target program is now running.".into())
 }
@@ -257,13 +252,51 @@ async fn continue_debug(
     let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
 
     match dap_client.continue_execution(thread_id).await {
-        Ok(_) => Ok("Execution continued".into()),
+        Ok(_) => {
+            // Emit status with sequence number
+            emit_status_update(
+                &dap_client.app_handle,
+                &debug_state.status_seq,
+                "running",
+                Some(thread_id),
+            )?;
+            Ok("Execution continued".into())
+        }
         Err(e) => Err(format!("Failed to continue execution: {}", e)),
     }
 }
 
 #[tauri::command]
-async fn terminate_program() -> Result<String, String> {
+async fn step_in(
+    thread_id: i64,
+    granularity: Option<String>,
+    debug_state: tauri::State<'_, DebugSessionState>,
+) -> Result<String, String> {
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+
+    match dap_client.step_in(thread_id, granularity.as_deref()).await {
+        Ok(_) => {
+            // Emit status with sequence number
+            emit_status_update(
+                &dap_client.app_handle,
+                &debug_state.status_seq,
+                "running",
+                Some(thread_id),
+            )?;
+            Ok("Step in executed".into())
+        }
+        Err(e) => Err(format!("Failed to step in: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn terminate_program(
+    debug_state: tauri::State<'_, DebugSessionState>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    // Emit terminated status with sequence number
+    emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
     Ok("Debug session terminated".into())
 }
 
@@ -281,6 +314,7 @@ fn main() {
             terminate_program,
             get_paused_location,
             continue_debug,
+            step_in,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

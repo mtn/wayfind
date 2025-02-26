@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufReader, ErrorKind, Read, Write};
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -35,6 +36,34 @@ pub struct BreakpointInput {
     pub line: u32,
 }
 
+// Function to emit status updates with sequence numbers
+// This is defined here and can be used by client.rs and main.rs
+pub fn emit_status_update(
+    app_handle: &AppHandle,
+    status_seq: &AtomicU64,
+    status: &str,
+    thread_id: Option<i64>,
+) -> Result<(), String> {
+    let seq = status_seq.fetch_add(1, Ordering::SeqCst);
+
+    let mut payload = serde_json::json!({
+        "status": status,
+        "seq": seq
+    });
+
+    println!("Emitting status update: status={}, seq={}", status, seq);
+
+    if let Some(tid) = thread_id {
+        if let serde_json::Value::Object(ref mut map) = payload {
+            map.insert("threadId".to_string(), serde_json::json!(tid));
+        }
+    }
+
+    app_handle
+        .emit("debug-status", payload)
+        .map_err(|e| format!("Failed to emit status update: {}", e))
+}
+
 pub struct DAPClient {
     // The writer is used to send messages.
     writer: Option<Arc<Mutex<TcpStream>>>,
@@ -52,6 +81,8 @@ pub struct DAPClient {
     event_sender: mpsc::UnboundedSender<DAPMessage>,
     // app_handle: the Tauri AppHandle used to emit IPC events.
     pub app_handle: AppHandle,
+    // status_seq: counter for status update sequence numbers
+    pub status_seq: Arc<AtomicU64>,
 }
 
 impl DAPClient {
@@ -69,6 +100,7 @@ impl DAPClient {
             receiver_handle: None,
             event_sender: tx,
             app_handle,
+            status_seq: Arc::new(AtomicU64::new(0)),
         };
 
         (client, rx)
@@ -80,6 +112,16 @@ impl DAPClient {
         self.writer = Some(Arc::new(Mutex::new(stream.try_clone()?)));
         self.reader = Some(Arc::new(Mutex::new(BufReader::new(stream))));
         Ok(())
+    }
+
+    // Get a reference to the status sequence counter
+    pub fn get_status_seq(&self) -> &Arc<AtomicU64> {
+        &self.status_seq
+    }
+
+    // Emit a status update (using the common function defined above)
+    pub fn emit_status(&self, status: &str, thread_id: Option<i64>) -> Result<(), String> {
+        emit_status_update(&self.app_handle, &self.status_seq, status, thread_id)
     }
 
     // send_message: assigns a sequence number, serializes the message along with a header, and writes it to the stream.
@@ -121,6 +163,7 @@ impl DAPClient {
         let event_sender = self.event_sender.clone();
         // Clone the app_handle so it can be moved into the thread.
         let app_handle = self.app_handle.clone();
+        let status_seq = Arc::clone(&self.status_seq);
 
         self.receiver_handle = Some(thread::spawn(move || loop {
             // Read header until we find the "\r\n\r\n" sequence.
@@ -182,9 +225,11 @@ impl DAPClient {
                         if let Some(ref evt) = msg.event {
                             if evt == "terminated" {
                                 println!("Processing 'terminated' event");
-                                let _ = app_handle.emit(
-                                    "debug-status",
-                                    serde_json::json!({"status": "terminated", "src": "msg_handler"}),
+                                let _ = emit_status_update(
+                                    &app_handle,
+                                    &status_seq,
+                                    "terminated",
+                                    None,
                                 );
                             } else if evt == "stopped" {
                                 // Handle the stopped event - extract thread ID and emit
@@ -195,19 +240,19 @@ impl DAPClient {
                                     if let Some(thread_id) =
                                         body.get("threadId").and_then(|v| v.as_i64())
                                     {
-                                        let _ = app_handle.emit(
-                                            "debug-status",
-                                            serde_json::json!({
-                                                "status": "paused",
-                                                "threadId": thread_id,
-                                                "src": "msg_handler"
-                                            }),
+                                        let _ = emit_status_update(
+                                            &app_handle,
+                                            &status_seq,
+                                            "paused",
+                                            Some(thread_id),
                                         );
                                     } else {
                                         // No thread ID, just emit paused status
-                                        let _ = app_handle.emit(
-                                            "debug-status",
-                                            serde_json::json!({"status": "paused", "src": "msg_handler"}),
+                                        let _ = emit_status_update(
+                                            &app_handle,
+                                            &status_seq,
+                                            "paused",
+                                            None,
                                         );
                                     }
                                 }
@@ -422,17 +467,47 @@ impl DAPClient {
         })?;
 
         if let Some(response) = self.wait_for_response(seq, 10.0).await {
-            // When continuing, also emit that we're now running
-            self.app_handle
-                .emit(
-                    "debug-status",
-                    serde_json::json!({"status": "running", "src": "continue_execution"}),
-                )
-                .map_err(|e| format!("Failed to emit status update: {}", e))?;
-
+            // When continuing, emit status update with sequence number
+            self.emit_status("running", Some(thread_id))?;
             Ok(response)
         } else {
             Err("Timeout waiting for continue response".into())
+        }
+    }
+
+    pub async fn step_in(
+        &self,
+        thread_id: i64,
+        granularity: Option<&str>,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let mut args = serde_json::json!({
+            "threadId": thread_id
+        });
+
+        // Add granularity if provided
+        if let Some(g) = granularity {
+            if let serde_json::Value::Object(ref mut map) = args {
+                map.insert("granularity".to_string(), serde_json::json!(g));
+            }
+        }
+
+        let seq = self.send_message(DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("stepIn".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(args),
+            body: None,
+            event: None,
+        })?;
+
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            // When stepping, emit status update with sequence number
+            self.emit_status("running", Some(thread_id))?;
+            Ok(response)
+        } else {
+            Err("Timeout waiting for stepIn response".into())
         }
     }
 }
