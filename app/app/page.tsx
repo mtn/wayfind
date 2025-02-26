@@ -50,9 +50,10 @@ export default function Home() {
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
 
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
-  const [debugStatus, setDebugStatus] = useState("inactive");
+  // Updated to use canonical debug state value "notstarted"
+  const [debugStatus, setDebugStatus] = useState("notstarted");
   // Add ref for tracking the latest debug status
-  const debugStatusRef = useRef("inactive");
+  const debugStatusRef = useRef("notstarted");
 
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
@@ -63,6 +64,9 @@ export default function Home() {
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
 
   const [selectedTab, setSelectedTab] = useState("status");
+
+  // Add ref to track the last status sequence number processed
+  const lastStatusSeqRef = useRef<number | null>(null);
 
   // Update ref whenever the state changes
   useEffect(() => {
@@ -177,7 +181,7 @@ export default function Home() {
     isDebugSessionActiveRef.current = isDebugSessionActive;
   }, [isDebugSessionActive]);
 
-  // Listen for debug status events
+  // Listen for debug status events using canonical DAP events.
   useEffect(() => {
     let unlistenStatus: () => void;
     (async () => {
@@ -185,46 +189,47 @@ export default function Home() {
         console.log("Debug status event received:", event);
         const payload = event.payload as {
           status: string;
-          src: string;
+          seq: number;
           threadId?: number;
         };
         const status = payload.status.toLowerCase();
 
-        // Use ref to check current status, not the state
-        // configurationDone sends a running status, but if a breakpoint was set, this might come after we've already
-        // gotten a paused status
+        // Only process this update if its sequence number is greater than the last one we processed
+        // or if this is the first update we're receiving
         if (
-          status === "running" &&
-          payload.src === "configuration_done" &&
-          debugStatusRef.current === "paused"
+          !lastStatusSeqRef.current ||
+          payload.seq > lastStatusSeqRef.current
         ) {
-          console.log(
-            "Ignoring running status from configuration_done because current status is paused:",
-            debugStatusRef.current,
-          );
-          return;
-        }
+          console.log(`Processing status update with seq ${payload.seq}`);
+          lastStatusSeqRef.current = payload.seq;
 
-        // Update both the ref and the state
-        debugStatusRef.current = status;
-        setDebugStatus(status);
+          // Update both the ref and the state based on canonical events
+          debugStatusRef.current = status;
+          setDebugStatus(status);
 
-        if (status === "running") {
-          setExecutionFile(null);
-          setExecutionLine(null);
-        } else if (status === "terminated") {
-          setExecutionFile(null);
-          setExecutionLine(null);
-          setIsDebugSessionActive(false);
-        } else if (status === "paused") {
-          // When paused, force watch expressions to update
-          forceWatchEvaluation();
+          if (status === "running") {
+            setExecutionFile(null);
+            setExecutionLine(null);
+          } else if (status === "terminated") {
+            setExecutionFile(null);
+            setExecutionLine(null);
+            setIsDebugSessionActive(false);
+          } else if (status === "paused") {
+            // When paused, force watch expressions to update
+            forceWatchEvaluation();
 
-          if (payload.threadId) {
-            invoke("get_paused_location", { threadId: payload.threadId }).catch(
-              (err) => console.error("Failed to get paused location:", err),
-            );
+            if (payload.threadId) {
+              invoke("get_paused_location", {
+                threadId: payload.threadId,
+              }).catch((err) =>
+                console.error("Failed to get paused location:", err),
+              );
+            }
           }
+        } else {
+          console.log(
+            `Ignoring out-of-order status update with seq ${payload.seq} (current: ${lastStatusSeqRef.current})`,
+          );
         }
       });
     })();
@@ -234,7 +239,7 @@ export default function Home() {
         unlistenStatus();
       }
     };
-  }, []); // Remove debugStatus dependency since we now use ref
+  }, []);
 
   // Listen for debug location events
   useEffect(() => {
@@ -356,6 +361,8 @@ export default function Home() {
 
     setIsDebugSessionActive(true);
     addLog("Launching debug session...");
+    // Reset the sequence counter when starting a new session
+    lastStatusSeqRef.current = null;
 
     try {
       const scriptPath = fs.getFullPath(selectedFile.path);

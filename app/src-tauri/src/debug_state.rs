@@ -1,14 +1,28 @@
+use parking_lot::RwLock;
 use std::process::Child;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 // Import your updated DAPClient from your debugger client module.
 use crate::debugger::client::DAPClient;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum DebuggerState {
+    NotStarted,
+    Configuring,
+    Initializing,
+    Running,
+    Paused { reason: String, thread_id: i64 },
+    Terminated,
+}
+
 pub struct DebugSessionState {
-    // Holds the active DAPClient (None until a session is launched).
     pub client: Mutex<Option<DAPClient>>,
-    // Holds the active Python process (None until a session is launched).
     pub process: Mutex<Option<Child>>,
+    // Wrap in Arc
+    pub status_seq: Arc<AtomicU64>,
+    pub state: RwLock<DebuggerState>,
 }
 
 impl DebugSessionState {
@@ -16,6 +30,55 @@ impl DebugSessionState {
         DebugSessionState {
             client: Mutex::new(None),
             process: Mutex::new(None),
+            // Initialize as Arc
+            status_seq: Arc::new(AtomicU64::new(0)),
+            state: RwLock::new(DebuggerState::NotStarted),
         }
+    }
+
+    // Get the next sequence number for status updates
+    pub fn next_status_seq(&self) -> u64 {
+        self.status_seq.fetch_add(1, Ordering::SeqCst)
+    }
+
+    pub fn handle_dap_event(&self, msg: &crate::debugger::client::DAPMessage) {
+        let mut guard = self.state.write();
+        if msg.message_type == crate::debugger::client::MessageType::Event {
+            if let Some(ref event_name) = msg.event {
+                match event_name.as_str() {
+                    "initialized" => {
+                        *guard = DebuggerState::Configuring;
+                    }
+                    "continued" => {
+                        *guard = DebuggerState::Running;
+                    }
+                    "stopped" => {
+                        if let Some(body) = &msg.body {
+                            let reason = body
+                                .get("reason")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            let thread_id =
+                                body.get("threadId").and_then(|v| v.as_i64()).unwrap_or(1);
+                            *guard = DebuggerState::Paused { reason, thread_id };
+                        }
+                    }
+                    "terminated" => {
+                        *guard = DebuggerState::Terminated;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    pub fn handle_configuration_done(&self) {
+        let mut guard = self.state.write();
+        *guard = DebuggerState::Running;
+    }
+
+    pub fn current_state(&self) -> DebuggerState {
+        self.state.read().clone()
     }
 }

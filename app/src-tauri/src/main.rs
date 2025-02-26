@@ -4,13 +4,14 @@ mod debug_state;
 mod debugger;
 
 use debug_state::DebugSessionState;
-use debugger::client::{BreakpointInput, DAPClient};
+use debugger::client::{emit_status_update, BreakpointInput, DAPClient};
 use serde_json::Value;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::thread;
 use tauri::Emitter;
 
@@ -58,7 +59,7 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
 async fn launch_debug_session(
     app_handle: tauri::AppHandle,
     script_path: String,
-    debug_state: tauri::State<'_, DebugSessionState>,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
 ) -> Result<String, String> {
     // 1. Find an available port to use for debugpy (starting at 5679)
     let debugpy_port = crate::debugger::util::find_available_port(5678)
@@ -112,16 +113,20 @@ async fn launch_debug_session(
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     // 3. Create a new DAPClient, connect it, and start its receiver.
-    let (mut dap_client, _rx) = DAPClient::new(app_handle.clone());
+    let (mut dap_client, _rx) = DAPClient::new(app_handle.clone(), Arc::clone(&*debug_state));
     dap_client
         .connect("127.0.0.1", debugpy_port as u16)
         .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
+
+    // Get a clone of the status_seq counter for the receiver thread
+    let status_seq = Arc::clone(&debug_state.status_seq);
 
     // Start the receiver loop so incoming DAP messages get handled.
     {
         // We call start_receiver() on the mutable client.
         let mut client = dap_client;
-        client.start_receiver();
+        // Pass the status_seq to start_receiver
+        client.start_receiver(Some(status_seq));
 
         // Initialize and attach.
         client
@@ -133,7 +138,7 @@ async fn launch_debug_session(
             .await
             .map_err(|e| format!("Attach failed: {}", e))?;
 
-        // Store the DAPClient and the Python process in debug_state.
+        // Store the DAPClient in debug_state.
         {
             let mut client_lock = debug_state.client.lock().await;
             client_lock.replace(client);
@@ -145,13 +150,8 @@ async fn launch_debug_session(
         proc_lock.replace(child);
     }
 
-    app_handle
-        .emit(
-            "debug-status",
-            serde_json::json!({"status": "initializing", "src": "launch_debug_session"}),
-        )
-        .map_err(|e| e.to_string())?;
-
+    // Emit an initializing status (to be updated by canonical events later)
+    emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
     println!("Debug session launched successfully");
     Ok("Debug session launched successfully".into())
 }
@@ -161,7 +161,7 @@ async fn set_breakpoints(
     _token: String,
     breakpoints: Vec<BreakpointInput>,
     file_path: String,
-    debug_state: tauri::State<'_, DebugSessionState>,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
 ) -> Result<Value, String> {
     println!("Setting breakpoints");
     let client_lock = debug_state.client.lock().await;
@@ -179,39 +179,30 @@ async fn set_breakpoints(
 
 #[tauri::command]
 async fn configuration_done(
-    debug_state: tauri::State<'_, DebugSessionState>,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
 ) -> Result<String, String> {
     let client_lock = debug_state.client.lock().await;
     if client_lock.is_none() {
         return Err("No active debug session".into());
     }
     let dap_client = client_lock.as_ref().unwrap();
-    let _conf_resp = dap_client
+    dap_client
         .configuration_done()
         .await
         .map_err(|e| format!("ConfigurationDone failed: {}", e))?;
-
-    // Update status to Running after configurationDone is sent
-    dap_client
-        .app_handle
-        .emit(
-            "debug-status",
-            serde_json::json!({"status": "running", "src": "configuration_done"}),
-        )
-        .map_err(|e| format!("Failed to emit status update: {}", e))?;
-
+    // Use the canonical state update for configurationDone
+    debug_state.handle_configuration_done();
     Ok("configurationDone sent; target program is now running.".into())
 }
 
 #[tauri::command]
 async fn get_paused_location(
-    debug_state: tauri::State<'_, DebugSessionState>,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
     thread_id: i64,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let client_lock = debug_state.client.lock().await;
     let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
-
     match dap_client.stack_trace(thread_id).await {
         Ok(stack_resp) => {
             if let Some(stack_body) = stack_resp.body {
@@ -220,10 +211,8 @@ async fn get_paused_location(
                         // Extract source file and line
                         let source = frame.get("source");
                         let line = frame.get("line").and_then(|l| l.as_i64());
-
                         if let (Some(source), Some(line)) = (source, line) {
                             let file_path = source.get("path").and_then(|p| p.as_str());
-
                             if let Some(file_path) = file_path {
                                 // Emit the debug location event with file and line info
                                 let _ = app_handle.emit(
@@ -251,24 +240,48 @@ async fn get_paused_location(
 #[tauri::command]
 async fn continue_debug(
     thread_id: i64,
-    debug_state: tauri::State<'_, DebugSessionState>,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
 ) -> Result<String, String> {
     let client_lock = debug_state.client.lock().await;
     let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
-
     match dap_client.continue_execution(thread_id).await {
-        Ok(_) => Ok("Execution continued".into()),
+        Ok(_) => {
+            // Do not manually emit "running" status; canonical events will update the state.
+            Ok("Execution continued".into())
+        }
         Err(e) => Err(format!("Failed to continue execution: {}", e)),
     }
 }
 
 #[tauri::command]
-async fn terminate_program() -> Result<String, String> {
+async fn step_in(
+    thread_id: i64,
+    granularity: Option<String>,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
+) -> Result<String, String> {
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+    match dap_client.step_in(thread_id, granularity.as_deref()).await {
+        Ok(_) => {
+            // Do not manually emit "running" status; canonical events will update the state.
+            Ok("Step in executed".into())
+        }
+        Err(e) => Err(format!("Failed to step in: {}", e)),
+    }
+}
+
+#[tauri::command]
+async fn terminate_program(
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    // Emit terminated status with sequence number
+    emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
     Ok("Debug session terminated".into())
 }
 
 fn main() {
-    let debug_session_state = DebugSessionState::new();
+    let debug_session_state = Arc::new(DebugSessionState::new());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -281,6 +294,7 @@ fn main() {
             terminate_program,
             get_paused_location,
             continue_debug,
+            step_in,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
