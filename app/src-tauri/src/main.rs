@@ -249,6 +249,20 @@ async fn get_paused_location(
 }
 
 #[tauri::command]
+async fn continue_debug(
+    thread_id: i64,
+    debug_state: tauri::State<'_, DebugSessionState>,
+) -> Result<String, String> {
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+
+    match dap_client.continue_execution(thread_id).await {
+        Ok(_) => Ok("Execution continued".into()),
+        Err(e) => Err(format!("Failed to continue execution: {}", e)),
+    }
+}
+
+#[tauri::command]
 async fn terminate_program() -> Result<String, String> {
     Ok("Debug session terminated".into())
 }
@@ -266,6 +280,7 @@ fn main() {
             configuration_done,
             terminate_program,
             get_paused_location,
+            continue_debug,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

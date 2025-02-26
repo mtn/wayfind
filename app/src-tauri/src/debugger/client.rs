@@ -403,4 +403,36 @@ impl DAPClient {
             Err("Timeout waiting for stackTrace response".into())
         }
     }
+
+    pub async fn continue_execution(
+        &self,
+        thread_id: i64,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let seq = self.send_message(DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("continue".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(serde_json::json!({
+                "threadId": thread_id
+            })),
+            body: None,
+            event: None,
+        })?;
+
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            // When continuing, also emit that we're now running
+            self.app_handle
+                .emit(
+                    "debug-status",
+                    serde_json::json!({"status": "running", "src": "continue_execution"}),
+                )
+                .map_err(|e| format!("Failed to emit status update: {}", e))?;
+
+            Ok(response)
+        } else {
+            Err("Timeout waiting for continue response".into())
+        }
+    }
 }

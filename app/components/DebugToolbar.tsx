@@ -75,9 +75,11 @@ export function DebugToolbar({
     }
     try {
       await invoke("continue_debug", { threadId: 1 });
+      addLog("Continuing execution");
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error continuing execution:", errMsg);
+      addLog(`Failed to continue: ${errMsg}`);
     }
   }
 
