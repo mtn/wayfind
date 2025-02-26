@@ -3,12 +3,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-// If you have a global place for threadId, or pass it in as a prop, whichever is relevant:
-type CallStackProps = {
-  debugStatus: string;
-  threadId: number; // or omit if you always use a known default
-};
-
 interface Frame {
   id: number;
   name: string;
@@ -17,7 +11,19 @@ interface Frame {
   file?: string;
 }
 
-export function CallStack({ debugStatus, threadId }: CallStackProps) {
+type CallStackProps = {
+  // Instead of debugStatus, we use executionLine and executionFile.
+  executionLine: number | null;
+  executionFile: string | null;
+  // Optionally, you could pass threadId.
+  threadId: number;
+};
+
+export function CallStack({
+  executionLine,
+  executionFile,
+  threadId,
+}: CallStackProps) {
   const [frames, setFrames] = useState<Frame[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -25,7 +31,7 @@ export function CallStack({ debugStatus, threadId }: CallStackProps) {
     setLoading(true);
     try {
       const result = await invoke<Frame[]>("get_call_stack", {
-        threadId: threadId,
+        threadId,
       });
       setFrames(result || []);
     } catch (e) {
@@ -35,12 +41,13 @@ export function CallStack({ debugStatus, threadId }: CallStackProps) {
     }
   }
 
+  // Trigger refresh when executionLine or executionFile change.
   useEffect(() => {
-    // Whenever debugStatus is "paused", fetch the call stack.
-    if (debugStatus === "paused") {
+    // Only trigger if you have valid execution info – you can tune this condition.
+    if (executionLine !== null && executionFile !== null) {
       fetchCallStack();
     }
-  }, [debugStatus]);
+  }, [executionLine, executionFile, threadId]);
 
   return (
     <div className="p-2">
