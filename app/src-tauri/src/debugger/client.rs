@@ -581,16 +581,15 @@ impl DAPClient {
     pub async fn evaluate(
         &self,
         expression: &str,
-        frame_id: Option<i64>, // or i32, if you prefer
+        frame_id: Option<i32>,
     ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
-        // Build arguments according to DAP spec
+        // Build arguments according to DAP spec.
+        // Default context is "repl"; if a frame id is provided we override context to "hover".
         let mut args_json = serde_json::json!({
             "expression": expression,
-            // Typically "repl" or "hover" or "watch". Up to you.
             "context": "repl"
         });
 
-        // If we have a frame id (i.e. if paused), attach it
         if let Some(fid) = frame_id {
             if let serde_json::Value::Object(ref mut map) = args_json {
                 map.insert("frameId".to_string(), serde_json::json!(fid));
