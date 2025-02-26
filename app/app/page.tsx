@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -51,6 +51,8 @@ export default function Home() {
 
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   const [debugStatus, setDebugStatus] = useState("inactive");
+  // Add ref for tracking the latest debug status
+  const debugStatusRef = useRef("inactive");
 
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
@@ -61,6 +63,11 @@ export default function Home() {
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
 
   const [selectedTab, setSelectedTab] = useState("status");
+
+  // Update ref whenever the state changes
+  useEffect(() => {
+    debugStatusRef.current = debugStatus;
+  }, [debugStatus]);
 
   const forceWatchEvaluation = () => {
     if (watchExpressionsRef.current) {
@@ -73,28 +80,42 @@ export default function Home() {
     active: IBreakpoint[],
   ): IBreakpoint[] {
     const merged = new Map<string, IBreakpoint>();
+
+    // Add queued breakpoints first
     for (const bp of queued) {
       if (bp.file) {
         merged.set(`${bp.file}:${bp.line}`, bp);
       }
     }
+
+    // Then add active breakpoints, which will override queued ones with the same key
     for (const bp of active) {
       if (bp.file) {
-        merged.set(`${bp.file}:${bp.line}`, bp);
+        merged.set(`${bp.file}:${bp.line}`, {
+          ...bp,
+          verified: bp.verified || false, // Ensure verified property exists
+        });
       }
     }
+
     return Array.from(merged.values());
   }
 
-  const handleFileSelect = async (file: FileEntry) => {
-    if (file.type === "file") {
-      const freshFile = await fs.getFile(file.path);
-      if (freshFile) {
-        setSelectedFile(freshFile);
-        console.log("Selected file full path:", fs.getFullPath(freshFile.path));
+  const handleFileSelect = useCallback(
+    async (file: FileEntry) => {
+      if (file.type === "file") {
+        const freshFile = await fs.getFile(file.path);
+        if (freshFile) {
+          setSelectedFile(freshFile);
+          console.log(
+            "Selected file full path:",
+            fs.getFullPath(freshFile.path),
+          );
+        }
       }
-    }
-  };
+    },
+    [fs],
+  );
 
   const handleFileChange = async (newContent: string) => {
     if (selectedFile === undefined) return;
@@ -156,15 +177,37 @@ export default function Home() {
     isDebugSessionActiveRef.current = isDebugSessionActive;
   }, [isDebugSessionActive]);
 
+  // Listen for debug status events
   useEffect(() => {
     let unlistenStatus: () => void;
     (async () => {
       unlistenStatus = await listen("debug-status", (event) => {
+        console.log("Debug status event received:", event);
         const payload = event.payload as {
           status: string;
+          src: string;
+          threadId?: number;
         };
-        const status = payload.status;
-        setDebugStatus(status.toLowerCase());
+        const status = payload.status.toLowerCase();
+
+        // Use ref to check current status, not the state
+        // configurationDone sends a running status, but if a breakpoint was set, this might come after we've already
+        // gotten a paused status
+        if (
+          status === "running" &&
+          payload.src === "configuration_done" &&
+          debugStatusRef.current === "paused"
+        ) {
+          console.log(
+            "Ignoring running status from configuration_done because current status is paused:",
+            debugStatusRef.current,
+          );
+          return;
+        }
+
+        // Update both the ref and the state
+        debugStatusRef.current = status;
+        setDebugStatus(status);
 
         if (status === "running") {
           setExecutionFile(null);
@@ -173,18 +216,68 @@ export default function Home() {
           setExecutionFile(null);
           setExecutionLine(null);
           setIsDebugSessionActive(false);
+        } else if (status === "paused") {
+          // When paused, force watch expressions to update
+          forceWatchEvaluation();
+
+          if (payload.threadId) {
+            invoke("get_paused_location", { threadId: payload.threadId }).catch(
+              (err) => console.error("Failed to get paused location:", err),
+            );
+          }
         }
       });
     })();
+
     return () => {
       if (unlistenStatus) {
         unlistenStatus();
       }
     };
-  }, []);
+  }, []); // Remove debugStatus dependency since we now use ref
+
+  // Listen for debug location events
+  useEffect(() => {
+    let unlistenLocation: () => void;
+    (async () => {
+      unlistenLocation = await listen("debug-location", (event) => {
+        const payload = event.payload as {
+          file: string;
+          line: number;
+        };
+
+        console.log("Received debug-location event:", payload);
+
+        // Update execution position
+        setExecutionFile(payload.file);
+        setExecutionLine(payload.line);
+
+        // Extract just the filename from the path
+        const fileName = payload.file.split("/").pop();
+
+        // If the stopped file is different from the current file, try to open it
+        if (fileName && fileName !== selectedFile?.name) {
+          const fileEntry = files.find((f) => f.name === fileName);
+          if (fileEntry) {
+            handleFileSelect(fileEntry);
+          } else {
+            console.warn(`File ${fileName} not found in the workspace`);
+          }
+        }
+      });
+    })();
+
+    return () => {
+      if (unlistenLocation) {
+        unlistenLocation();
+      }
+    };
+  }, [files, selectedFile, handleFileSelect]);
 
   const handleBreakpointChange = (lineNumber: number) => {
-    const currentFileName = selectedFileRef.current.name;
+    const currentFileName = selectedFileRef.current?.name;
+    if (!currentFileName) return;
+
     if (!isDebugSessionActiveRef.current) {
       setQueuedBreakpoints((currentQueued) => {
         const exists = currentQueued.some(
@@ -211,26 +304,35 @@ export default function Home() {
             )
           : [...currentActive, { line: lineNumber, file: currentFileName }];
 
+        // Get full file path for the current file
+        if (!selectedFileRef.current) return newBreakpoints;
+        const fullFilePath = fs.getFullPath(selectedFileRef.current.path);
+
         invoke("set_breakpoints", {
           token: sessionToken,
           breakpoints: newBreakpoints.filter(
             (bp) => bp.file === currentFileName,
           ),
-          filePath: currentFileName,
+          filePath: fullFilePath, // Use full path instead of just the filename
         })
-          .then((data: { breakpoints?: IBreakpoint[] }) => {
-            if (data.breakpoints) {
-              setActiveBreakpoints((current) =>
-                current.map((bp) => {
-                  if (bp.file !== currentFileName) return bp;
-                  const verifiedBp = data.breakpoints.find(
-                    (vbp: IBreakpoint) => vbp.line === bp.line,
-                  );
-                  return verifiedBp
-                    ? { ...bp, verified: verifiedBp.verified }
-                    : bp;
-                }),
-              );
+          .then((data) => {
+            const typedData = data as { breakpoints?: IBreakpoint[] };
+            if (typedData.breakpoints) {
+              // Update active breakpoints with verification status
+              const verifiedBps = typedData.breakpoints.map((bp) => ({
+                ...bp,
+                file: currentFileName, // Ensure file is set on returned breakpoints
+                verified: bp.verified !== false, // Default to true if undefined
+              }));
+
+              setActiveBreakpoints((current) => {
+                // Remove current breakpoints for this file
+                const othersInOtherFiles = current.filter(
+                  (bp) => bp.file !== currentFileName,
+                );
+                // Add the newly verified breakpoints
+                return [...othersInOtherFiles, ...verifiedBps];
+              });
             }
           })
           .catch((error) =>
@@ -265,6 +367,59 @@ export default function Home() {
 
       addLog("Debug session launched successfully");
 
+      // Merge queued and active breakpoints and set them for the new session.
+      const allBreakpoints = mergeBreakpoints(
+        queuedBreakpoints,
+        activeBreakpoints,
+      );
+      setQueuedBreakpoints([]);
+
+      const uniqueFiles = Array.from(
+        new Set(allBreakpoints.map((bp) => bp.file).filter(Boolean)),
+      );
+      for (const file of uniqueFiles) {
+        const fileBreakpoints = allBreakpoints.filter((bp) => bp.file === file);
+
+        // Find the FileEntry with this name to get its path
+        const fileEntry = files.find((f) => f.name === file);
+        if (!fileEntry) {
+          addLog(`Could not find file entry for ${file}, skipping breakpoints`);
+          continue;
+        }
+
+        // Get the full filesystem path
+        const fullFilePath = fs.getFullPath(fileEntry.path);
+
+        addLog(
+          `Setting breakpoints for ${file} (path: ${fullFilePath}): ${JSON.stringify(fileBreakpoints)}`,
+        );
+
+        const bpResp = await invoke<{ breakpoints?: IBreakpoint[] }>(
+          "set_breakpoints",
+          {
+            token: sessionToken,
+            breakpoints: fileBreakpoints,
+            filePath: fullFilePath, // Use full path instead of just the file name
+          },
+        );
+        addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpResp)}`);
+        if (bpResp.breakpoints) {
+          const verifiedBps = bpResp.breakpoints.map((bp) => ({
+            ...bp,
+            file, // Ensure file is set on returned breakpoints
+            verified: bp.verified !== false, // Default to true if undefined
+          }));
+
+          setActiveBreakpoints((current) => {
+            // Remove current breakpoints for this file
+            const othersInOtherFiles = current.filter((bp) => bp.file !== file);
+            // Add the newly verified breakpoints
+            return [...othersInOtherFiles, ...verifiedBps];
+          });
+        }
+      }
+
+      // Only now, after setting all breakpoints, call configuration_done
       await invoke("configuration_done")
         .then((response) => {
           addLog("configurationDone: " + response);

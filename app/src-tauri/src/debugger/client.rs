@@ -30,6 +30,11 @@ pub struct DAPMessage {
     pub arguments: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BreakpointInput {
+    pub line: u32,
+}
+
 pub struct DAPClient {
     // The writer is used to send messages.
     writer: Option<Arc<Mutex<TcpStream>>>,
@@ -118,10 +123,11 @@ impl DAPClient {
         let app_handle = self.app_handle.clone();
 
         self.receiver_handle = Some(thread::spawn(move || loop {
-            // Read header until we encounter "\r\n\r\n".
+            // Read header until we find the "\r\n\r\n" sequence.
             let header = {
                 let mut reader = reader_arc.lock().unwrap();
                 let mut header_bytes = Vec::new();
+                // Read one byte at a time until the header terminator is found.
                 loop {
                     let mut buf = [0u8; 1];
                     match reader.read_exact(&mut buf) {
@@ -144,14 +150,14 @@ impl DAPClient {
                 String::from_utf8_lossy(&header_bytes).to_string()
             };
 
-            // Extract the content length from the header.
+            // Parse Content-Length from header.
             let content_length = header
                 .lines()
                 .find(|line| line.to_lowercase().starts_with("content-length:"))
                 .and_then(|line| line[15..].trim().parse::<usize>().ok());
 
             if let Some(len) = content_length {
-                // Read the JSON body.
+                // Now, read the body.
                 let mut body_bytes = vec![0; len];
                 {
                     let mut reader = reader_arc.lock().unwrap();
@@ -169,29 +175,53 @@ impl DAPClient {
                 };
 
                 println!("<-- Received: {}", message_str);
+
                 if let Ok(msg) = serde_json::from_str::<DAPMessage>(&message_str) {
-                    // If the message is an event and its name is "terminated",
-                    // immediately emit the terminated status via the app_handle.
+                    // Handle events that require special processing
                     if msg.message_type == MessageType::Event {
                         if let Some(ref evt) = msg.event {
                             if evt == "terminated" {
-                                println!("Processing 'terminated' event. terminated set to true");
+                                println!("Processing 'terminated' event");
                                 let _ = app_handle.emit(
                                     "debug-status",
-                                    serde_json::json!({"status": "Terminated"}),
+                                    serde_json::json!({"status": "terminated", "src": "msg_handler"}),
                                 );
+                            } else if evt == "stopped" {
+                                // Handle the stopped event - extract thread ID and emit
+                                if let Some(ref body) = msg.body {
+                                    println!("Processing 'stopped' event: {:?}", body);
+
+                                    // Emit the stopped status with the thread ID
+                                    if let Some(thread_id) =
+                                        body.get("threadId").and_then(|v| v.as_i64())
+                                    {
+                                        let _ = app_handle.emit(
+                                            "debug-status",
+                                            serde_json::json!({
+                                                "status": "paused",
+                                                "threadId": thread_id,
+                                                "src": "msg_handler"
+                                            }),
+                                        );
+                                    } else {
+                                        // No thread ID, just emit paused status
+                                        let _ = app_handle.emit(
+                                            "debug-status",
+                                            serde_json::json!({"status": "paused", "src": "msg_handler"}),
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
 
-                    // For responses, store them keyed by their request_seq.
+                    // Handle responses and events as before
                     match msg.message_type {
                         MessageType::Response => {
                             if let Some(req_seq) = msg.request_seq {
                                 responses_arc.lock().unwrap().insert(req_seq, msg.clone());
                             }
                         }
-                        // For events, store them keyed by the event name.
                         MessageType::Event => {
                             if let Some(ref evt) = msg.event {
                                 events_arc
@@ -204,7 +234,8 @@ impl DAPClient {
                         }
                         _ => {}
                     }
-                    // Optionally send the message out through the channel.
+
+                    // Send the message to any external subscribers
                     let _ = event_sender.send(msg);
                 } else {
                     eprintln!("Error parsing message: {}", message_str);
@@ -212,6 +243,8 @@ impl DAPClient {
             } else {
                 eprintln!("No Content-Length found in header: {}", header);
             }
+
+            // Don't busy‐spin.
             thread::sleep(Duration::from_millis(10));
         }));
     }
@@ -230,6 +263,7 @@ impl DAPClient {
     }
 
     // wait_for_event: polls for an event by its name until it arrives or the timeout expires.
+    #[allow(dead_code)]
     pub fn wait_for_event(&self, name: &str, timeout_secs: f64) -> Option<DAPMessage> {
         let start = Instant::now();
         while start.elapsed().as_secs_f64() < timeout_secs {
@@ -309,6 +343,64 @@ impl DAPClient {
             Ok(response)
         } else {
             Err("Timeout waiting for configurationDone response".into())
+        }
+    }
+
+    // set_breakpoints: sends a "setBreakpoints" request and waits for its response.
+    pub async fn set_breakpoints(
+        &self,
+        file_path: String,
+        breakpoints: Vec<BreakpointInput>,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("setBreakpoints".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(serde_json::json!({
+                "source": {
+                    "path": file_path,
+                    "name": file_path.split('/').last().unwrap_or("unknown")
+                },
+                "breakpoints": breakpoints,
+                "sourceModified": false
+            })),
+            body: None,
+            event: None,
+        };
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for setBreakpoints response".into())
+        }
+    }
+
+    // stack_trace: sends a "stackTrace" request and waits for its response.
+    pub async fn stack_trace(
+        &self,
+        thread_id: i64,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let seq = self.send_message(DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("stackTrace".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(serde_json::json!({
+                "threadId": thread_id,
+                "startFrame": 0,
+                "levels": 1
+            })),
+            body: None,
+            event: None,
+        })?;
+
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for stackTrace response".into())
         }
     }
 }
