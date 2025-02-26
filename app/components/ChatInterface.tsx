@@ -7,6 +7,12 @@ import { FileEntry } from "@/lib/fileSystem";
 import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
+interface Attachment {
+  name: string;
+  contentType: string;
+  url: string;
+}
+
 interface ChatInterfaceProps {
   // An array of files that provide context.
   files: FileEntry[];
@@ -41,6 +47,7 @@ export function ChatInterface({
   // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
   // Instead, intercept tool calls via onToolCall.
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
+    api: "http://localhost:3001/api/chat",
     maxSteps: 5,
     async onToolCall({ toolCall }) {
       if (toolCall.toolName === "setBreakpoint") {
@@ -62,12 +69,24 @@ export function ChatInterface({
     },
   });
 
+  // TODO for larger projects we can't just append everything into the context
   // Create attachments from files (for additional context).
-  const attachments = files.map(({ name, content }) => ({
-    name,
-    contentType: "text/plain",
-    url: content ? `data:text/plain;base64,${btoa(content)}` : "",
-  }));
+  const attachments: Attachment[] = [];
+  files.forEach((f) => {
+    if (f.type === "directory") {
+      // TODO
+    } else {
+      attachments.push({
+        name: f.name,
+        contentType: "text/plain",
+        url: f.content ? `data:text/plain;base64,${btoa(f.content)}` : "",
+      });
+    }
+  });
+  console.log(
+    "Attachments",
+    attachments.map((attachment) => attachment.name),
+  );
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
