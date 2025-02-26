@@ -23,6 +23,15 @@ struct FileEntry {
     is_dir: bool,
 }
 
+#[derive(serde::Serialize)]
+struct FrameInfo {
+    id: i64,
+    name: String,
+    line: i64,
+    column: Option<i64>,
+    file: Option<String>,
+}
+
 #[tauri::command]
 async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
     let entries = fs::read_dir(path).map_err(|e| e.to_string())?;
@@ -357,6 +366,60 @@ async fn evaluate_expression(
 }
 
 #[tauri::command]
+async fn get_call_stack(
+    thread_id: i64,
+    debug_state: tauri::State<'_, std::sync::Arc<DebugSessionState>>,
+) -> Result<Vec<FrameInfo>, String> {
+    // Grab the DAP client
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+
+    // Issue the stackTrace request
+    let resp = dap_client
+        .stack_trace(thread_id)
+        .await
+        .map_err(|e| format!("stack_trace request failed: {e}"))?;
+
+    // The response body should have something like { "stackFrames": [ { "id": ..., "name": ..., "line": ..., "column": ..., "source": {...} }, ... ] }
+    if let Some(body) = resp.body {
+        let frames = body
+            .get("stackFrames")
+            .and_then(|val| val.as_array())
+            .unwrap_or(&vec![])
+            .iter()
+            .map(|f| {
+                // Extract fields
+                let id = f.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                let name = f
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<unknown>")
+                    .to_string();
+                let line = f.get("line").and_then(|v| v.as_i64()).unwrap_or(0);
+                let column = f.get("column").and_then(|v| v.as_i64());
+                let file = f
+                    .get("source")
+                    .and_then(|src| src.get("path"))
+                    .and_then(|p| p.as_str())
+                    .map(String::from);
+
+                FrameInfo {
+                    id,
+                    name,
+                    line,
+                    column,
+                    file,
+                }
+            })
+            .collect::<Vec<FrameInfo>>();
+
+        Ok(frames)
+    } else {
+        Err("No stackFrames in the response".to_owned())
+    }
+}
+
+#[tauri::command]
 async fn terminate_program(
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
     app_handle: tauri::AppHandle,
@@ -414,6 +477,7 @@ fn main() {
             step_over,
             step_out,
             evaluate_expression,
+            get_call_stack,
             terminate_program,
         ])
         .run(tauri::generate_context!())

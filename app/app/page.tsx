@@ -559,7 +559,8 @@ export default function Home() {
                     />
                   )}
                   {selectedTab === "callstack" && (
-                    <CallStack token={sessionToken} />
+                    // TODO another place thread id 1 is hardcoded
+                    <CallStack debugStatus={debugStatus} threadId={1} />
                   )}
                 </div>
               </div>
