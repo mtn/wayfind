@@ -501,4 +501,31 @@ impl DAPClient {
             Err("Timeout waiting for next response".into())
         }
     }
+
+    pub async fn step_out(
+        &self,
+        thread_id: i32,
+        granularity: &str,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("stepOut".to_string()),
+            request_seq: None,
+            success: None,
+            body: None,
+            event: None,
+            arguments: Some(serde_json::json!({
+                "threadId": thread_id,
+                "granularity": granularity
+            })),
+        };
+
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for stepOut response".into())
+        }
+    }
 }

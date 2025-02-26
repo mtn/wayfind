@@ -59,8 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("No initialized event received".into());
     }
 
-    // Step 5: Send setBreakpoints at line 19 (matching Python example)
-    let breakpoint_line = 19;
+    // Step 5: Set breakpoint at line 10 (matching Python example)
+    let breakpoint_line = 10;
     let bp_response = client
         .set_breakpoints(script_path_str, &[breakpoint_line])
         .await
@@ -96,46 +96,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         println!("Using thread ID: {}", thread_id);
 
-        // Step 8: Request stack trace to get frame ID and verify line number
+        // Request a stack trace to get the correct frame id
         let st_response = client.stack_trace(thread_id).await?;
         println!("StackTrace response: {:?}", st_response);
 
-        // Extract line number and verify it matches the breakpoint line
+        // Extract frame ID and line number to verify
+        let frame_id = st_response
+            .body
+            .as_ref()
+            .and_then(|b| b.get("stackFrames"))
+            .and_then(|frames| frames.as_array())
+            .and_then(|frames| frames.get(0))
+            .and_then(|frame| frame.get("id"))
+            .and_then(|id| id.as_i64())
+            .unwrap_or(0) as i32;
+        println!("Using frameId: {}", frame_id);
+
         let line_num = st_response
             .body
             .as_ref()
             .and_then(|b| b.get("stackFrames"))
-            .and_then(|f| f.as_array())
-            .and_then(|a| a.get(0))
-            .and_then(|f| f.get("line"))
-            .and_then(|l| l.as_i64())
+            .and_then(|frames| frames.as_array())
+            .and_then(|frames| frames.get(0))
+            .and_then(|frame| frame.get("line"))
+            .and_then(|line| line.as_i64())
             .unwrap_or(0) as i32;
 
-        println!("Stopped at line {}", line_num);
         assert_eq!(line_num, breakpoint_line, "Stopped at unexpected line");
 
-        // Step 9: Send next request (step over)
-        let next_response = client.next(thread_id).await?;
-        println!("Next response: {:?}", next_response);
+        // Step 8: Now perform step out
+        let step_out_response = client.step_out(thread_id, "statement").await?;
+        println!("StepOut response: {:?}", step_out_response);
 
-        // Step 10: Get stack trace again to verify new line number
+        // Verify new position after stepOut by requesting a new stack trace
         let st_response2 = client.stack_trace(thread_id).await?;
 
-        // Extract line number after step over
-        let line_num2 = st_response2
+        let new_line_num = st_response2
             .body
             .as_ref()
             .and_then(|b| b.get("stackFrames"))
-            .and_then(|f| f.as_array())
-            .and_then(|a| a.get(0))
-            .and_then(|f| f.get("line"))
-            .and_then(|l| l.as_i64())
+            .and_then(|frames| frames.as_array())
+            .and_then(|frames| frames.get(0))
+            .and_then(|frame| frame.get("line"))
+            .and_then(|line| line.as_i64())
             .unwrap_or(0) as i32;
 
-        println!("Stopped on line {}", line_num2);
-        assert_eq!(line_num2, 20, "Step over didn't land on expected line 20");
+        println!("After step out, stopped on line {}", new_line_num);
+        assert_eq!(new_line_num, 24, "Step out didn't land on expected line 24");
 
-        // Step 11: Continue execution
+        // Step 9: Continue execution
         let continue_response = client.continue_execution(thread_id).await?;
         println!("Continue response: {:?}", continue_response);
     } else {
@@ -143,7 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("No stopped event received".into());
     }
 
-    // Step 12: Wait for the 'terminated' event
+    // Wait for termination
     if let Some(term_evt) = client.wait_for_event("terminated", 10.0) {
         println!("Received terminated event: {:?}", term_evt);
     } else {
