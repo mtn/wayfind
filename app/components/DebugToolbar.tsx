@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 
 interface DebugToolbarProps {
-  onDebugSessionStart: () => void;
+  onDebugSessionStart: (force: boolean) => void;
   debugStatus?: string;
   sessionToken?: string;
   addLog: (msg: string) => void;
@@ -131,7 +131,7 @@ export function DebugToolbar({
     try {
       addLog("Restarting debug session...");
       await invoke("terminate_program");
-      onDebugSessionStart();
+      onDebugSessionStart(true);
       addLog("Debug session restarted successfully.");
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
