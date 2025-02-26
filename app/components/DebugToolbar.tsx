@@ -35,9 +35,11 @@ export function DebugToolbar({
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
 
-  // Compute session status based on debugStatus
+  // Use canonical debugStatus: when it's "notstarted" or "terminated" there is no active session.
   const isSessionActive =
-    debugStatus !== "inactive" && debugStatus !== "terminated";
+    debugStatus !== "notstarted" && debugStatus !== "terminated";
+  const canLaunch =
+    debugStatus === "notstarted" || debugStatus === "terminated";
   const isPaused = debugStatus === "paused";
   console.log("DEBUG STATUS:", debugStatus);
 
@@ -156,7 +158,10 @@ export function DebugToolbar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="inline-block">
-                  <Button onClick={handleLaunch} disabled={!hasWorkspace}>
+                  <Button
+                    onClick={handleLaunch}
+                    disabled={!hasWorkspace || !canLaunch}
+                  >
                     <Play />
                     Launch Debug Session
                   </Button>

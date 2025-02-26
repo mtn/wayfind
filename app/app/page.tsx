@@ -50,9 +50,10 @@ export default function Home() {
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
 
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
-  const [debugStatus, setDebugStatus] = useState("inactive");
+  // Updated to use canonical debug state value "notstarted"
+  const [debugStatus, setDebugStatus] = useState("notstarted");
   // Add ref for tracking the latest debug status
-  const debugStatusRef = useRef("inactive");
+  const debugStatusRef = useRef("notstarted");
 
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
@@ -180,7 +181,7 @@ export default function Home() {
     isDebugSessionActiveRef.current = isDebugSessionActive;
   }, [isDebugSessionActive]);
 
-  // Listen for debug status events
+  // Listen for debug status events using canonical DAP events.
   useEffect(() => {
     let unlistenStatus: () => void;
     (async () => {
@@ -202,7 +203,7 @@ export default function Home() {
           console.log(`Processing status update with seq ${payload.seq}`);
           lastStatusSeqRef.current = payload.seq;
 
-          // Update both the ref and the state
+          // Update both the ref and the state based on canonical events
           debugStatusRef.current = status;
           setDebugStatus(status);
 

@@ -4954,6 +4954,7 @@ name = "wayfind"
 version = "0.1.0"
 dependencies = [
  "log",
+ "parking_lot",
  "rand 0.9.0",
  "serde",
  "serde_json",

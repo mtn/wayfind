@@ -83,12 +83,17 @@ pub struct DAPClient {
     pub app_handle: AppHandle,
     // status_seq: counter for status update sequence numbers
     pub status_seq: Arc<AtomicU64>,
+    // NEW: Optional reference to the debug state.
+    pub debug_state: Option<Arc<crate::debug_state::DebugSessionState>>,
 }
 
 impl DAPClient {
     // Create a new client along with an mpsc receiver for external subscribers.
-    // This version requires an AppHandle to be provided.
-    pub fn new(app_handle: AppHandle) -> (Self, mpsc::UnboundedReceiver<DAPMessage>) {
+    // This version requires an AppHandle and a DebugSessionState to be provided.
+    pub fn new(
+        app_handle: AppHandle,
+        debug_state: Arc<crate::debug_state::DebugSessionState>,
+    ) -> (Self, mpsc::UnboundedReceiver<DAPMessage>) {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let client = Self {
@@ -101,6 +106,7 @@ impl DAPClient {
             event_sender: tx,
             app_handle,
             status_seq: Arc::new(AtomicU64::new(0)),
+            debug_state: Some(debug_state),
         };
 
         (client, rx)
@@ -169,6 +175,7 @@ impl DAPClient {
             Some(seq) => seq,
             None => Arc::clone(&self.status_seq),
         };
+        let debug_state_arc = self.debug_state.clone();
 
         self.receiver_handle = Some(thread::spawn(move || loop {
             // Read header until we find the "\r\n\r\n" sequence.
@@ -225,6 +232,10 @@ impl DAPClient {
                 println!("<-- Received: {}", message_str);
 
                 if let Ok(msg) = serde_json::from_str::<DAPMessage>(&message_str) {
+                    if let Some(ds) = &debug_state_arc {
+                        ds.handle_dap_event(&msg);
+                    }
+
                     // Handle events that require special processing
                     if msg.message_type == MessageType::Event {
                         if let Some(ref evt) = msg.event {
@@ -472,8 +483,6 @@ impl DAPClient {
         })?;
 
         if let Some(response) = self.wait_for_response(seq, 10.0).await {
-            // When continuing, emit status update with sequence number
-            self.emit_status("running", Some(thread_id))?;
             Ok(response)
         } else {
             Err("Timeout waiting for continue response".into())
@@ -508,8 +517,6 @@ impl DAPClient {
         })?;
 
         if let Some(response) = self.wait_for_response(seq, 10.0).await {
-            // When stepping, emit status update with sequence number
-            self.emit_status("running", Some(thread_id))?;
             Ok(response)
         } else {
             Err("Timeout waiting for stepIn response".into())
