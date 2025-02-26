@@ -41,6 +41,7 @@ export function ChatInterface({
   // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
   // Instead, intercept tool calls via onToolCall.
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
+    api: "http://localhost:3001/api/chat",
     maxSteps: 5,
     async onToolCall({ toolCall }) {
       if (toolCall.toolName === "setBreakpoint") {
