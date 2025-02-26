@@ -59,8 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("No initialized event received".into());
     }
 
-    // Step 5: Send setBreakpoints at line 24 (matching Python example)
-    let breakpoint_line = 24;
+    // Step 5: Send setBreakpoints at line 19 (matching Python example)
+    let breakpoint_line = 19;
     let bp_response = client
         .set_breakpoints(script_path_str, &[breakpoint_line])
         .await
@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         println!("Using thread ID: {}", thread_id);
 
-        // Step 8: Request stack trace to get frame ID
+        // Step 8: Request stack trace to get frame ID and verify line number
         let st_response = client.stack_trace(thread_id).await?;
         println!("StackTrace response: {:?}", st_response);
 
@@ -111,14 +111,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|l| l.as_i64())
             .unwrap_or(0) as i32;
 
+        println!("Stopped at line {}", line_num);
         assert_eq!(line_num, breakpoint_line, "Stopped at unexpected line");
 
-        // Step 9: Send step_in request
-        let in_response = client.step_in(thread_id, None, "statement").await?;
-        println!("Step in response: {:?}", in_response);
+        // Step 9: Send next request (step over)
+        let next_response = client.next(thread_id).await?;
+        println!("Next response: {:?}", next_response);
 
-        // Step 10: Get stack trace again to verify line number
+        // Step 10: Get stack trace again to verify new line number
         let st_response2 = client.stack_trace(thread_id).await?;
+
+        // Extract line number after step over
         let line_num2 = st_response2
             .body
             .as_ref()
@@ -130,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(0) as i32;
 
         println!("Stopped on line {}", line_num2);
-        assert_eq!(line_num2, 6, "Step in didn't land on expected line 6");
+        assert_eq!(line_num2, 20, "Step over didn't land on expected line 20");
 
         // Step 11: Continue execution
         let continue_response = client.continue_execution(thread_id).await?;
