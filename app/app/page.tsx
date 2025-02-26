@@ -80,16 +80,24 @@ export default function Home() {
     active: IBreakpoint[],
   ): IBreakpoint[] {
     const merged = new Map<string, IBreakpoint>();
+
+    // Add queued breakpoints first
     for (const bp of queued) {
       if (bp.file) {
         merged.set(`${bp.file}:${bp.line}`, bp);
       }
     }
+
+    // Then add active breakpoints, which will override queued ones with the same key
     for (const bp of active) {
       if (bp.file) {
-        merged.set(`${bp.file}:${bp.line}`, bp);
+        merged.set(`${bp.file}:${bp.line}`, {
+          ...bp,
+          verified: bp.verified || false, // Ensure verified property exists
+        });
       }
     }
+
     return Array.from(merged.values());
   }
 
@@ -310,17 +318,21 @@ export default function Home() {
           .then((data) => {
             const typedData = data as { breakpoints?: IBreakpoint[] };
             if (typedData.breakpoints) {
-              setActiveBreakpoints((current) =>
-                current.map((bp) => {
-                  if (bp.file !== currentFileName) return bp;
-                  const verifiedBp = typedData.breakpoints!.find(
-                    (vbp: IBreakpoint) => vbp.line === bp.line,
-                  );
-                  return verifiedBp
-                    ? { ...bp, verified: verifiedBp.verified }
-                    : bp;
-                }),
-              );
+              // Update active breakpoints with verification status
+              const verifiedBps = typedData.breakpoints.map((bp) => ({
+                ...bp,
+                file: currentFileName, // Ensure file is set on returned breakpoints
+                verified: bp.verified !== false, // Default to true if undefined
+              }));
+
+              setActiveBreakpoints((current) => {
+                // Remove current breakpoints for this file
+                const othersInOtherFiles = current.filter(
+                  (bp) => bp.file !== currentFileName,
+                );
+                // Add the newly verified breakpoints
+                return [...othersInOtherFiles, ...verifiedBps];
+              });
             }
           })
           .catch((error) =>
@@ -392,11 +404,18 @@ export default function Home() {
         );
         addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpResp)}`);
         if (bpResp.breakpoints) {
-          setActiveBreakpoints((current) =>
-            current
-              .filter((bp) => bp.file !== file)
-              .concat(bpResp.breakpoints || []),
-          );
+          const verifiedBps = bpResp.breakpoints.map((bp) => ({
+            ...bp,
+            file, // Ensure file is set on returned breakpoints
+            verified: bp.verified !== false, // Default to true if undefined
+          }));
+
+          setActiveBreakpoints((current) => {
+            // Remove current breakpoints for this file
+            const othersInOtherFiles = current.filter((bp) => bp.file !== file);
+            // Add the newly verified breakpoints
+            return [...othersInOtherFiles, ...verifiedBps];
+          });
         }
       }
 

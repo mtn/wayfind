@@ -98,13 +98,21 @@ body {
     background-color: rgba(255, 255, 128, 0.2) !important;
 }
 
-
+.current-line-arrow {
+    background-color: #007acc;
+    width: 0;
+    height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 6px solid currentColor;
+    margin-left: 4px;
+}
 
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
+    * {
+        @apply border-border outline-ring/50;
     }
-  body {
-    @apply bg-background text-foreground;
+    body {
+        @apply bg-background text-foreground;
     }
 }
