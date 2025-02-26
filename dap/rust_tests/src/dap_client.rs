@@ -443,4 +443,40 @@ impl DAPClient {
             Err("Timeout waiting for continue response".into())
         }
     }
+
+    pub async fn step_in(
+        &self,
+        thread_id: i32,
+        target_id: Option<i32>,
+        granularity: &str,
+    ) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let mut args = serde_json::json!({
+            "threadId": thread_id,
+            "granularity": granularity
+        });
+
+        if let Some(id) = target_id {
+            if let serde_json::Value::Object(ref mut map) = args {
+                map.insert("targetId".to_string(), serde_json::json!(id));
+            }
+        }
+
+        let req = DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("stepIn".to_string()),
+            request_seq: None,
+            success: None,
+            body: None,
+            event: None,
+            arguments: Some(args),
+        };
+
+        let seq = self.send_message(req)?;
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for stepIn response".into())
+        }
+    }
 }
