@@ -271,6 +271,23 @@ async fn step_in(
 }
 
 #[tauri::command]
+async fn step_over(
+    thread_id: i64,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
+) -> Result<String, String> {
+    let client_lock = debug_state.client.lock().await;
+    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+
+    match dap_client.next(thread_id).await {
+        Ok(_) => {
+            // Status updates will be handled by the events system
+            Ok("Step over executed".into())
+        }
+        Err(e) => Err(format!("Failed to step over: {}", e)),
+    }
+}
+
+#[tauri::command]
 async fn terminate_program(
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
     app_handle: tauri::AppHandle,
@@ -295,6 +312,7 @@ fn main() {
             get_paused_location,
             continue_debug,
             step_in,
+            step_over,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

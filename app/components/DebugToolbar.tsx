@@ -88,9 +88,11 @@ export function DebugToolbar({
   async function handleStepOver() {
     try {
       await invoke("step_over", { threadId: 1 });
+      addLog("Stepping over next line");
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error stepping over:", errMsg);
+      addLog(`Failed to step over: ${errMsg}`);
     }
   }
 

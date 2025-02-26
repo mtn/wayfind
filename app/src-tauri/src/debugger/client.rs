@@ -522,4 +522,25 @@ impl DAPClient {
             Err("Timeout waiting for stepIn response".into())
         }
     }
+
+    pub async fn next(&self, thread_id: i64) -> Result<DAPMessage, Box<dyn std::error::Error>> {
+        let seq = self.send_message(DAPMessage {
+            seq: -1,
+            message_type: MessageType::Request,
+            command: Some("next".to_string()),
+            request_seq: None,
+            success: None,
+            arguments: Some(serde_json::json!({
+                "threadId": thread_id
+            })),
+            body: None,
+            event: None,
+        })?;
+
+        if let Some(response) = self.wait_for_response(seq, 10.0).await {
+            Ok(response)
+        } else {
+            Err("Timeout waiting for next response".into())
+        }
+    }
 }
