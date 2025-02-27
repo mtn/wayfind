@@ -21,7 +21,6 @@ import {
 interface DebugToolbarProps {
   onDebugSessionStart: (force: boolean) => void;
   debugStatus?: string;
-  sessionToken?: string;
   addLog: (msg: string) => void;
   hasWorkspace: boolean;
 }
@@ -29,7 +28,6 @@ interface DebugToolbarProps {
 export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
-  sessionToken,
   addLog,
   hasWorkspace,
 }: DebugToolbarProps) {
@@ -45,7 +43,7 @@ export function DebugToolbar({
 
   async function handleLaunch() {
     try {
-      onDebugSessionStart();
+      onDebugSessionStart(false);
     } catch (err: unknown) {
       console.error("Error launching session:", err);
     }

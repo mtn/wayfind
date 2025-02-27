@@ -167,7 +167,6 @@ async fn launch_debug_session(
 
 #[tauri::command]
 async fn set_breakpoints(
-    _token: String,
     breakpoints: Vec<BreakpointInput>,
     file_path: String,
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,

@@ -17,11 +17,9 @@ interface WatchExpression {
 
 export interface WatchExpressionsProps {
   // onEvaluate should take an expression and (optionally) a session token, and return a promise that resolves to its evaluated value
-  onEvaluate: (expression: string, sessionToken?: string) => Promise<string>;
+  onEvaluate: (expression: string) => Promise<string>;
   // isPaused is true when the debugger is stopped (so you want to update the watch values)
   isPaused: boolean;
-  // Optional session token for multi-session support
-  sessionToken?: string;
 }
 
 export interface WatchExpressionsHandle {
@@ -31,7 +29,7 @@ export interface WatchExpressionsHandle {
 const WatchExpressions = forwardRef<
   WatchExpressionsHandle,
   WatchExpressionsProps
->(({ onEvaluate, isPaused, sessionToken }, ref) => {
+>(({ onEvaluate, isPaused }, ref) => {
   const [expressions, setExpressions] = useState<WatchExpression[]>([]);
   const [inputValue, setInputValue] = useState("");
 
@@ -49,7 +47,7 @@ const WatchExpressions = forwardRef<
         // call onEvaluate (with sessionToken) and eventually update it if needed.
         prevExpressions.forEach(async (expr) => {
           try {
-            const result = await onEvaluate(expr.expression, sessionToken);
+            const result = await onEvaluate(expr.expression);
             setExpressions((current) =>
               current.map((item) =>
                 item.id === expr.id ? { ...item, result } : item,
@@ -66,7 +64,7 @@ const WatchExpressions = forwardRef<
         return prevExpressions;
       });
     }
-  }, [isPaused, onEvaluate, sessionToken]);
+  }, [isPaused, onEvaluate]);
 
   // When the number of expressions changes, re-evaluate all expressions.
   const prevExpressionCountRef = useRef(expressions.length);

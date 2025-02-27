@@ -24,8 +24,6 @@ interface ChatInterfaceProps {
   onContinue: () => void;
   // Callback to evaluate an expression. Should return a promise resolving to a string.
   onEvaluate: (expression: string) => Promise<string>;
-  // The session token to be sent with API calls for session management.
-  sessionToken: string;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -40,7 +38,6 @@ export function ChatInterface({
   onLaunch,
   onContinue,
   onEvaluate,
-  sessionToken,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
 
@@ -91,9 +88,8 @@ export function ChatInterface({
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    // Send the prompt along with the session token
     handleSubmit(e, {
-      body: { content: input, token: sessionToken },
+      body: { content: input },
       experimental_attachments: attachments,
     });
     setInput("");
