@@ -123,6 +123,7 @@ export function MonacoEditorWrapper({
         roundedSelection: false,
         padding: { top: 8 },
         automaticLayout: true,
+        readOnly: true,
       }}
     />
   );
