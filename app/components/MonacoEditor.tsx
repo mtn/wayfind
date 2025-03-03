@@ -30,6 +30,21 @@ export function MonacoEditorWrapper({
 }: EditorProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<string[]>([]);
+  const contentRef = useRef<string>(content);
+
+  // Update content ref when content prop changes
+  useEffect(() => {
+    contentRef.current = content;
+
+    // If editor is mounted, directly set the value to ensure it updates
+    if (editorRef.current) {
+      // Preserve cursor position and selection when updating content
+      const model = editorRef.current.getModel();
+      if (model && model.getValue() !== content) {
+        editorRef.current.setValue(content);
+      }
+    }
+  }, [content]);
 
   // Ensure monaco is available (the loader provides the global monaco).
   useEffect(() => {
@@ -76,7 +91,7 @@ export function MonacoEditorWrapper({
     const allDecorations = [...bpDecorations, ...executionDecorations];
 
     decorationsRef.current = editor.deltaDecorations([], allDecorations);
-  }, [breakpoints, executionFile, executionLine]);
+  }, [breakpoints, executionFile, executionLine, currentFile]);
 
   const getBreakpointClassName = (bp: IBreakpoint) => {
     const classes = ["breakpoint"];
@@ -95,6 +110,8 @@ export function MonacoEditorWrapper({
     monaco: typeof Monaco,
   ) => {
     editorRef.current = editor;
+    editor.setValue(contentRef.current);
+
     editor.onMouseDown((e) => {
       if (
         e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS ||
@@ -109,8 +126,6 @@ export function MonacoEditorWrapper({
     <Editor
       height="100%"
       defaultLanguage={language}
-      defaultValue={content}
-      value={content}
       theme="vs-dark"
       onChange={(value) => onChange(value || "")}
       onMount={handleEditorDidMount}
