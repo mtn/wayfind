@@ -3365,6 +3365,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust_program"
+version = "0.1.0"
+
+[[package]]
 name = "rust_tests"
 version = "0.1.0"
 dependencies = [
