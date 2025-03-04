@@ -1,4 +1,3 @@
-# wayfind/dap/rust_tests/test_lldb_dap.py
 #!/usr/bin/env python3
 """
 A minimal LLDB-DAP client test script.
@@ -88,62 +87,69 @@ def wait_for_response(seq, timeout=10):
         time.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for response to seq {seq}")
 
-def find_lldb_dap():
-    """Find the LLDB-DAP executable."""
-    # First, check the Xcode location where you found it
-    xcode_path = "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap"
-    if os.path.exists(xcode_path):
-        print(f"Using LLDB-DAP from Xcode: {xcode_path}")
-        return xcode_path
-
-    # Include the other paths as fallbacks
-    fallback_paths = [
-        # M1/M2 Mac Homebrew path
-        "/opt/homebrew/opt/llvm/bin/lldb-dap",
-        # Intel Mac Homebrew path
-        "/usr/local/opt/llvm/bin/lldb-dap",
-        # Check PATH
-        shutil.which("lldb-dap")
-    ]
-
-    for path in fallback_paths:
-        if path and os.path.exists(path):
-            print(f"Using LLDB-DAP from: {path}")
-            return path
-
-    raise FileNotFoundError("Could not find lldb-dap executable.")
+def stream_output(proc, buffer):
+    """Continuously read lines from proc.stdout and append them to buffer."""
+    for line in iter(proc.stdout.readline, b''):
+        if not line:
+            break
+        buffer.append(line.decode('utf-8').rstrip())
+    proc.stdout.close()
 
 def main():
-    # Find the path to the test program
+    # Find the lldb-dap binary
+    lldb_dap_path = "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap"
+    if not os.path.exists(lldb_dap_path):
+        print(f"Error: LLDB-DAP not found at {lldb_dap_path}")
+        sys.exit(1)
+
+    # Find the workspace root
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    test_program_dir = os.path.abspath(os.path.join(script_dir, "..", "test_data", "rust_program"))
+    workspace_root = os.path.dirname(os.path.dirname(script_dir))
+
+    # Path to the test program
+    test_program_src = os.path.join(workspace_root, "dap", "test_data", "rust_program")
 
     # Build the test program
     print("Building test program...")
-    subprocess.run(["cargo", "build"], cwd=test_program_dir, check=True)
-
-    # Path to the compiled binary, because of the workspace config it won't be in the rust project directory
-    target_program = os.path.abspath(os.path.join(script_dir, "..", "..", "target", "debug", "rust_program"))
-
-    # Find lldb-dap
     try:
-        lldb_dap_path = find_lldb_dap()
-        print(f"Using lldb-dap: {lldb_dap_path}")
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-        print("Please install LLDB-DAP and make sure it's in your PATH")
+        subprocess.run(["cargo", "build"], cwd=test_program_src, check=True)
+    except subprocess.CalledProcessError:
+        print("Error building test program")
         sys.exit(1)
 
-    # Launch lldb-dap
-    dap_port = 4711
-    print(f"Launching lldb-dap on port {dap_port}...")
+    # Path to the binary
+    target_program = os.path.join(test_program_src, "target", "debug", "rust_program")
+    if platform.system() == "Windows":
+        target_program += ".exe"
+
+    if not os.path.exists(target_program):
+        # Look in workspace target directory instead
+        target_program = os.path.join(workspace_root, "target", "debug", "rust_program")
+        if platform.system() == "Windows":
+            target_program += ".exe"
+
+    if not os.path.exists(target_program):
+        print(f"Error: Compiled binary not found at {target_program}")
+        sys.exit(1)
+
+    print(f"Using binary: {target_program}")
+
+    # We don't need to pre-launch the target with lldb-dap, like we do with debugpy
+    # Instead, we launch lldb-dap and let it launch the target
+
+    # Start lldb-dap on a specific port
+    lldb_port = 9123
+    print(f"Starting lldb-dap on port {lldb_port}...")
     lldb_proc = subprocess.Popen(
-        [lldb_dap_path, "--port", str(dap_port)],
+        [lldb_dap_path, "--port", str(lldb_port)],
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        bufsize=1
+        stderr=subprocess.STDOUT
     )
+
+    # Buffer to capture output
+    output_buffer = []
+    output_thread = threading.Thread(target=stream_output, args=(lldb_proc, output_buffer), daemon=True)
+    output_thread.start()
 
     # Give lldb-dap time to start
     time.sleep(1)
@@ -151,19 +157,19 @@ def main():
     # Connect to lldb-dap
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        sock.connect(("127.0.0.1", dap_port))
-        print("Connected to lldb-dap")
+        sock.connect(("127.0.0.1", lldb_port))
+        print("Connected to lldb-dap.")
     except ConnectionRefusedError:
         print("Failed to connect to lldb-dap")
         lldb_proc.terminate()
         sys.exit(1)
 
-    # Start the receiver thread
+    # Start DAP message receiver thread
     recv_thread = threading.Thread(target=dap_receiver, args=(sock,), daemon=True)
     recv_thread.start()
 
     try:
-        # Step 1: Send initialize request
+        # Step 1: Send initialize
         init_seq = next_sequence()
         init_req = {
             "seq": init_seq,
@@ -171,7 +177,7 @@ def main():
             "command": "initialize",
             "arguments": {
                 "clientID": "wayfind-test",
-                "clientName": "Wayfind LLDB Tester",
+                "clientName": "Wayfind LLDB Test",
                 "adapterID": "lldb",
                 "pathFormat": "path",
                 "linesStartAt1": True,
@@ -185,7 +191,7 @@ def main():
         print(f"Initialize response: {json.dumps(init_resp, indent=2)}")
 
         # Wait for initialized event
-        initialized_event = wait_for_event("initialized")
+        initialized_event = wait_for_event("initialized", timeout=5)
         print(f"Initialized event: {json.dumps(initialized_event, indent=2)}")
 
         # Step 2: Configure launch
@@ -213,7 +219,7 @@ def main():
             "command": "setBreakpoints",
             "arguments": {
                 "source": {
-                    "path": os.path.join(test_program_dir, "src", "main.rs")
+                    "path": os.path.join(test_program_src, "src", "main.rs")
                 },
                 "breakpoints": [
                     {"line": 14}  # Line with calculate_sum call
@@ -238,7 +244,7 @@ def main():
 
         # Wait for stopped event (should happen due to stopOnEntry)
         print("Waiting for stopped event (due to stopOnEntry)...")
-        stopped_event = wait_for_event("stopped")
+        stopped_event = wait_for_event("stopped", timeout=5)
         print(f"Stopped event: {json.dumps(stopped_event, indent=2)}")
         thread_id = stopped_event.get("body", {}).get("threadId", 1)
 
@@ -258,7 +264,7 @@ def main():
 
         # Wait for the breakpoint hit
         print("Waiting for breakpoint hit...")
-        breakpoint_hit_event = wait_for_event("stopped")
+        breakpoint_hit_event = wait_for_event("stopped", timeout=5)
         print(f"Breakpoint hit event: {json.dumps(breakpoint_hit_event, indent=2)}")
         thread_id = breakpoint_hit_event.get("body", {}).get("threadId", 1)
 
@@ -337,6 +343,12 @@ def main():
         sock.close()
         lldb_proc.terminate()
         lldb_proc.wait()
+
+        # Print captured output
+        print("\n----- Captured LLDB-DAP Output -----")
+        for line in output_buffer:
+            print(line)
+
         print("Test completed")
 
 if __name__ == "__main__":
