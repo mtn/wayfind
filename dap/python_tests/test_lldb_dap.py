@@ -18,6 +18,37 @@ next_seq = 1
 responses = {}
 events = {}
 
+def parse_lldb_result(result_value):
+    """
+    Parse an LLDB expression evaluation result to extract the actual value.
+
+    Examples:
+    "(lldb) expr -- a + b\n(int) $0 = 12\n" -> "12"
+    "(int) $0 = 12" -> "12"
+    "12" -> "12"
+
+    Args:
+        result_value: The string returned from LLDB evaluation
+
+    Returns:
+        Extracted value as string, or original string if no pattern matches
+    """
+    if not result_value:
+        return None
+
+    # Try to match full LLDB output with command
+    match = re.search(r'\(lldb\).*\n\(\w+\)\s+\$\d+\s+=\s+(.+)', result_value)
+    if match:
+        return match.group(1).strip()
+
+    # Try to match just the result part
+    match = re.search(r'\(\w+\)\s+\$\d+\s+=\s+(.+)', result_value)
+    if match:
+        return match.group(1).strip()
+
+    # If no patterns match, return the original value
+    return result_value.strip()
+
 def next_sequence():
     global next_seq
     seq = next_seq
@@ -300,7 +331,7 @@ def main():
         eval_resp = wait_for_response(eval_seq)
         print(f"Evaluate response: {json.dumps(eval_resp, indent=2)}")
         result_value = eval_resp.get("body", {}).get("result")
-        print(f"Value of 'a + b' at breakpoint: {result_value}")
+        print(f"Value of 'a + b' at breakpoint: {parse_lldb_result(result_value)}")
 
         # Step 11: Continue to completion
         continue_seq = next_sequence()
