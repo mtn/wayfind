@@ -215,7 +215,7 @@ def main():
                     "path": os.path.join(test_program_src, "src", "main.rs")
                 },
                 "breakpoints": [
-                    {"line": 14}  # Line with calculate_sum call
+                    {"line": 18}  # Line with calculate_sum call
                 ],
                 "sourceModified": False
             }
@@ -283,11 +283,13 @@ def main():
         # Step 10: Evaluate an expression
         eval_seq = next_sequence()
         eval_args = {
-            "expression": "a + b",
+            "expression": "sum",
             "context": "hover"
         }
         if frame_id:
             eval_args["frameId"] = frame_id
+        else:
+            raise AssertionError("No frame ID available")
         eval_req = {
             "seq": eval_seq,
             "type": "request",
@@ -298,7 +300,7 @@ def main():
         eval_resp = wait_for_response(eval_seq)
         print(f"Evaluate response: {json.dumps(eval_resp, indent=2)}")
         result_value = eval_resp.get("body", {}).get("result")
-        print(f"Value of 'a + b' at breakpoint: {result_value}")
+        print(f"Value of 'sum' at breakpoint: {result_value}")
 
         # Step 11: Continue to completion
         continue_seq = next_sequence()
