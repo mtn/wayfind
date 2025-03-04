@@ -11,7 +11,6 @@ import subprocess
 import threading
 import time
 import re
-import shutil
 import platform
 
 # Global variables to help manage DAP messages
@@ -87,21 +86,7 @@ def wait_for_response(seq, timeout=10):
         time.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for response to seq {seq}")
 
-def stream_output(proc, buffer):
-    """Continuously read lines from proc.stdout and append them to buffer."""
-    for line in iter(proc.stdout.readline, b''):
-        if not line:
-            break
-        buffer.append(line.decode('utf-8').rstrip())
-    proc.stdout.close()
-
 def main():
-    # Find the lldb-dap binary
-    lldb_dap_path = "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap"
-    if not os.path.exists(lldb_dap_path):
-        print(f"Error: LLDB-DAP not found at {lldb_dap_path}")
-        sys.exit(1)
-
     # Find the workspace root
     script_dir = os.path.dirname(os.path.abspath(__file__))
     workspace_root = os.path.dirname(os.path.dirname(script_dir))
@@ -134,25 +119,9 @@ def main():
 
     print(f"Using binary: {target_program}")
 
-    # We don't need to pre-launch the target with lldb-dap, like we do with debugpy
-    # Instead, we launch lldb-dap and let it launch the target
-
-    # Start lldb-dap on a specific port
+    # Assume lldb-dap is already running on this port
     lldb_port = 9123
-    print(f"Starting lldb-dap on port {lldb_port}...")
-    lldb_proc = subprocess.Popen(
-        [lldb_dap_path, "--port", str(lldb_port)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT
-    )
-
-    # Buffer to capture output
-    output_buffer = []
-    output_thread = threading.Thread(target=stream_output, args=(lldb_proc, output_buffer), daemon=True)
-    output_thread.start()
-
-    # Give lldb-dap time to start
-    time.sleep(1)
+    print(f"Connecting to lldb-dap on port {lldb_port}...")
 
     # Connect to lldb-dap
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -161,7 +130,7 @@ def main():
         print("Connected to lldb-dap.")
     except ConnectionRefusedError:
         print("Failed to connect to lldb-dap")
-        lldb_proc.terminate()
+        print("Please start lldb-dap with: /Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap --port 9123")
         sys.exit(1)
 
     # Start DAP message receiver thread
@@ -341,14 +310,6 @@ def main():
         print(f"Error during test: {e}")
     finally:
         sock.close()
-        lldb_proc.terminate()
-        lldb_proc.wait()
-
-        # Print captured output
-        print("\n----- Captured LLDB-DAP Output -----")
-        for line in output_buffer:
-            print(line)
-
         print("Test completed")
 
 if __name__ == "__main__":
