@@ -90,29 +90,33 @@ def wait_for_response(seq, timeout=10):
 
 def find_lldb_dap():
     """Find the LLDB-DAP executable."""
-    if platform.system() == "Darwin":
-        # On macOS, try to use the one from Xcode first
-        xcode_path = "/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Versions/A/Resources/lldb-dap"
-        if os.path.exists(xcode_path):
-            return xcode_path
+    # First, check the Xcode location where you found it
+    xcode_path = "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap"
+    if os.path.exists(xcode_path):
+        print(f"Using LLDB-DAP from Xcode: {xcode_path}")
+        return xcode_path
 
-        # Check if installed via Homebrew
-        brew_path = "/usr/local/opt/llvm/bin/lldb-dap"
-        if os.path.exists(brew_path):
-            return brew_path
+    # Include the other paths as fallbacks
+    fallback_paths = [
+        # M1/M2 Mac Homebrew path
+        "/opt/homebrew/opt/llvm/bin/lldb-dap",
+        # Intel Mac Homebrew path
+        "/usr/local/opt/llvm/bin/lldb-dap",
+        # Check PATH
+        shutil.which("lldb-dap")
+    ]
 
-    # Try to find it in PATH
-    lldb_dap_path = shutil.which("lldb-dap")
-    if lldb_dap_path:
-        return lldb_dap_path
+    for path in fallback_paths:
+        if path and os.path.exists(path):
+            print(f"Using LLDB-DAP from: {path}")
+            return path
 
-    raise FileNotFoundError("Could not find lldb-dap executable")
+    raise FileNotFoundError("Could not find lldb-dap executable.")
 
 def main():
     # Find the path to the test program
     script_dir = os.path.dirname(os.path.abspath(__file__))
     test_program_dir = os.path.abspath(os.path.join(script_dir, "..", "test_data", "rust_program"))
-    print(test_program_dir)
 
     # Build the test program
     print("Building test program...")
