@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-A minimal LLDB-DAP client test script.
+A minimal LLDB-DAP client test script that mimics the flow used in test_simple_breakpoint.py.
 """
 
 import os
@@ -11,7 +11,6 @@ import subprocess
 import threading
 import time
 import re
-import shutil
 import platform
 
 # Global variables to help manage DAP messages
@@ -67,7 +66,9 @@ def dap_receiver(sock):
             req_seq = msg.get("request_seq")
             responses[req_seq] = msg
         elif msg_type == "event":
-            events.setdefault(msg.get("event"), []).append(msg)
+            event_name = msg.get("event")
+            events.setdefault(event_name, []).append(msg)
+            print(f"Received event: {event_name}")
         else:
             print("Unknown message type", msg)
 
@@ -118,24 +119,15 @@ def main():
         sys.exit(1)
 
     # Path to the binary
-    target_program = os.path.join(test_program_src, "target", "debug", "rust_program")
+    target_program = os.path.join(workspace_root, "target", "debug", "rust_program")
     if platform.system() == "Windows":
         target_program += ".exe"
-
-    if not os.path.exists(target_program):
-        # Look in workspace target directory instead
-        target_program = os.path.join(workspace_root, "target", "debug", "rust_program")
-        if platform.system() == "Windows":
-            target_program += ".exe"
 
     if not os.path.exists(target_program):
         print(f"Error: Compiled binary not found at {target_program}")
         sys.exit(1)
 
     print(f"Using binary: {target_program}")
-
-    # We don't need to pre-launch the target with lldb-dap, like we do with debugpy
-    # Instead, we launch lldb-dap and let it launch the target
 
     # Start lldb-dap on a specific port
     lldb_port = 9123
@@ -169,7 +161,7 @@ def main():
     recv_thread.start()
 
     try:
-        # Step 1: Send initialize
+        # Step 1: Send initialize request
         init_seq = next_sequence()
         init_req = {
             "seq": init_seq,
@@ -190,11 +182,7 @@ def main():
         init_resp = wait_for_response(init_seq)
         print(f"Initialize response: {json.dumps(init_resp, indent=2)}")
 
-        # Wait for initialized event
-        initialized_event = wait_for_event("initialized", timeout=5)
-        print(f"Initialized event: {json.dumps(initialized_event, indent=2)}")
-
-        # Step 2: Configure launch
+        # Step 2: Send launch request (equivalent to attach in the Python example)
         launch_seq = next_sequence()
         launch_req = {
             "seq": launch_seq,
@@ -208,10 +196,15 @@ def main():
             }
         }
         send_dap_message(sock, launch_req)
-        launch_resp = wait_for_response(launch_seq)
-        print(f"Launch response: {json.dumps(launch_resp, indent=2)}")
+        time.sleep(0.2)  # Just like in debugpy example, give the server a moment
 
-        # Step 3: Set breakpoints
+        # Step 3: Now wait for initialized event
+        print("Waiting for initialized event...")
+        initialized_event = wait_for_event("initialized", timeout=5)
+        print(f"Initialized event received: {json.dumps(initialized_event, indent=2)}")
+        print("Initialization complete")
+
+        # Step 4: Set breakpoints
         bp_seq = next_sequence()
         bp_req = {
             "seq": bp_seq,
@@ -231,7 +224,7 @@ def main():
         bp_resp = wait_for_response(bp_seq)
         print(f"Breakpoints response: {json.dumps(bp_resp, indent=2)}")
 
-        # Step 4: Configuration done
+        # Step 5: Configuration done
         config_seq = next_sequence()
         config_req = {
             "seq": config_seq,
@@ -242,13 +235,13 @@ def main():
         config_resp = wait_for_response(config_seq)
         print(f"ConfigurationDone response: {json.dumps(config_resp, indent=2)}")
 
-        # Wait for stopped event (should happen due to stopOnEntry)
+        # Step 6: Wait for stopped event (due to stopOnEntry)
         print("Waiting for stopped event (due to stopOnEntry)...")
         stopped_event = wait_for_event("stopped", timeout=5)
         print(f"Stopped event: {json.dumps(stopped_event, indent=2)}")
         thread_id = stopped_event.get("body", {}).get("threadId", 1)
 
-        # Step 5: Continue to hit the breakpoint
+        # Step 7: Continue to hit the breakpoint
         continue_seq = next_sequence()
         continue_req = {
             "seq": continue_seq,
@@ -262,46 +255,52 @@ def main():
         continue_resp = wait_for_response(continue_seq)
         print(f"Continue response: {json.dumps(continue_resp, indent=2)}")
 
-        # Wait for the breakpoint hit
+        # Step 8: Wait for the breakpoint hit (another stopped event)
         print("Waiting for breakpoint hit...")
         breakpoint_hit_event = wait_for_event("stopped", timeout=5)
         print(f"Breakpoint hit event: {json.dumps(breakpoint_hit_event, indent=2)}")
         thread_id = breakpoint_hit_event.get("body", {}).get("threadId", 1)
 
-        # Get stack trace to get the frame ID
+        # Step 9: Get stack trace to get the frame ID
         stack_seq = next_sequence()
         stack_req = {
             "seq": stack_seq,
             "type": "request",
             "command": "stackTrace",
             "arguments": {
-                "threadId": thread_id
+                "threadId": thread_id,
+                "startFrame": 0,
+                "levels": 1
             }
         }
         send_dap_message(sock, stack_req)
         stack_resp = wait_for_response(stack_seq)
         print(f"Stack trace response: {json.dumps(stack_resp, indent=2)}")
+        frames = stack_resp.get("body", {}).get("stackFrames", [])
+        frame_id = frames[0].get("id") if frames else None
+        print(f"Using frameId: {frame_id}")
 
-        # Get the frame ID from the stack trace
-        frame_id = stack_resp.get("body", {}).get("stackFrames", [{}])[0].get("id")
-
-        # Step 6: Evaluate an expression
+        # Step 10: Evaluate an expression
         eval_seq = next_sequence()
+        eval_args = {
+            "expression": "a + b",
+            "context": "hover"
+        }
+        if frame_id:
+            eval_args["frameId"] = frame_id
         eval_req = {
             "seq": eval_seq,
             "type": "request",
             "command": "evaluate",
-            "arguments": {
-                "expression": "a + b",
-                "frameId": frame_id,
-                "context": "hover"
-            }
+            "arguments": eval_args
         }
         send_dap_message(sock, eval_req)
         eval_resp = wait_for_response(eval_seq)
         print(f"Evaluate response: {json.dumps(eval_resp, indent=2)}")
+        result_value = eval_resp.get("body", {}).get("result")
+        print(f"Value of 'a + b' at breakpoint: {result_value}")
 
-        # Step 7: Continue to completion
+        # Step 11: Continue to completion
         continue_seq = next_sequence()
         continue_req = {
             "seq": continue_seq,
@@ -315,7 +314,28 @@ def main():
         continue_resp = wait_for_response(continue_seq)
         print(f"Final continue response: {json.dumps(continue_resp, indent=2)}")
 
-        # Wait for the process to terminate
+        # Like in the Python example, handle any additional stops
+        while True:
+            try:
+                extra_stop = wait_for_event("stopped", timeout=1)
+                print(f"Extra stopped event received: {json.dumps(extra_stop, indent=2)}")
+                cont_seq = next_sequence()
+                cont_req = {
+                    "seq": cont_seq,
+                    "type": "request",
+                    "command": "continue",
+                    "arguments": {
+                        "threadId": extra_stop.get("body", {}).get("threadId", thread_id)
+                    }
+                }
+                send_dap_message(sock, cont_req)
+                extra_cont = wait_for_response(cont_seq)
+                print(f"Extra continue response: {json.dumps(extra_cont, indent=2)}")
+            except TimeoutError:
+                print("No more stopped events received")
+                break
+
+        # Wait for termination
         print("Waiting for termination...")
         try:
             terminated_event = wait_for_event("terminated", timeout=5)
@@ -323,7 +343,7 @@ def main():
         except TimeoutError:
             print("No termination event received (may be normal for some adapters)")
 
-        # Step 8: Disconnect
+        # Disconnect
         disconnect_seq = next_sequence()
         disconnect_req = {
             "seq": disconnect_seq,
