@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -22,7 +22,7 @@ interface DebugToolbarProps {
   onDebugSessionStart: (force: boolean) => void;
   debugStatus?: string;
   sessionToken?: string;
-  addLog: (msg: string) => void;
+  addLog: (msg: React.ReactNode) => void;
   hasWorkspace: boolean;
 }
 
@@ -45,7 +45,7 @@ export function DebugToolbar({
 
   async function handleLaunch() {
     try {
-      onDebugSessionStart();
+      onDebugSessionStart(false);
     } catch (err: unknown) {
       console.error("Error launching session:", err);
     }
@@ -62,10 +62,10 @@ export function DebugToolbar({
         threadId: 1,
       });
 
-      // Format the result based on its type information
-      let displayValue = result.result || result; // Default to the raw result
+      // Format the result based on its type
+      let displayValue = result.result; // Default to the string result
 
-      // For numeric types, try to parse the result as a number
+      // For numeric types, try to parse the result
       if (result.type === "int" || result.type === "float") {
         const numericValue = parseFloat(result.result);
         if (!isNaN(numericValue)) {
@@ -73,11 +73,22 @@ export function DebugToolbar({
         }
       }
 
-      addLog(`Evaluation result: ${displayValue}`);
+      // Use JSX for formatted output
+      addLog(
+        <div>
+          <strong>{expression}</strong> = {displayValue}
+        </div>,
+      );
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error evaluating:", errMsg);
-      addLog(`Error evaluating expression: ${errMsg}`);
+
+      // Format error message with JSX
+      addLog(
+        <div className="text-red-500">
+          Error evaluating <strong>{expression}</strong>: {errMsg}
+        </div>,
+      );
     } finally {
       setExpression("");
     }

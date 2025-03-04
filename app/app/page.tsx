@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, ReactNode } from "react";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -58,8 +58,8 @@ export default function Home() {
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
-  const [debugLog, setDebugLog] = useState<string[]>([]);
-  const addLog = (msg: string) => setDebugLog((prev) => [...prev, msg]);
+  const [debugLog, setDebugLog] = useState<ReactNode[]>([]);
+  const addLog = (msg: ReactNode) => setDebugLog((prev) => [...prev, msg]);
 
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
 
@@ -459,12 +459,27 @@ export default function Home() {
 
   const evaluateExpression = async (expression: string) => {
     try {
-      const result = await invoke<string>("evaluate_expression", {
+      const result = await invoke<any>("evaluate_expression", {
         expression,
       });
+
+      // For numeric types, try to parse the result
+      let displayValue = result.result;
+      if (result.type === "int" || result.type === "float") {
+        const numericValue = parseFloat(result.result);
+        if (!isNaN(numericValue)) {
+          displayValue = numericValue;
+        }
+      }
+
       return result;
     } catch (e) {
-      addLog(`Evaluation error: ${e instanceof Error ? e.message : e}`);
+      addLog(
+        <div className="text-red-500">
+          Error evaluating <strong>{expression}</strong>:{" "}
+          {e instanceof Error ? e.message : String(e)}
+        </div>,
+      );
       return "";
     }
   };
@@ -474,7 +489,9 @@ export default function Home() {
       await invoke("continue_execution");
       addLog("Continuing execution");
     } catch (err) {
-      addLog(`Continue failed: ${err}`);
+      addLog(
+        <div className="text-red-500">Continue failed: {String(err)}</div>,
+      );
       console.error("Continue failed:", err);
     }
   };
