@@ -79,6 +79,14 @@ export default function Home() {
     }
   };
 
+  // Scroll to the bottom when debugLog changes
+  const statusAreaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (statusAreaRef.current) {
+      statusAreaRef.current.scrollTop = statusAreaRef.current.scrollHeight;
+    }
+  }, [debugLog]);
+
   function mergeBreakpoints(
     queued: IBreakpoint[],
     active: IBreakpoint[],
@@ -542,7 +550,11 @@ export default function Home() {
                   {selectedTab === "status" && (
                     <div className="h-full overflow-auto border rounded-md bg-background">
                       <div className="p-2 border-b font-bold">Debug Log</div>
-                      <div className="p-2 space-y-1 font-mono text-xs">
+                      <div
+                        ref={statusAreaRef}
+                        className="p-2 space-y-1 font-mono text-xs overflow-auto"
+                        style={{ maxHeight: "calc(100% - 36px)" }}
+                      >
                         {debugLog.map((msg, i) => (
                           <div key={i} className="whitespace-pre-wrap">
                             {msg}
