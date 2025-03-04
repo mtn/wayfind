@@ -57,14 +57,27 @@ export function DebugToolbar({
       return;
     }
     try {
-      const result = await invoke("evaluate_expression", {
+      const result = await invoke<any>("evaluate_expression", {
         expression,
         threadId: 1,
       });
-      addLog(`Evaluation result: ${result}`);
+
+      // Format the result based on its type information
+      let displayValue = result.result || result; // Default to the raw result
+
+      // For numeric types, try to parse the result as a number
+      if (result.type === "int" || result.type === "float") {
+        const numericValue = parseFloat(result.result);
+        if (!isNaN(numericValue)) {
+          displayValue = numericValue;
+        }
+      }
+
+      addLog(`Evaluation result: ${displayValue}`);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error evaluating:", errMsg);
+      addLog(`Error evaluating expression: ${errMsg}`);
     } finally {
       setExpression("");
     }

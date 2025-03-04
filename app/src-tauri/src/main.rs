@@ -317,7 +317,7 @@ async fn step_out(
 async fn evaluate_expression(
     expression: String,
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
-) -> Result<String, String> {
+) -> Result<Value, String> {
     // Get the DAP client
     let client_lock = debug_state.client.lock().await;
     let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
@@ -358,9 +358,8 @@ async fn evaluate_expression(
         .map_err(|e| format!("Failed to evaluate expression: {}", e))?;
 
     if let Some(body) = eval_resp.body {
-        if let Some(result_val) = body.get("result") {
-            return Ok(result_val.to_string());
-        }
+        // Return the full body instead of just the string result
+        return Ok(body);
     }
     Err("No result returned from evaluate".into())
 }
