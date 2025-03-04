@@ -283,8 +283,8 @@ def main():
         # Step 10: Evaluate an expression
         eval_seq = next_sequence()
         eval_args = {
-            "expression": "sum",
-            "context": "hover"
+            "expression": "expr -- a + b",
+            "context": "repl"
         }
         if frame_id:
             eval_args["frameId"] = frame_id
@@ -300,7 +300,7 @@ def main():
         eval_resp = wait_for_response(eval_seq)
         print(f"Evaluate response: {json.dumps(eval_resp, indent=2)}")
         result_value = eval_resp.get("body", {}).get("result")
-        print(f"Value of 'sum' at breakpoint: {result_value}")
+        print(f"Value of 'a + b' at breakpoint: {result_value}")
 
         # Step 11: Continue to completion
         continue_seq = next_sequence()
