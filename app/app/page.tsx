@@ -511,15 +511,6 @@ export default function Home() {
         expression,
       });
 
-      // For numeric types, try to parse the result
-      let displayValue = result.result;
-      if (result.type === "int" || result.type === "float") {
-        const numericValue = parseFloat(result.result);
-        if (!isNaN(numericValue)) {
-          displayValue = numericValue;
-        }
-      }
-
       return result;
     } catch (e) {
       addLog(

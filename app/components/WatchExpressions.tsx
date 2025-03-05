@@ -53,7 +53,7 @@ const WatchExpressions = forwardRef<
                 item.id === expr.id ? { ...item, result } : item,
               ),
             );
-          } catch (error) {
+          } catch {
             setExpressions((current) =>
               current.map((item) =>
                 item.id === expr.id ? { ...item, result: "Error" } : item,
