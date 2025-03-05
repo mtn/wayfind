@@ -9,15 +9,17 @@ import React, {
   useRef,
 } from "react";
 
+import type { EvaluationResult } from "@/components/DebugToolbar";
+
 interface WatchExpression {
   id: number;
   expression: string;
-  result?: string;
+  result?: EvaluationResult | null;
 }
 
 export interface WatchExpressionsProps {
   // onEvaluate should take an expression, and return a promise that resolves to its evaluated value
-  onEvaluate: (expression: string) => Promise<string>;
+  onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
   // isPaused is true when the debugger is stopped (so you want to update the watch values)
   isPaused: boolean;
 }
@@ -56,7 +58,9 @@ const WatchExpressions = forwardRef<
           } catch {
             setExpressions((current) =>
               current.map((item) =>
-                item.id === expr.id ? { ...item, result: "Error" } : item,
+                item.id === expr.id
+                  ? { ...item, result: { result: "Error", type: "error" } }
+                  : item,
               ),
             );
           }
@@ -128,8 +132,8 @@ const WatchExpressions = forwardRef<
           <li key={expr.id} className="mb-1 flex justify-between items-center">
             <span>
               <strong>{expr.expression}</strong>:{" "}
-              {expr.result !== undefined
-                ? expr.result
+              {expr.result !== undefined && expr.result !== null
+                ? expr.result.result
                 : isPaused
                   ? "Evaluating..."
                   : "Not evaluated"}

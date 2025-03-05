@@ -7,6 +7,8 @@ import { FileEntry } from "@/lib/fileSystem";
 import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
+import type { EvaluationResult } from "@/components/DebugToolbar";
+
 interface Attachment {
   name: string;
   contentType: string;
@@ -23,7 +25,7 @@ interface ChatInterfaceProps {
   // Callback to continue execution.
   onContinue: () => void;
   // Callback to evaluate an expression. Should return a promise resolving to a string.
-  onEvaluate: (expression: string) => Promise<string>;
+  onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
 }
 
 // Helper function to extract a wrapped user prompt.
