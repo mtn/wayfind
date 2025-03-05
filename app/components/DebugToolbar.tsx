@@ -26,6 +26,8 @@ interface DebugToolbarProps {
   hasWorkspace: boolean;
   debugEngine?: string;
   onDebugEngineChange?: (engine: string) => void;
+  rustBinaryPath?: string;
+  onRustBinaryPathChange?: (path: string) => void;
 }
 
 export function DebugToolbar({
@@ -36,6 +38,8 @@ export function DebugToolbar({
   hasWorkspace,
   debugEngine = "python",
   onDebugEngineChange,
+  rustBinaryPath = "",
+  onRustBinaryPathChange,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
 
@@ -206,6 +210,24 @@ export function DebugToolbar({
           </select>
         </div>
       </div>
+
+      {/* Rust binary path input */}
+      {debugEngine === "rust" && !isSessionActive && (
+        <div className="mb-4">
+          <label htmlFor="rustBinaryPath" className="block text-sm mb-1">
+            Rust Binary Path:
+          </label>
+          <input
+            id="rustBinaryPath"
+            type="text"
+            value={rustBinaryPath}
+            onChange={(e) => onRustBinaryPathChange?.(e.target.value)}
+            placeholder="Enter path to compiled Rust binary"
+            className="w-full border rounded px-2 py-1 text-sm"
+          />
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-4 mb-4">
         {!isSessionActive && (
           <TooltipProvider>

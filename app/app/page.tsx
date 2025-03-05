@@ -46,6 +46,7 @@ export default function Home() {
 
   const [sessionToken, setSessionToken] = useState<string>("");
   const [debugEngine, setDebugEngine] = useState<string>("python");
+  const [rustBinaryPath, setRustBinaryPath] = useState<string>("");
 
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
@@ -363,29 +364,57 @@ export default function Home() {
       return;
     }
 
-    if (!selectedFile || selectedFile.type !== "file") {
-      addLog("No file selected to run");
+    // For Rust debugging, check for rust binary path
+    if (debugEngine === "rust") {
+      if (!rustBinaryPath) {
+        addLog(
+          <div className="text-red-600">
+            Please enter a path to the Rust binary
+          </div>,
+        );
+        return;
+      }
+
+      setIsDebugSessionActive(true);
+      addLog(`Launching ${debugEngine} debug session...`);
+      lastStatusSeqRef.current = null;
+
+      try {
+        addLog(`Using binary path: ${rustBinaryPath}`);
+
+        await invoke("launch_debug_session", {
+          scriptPath: rustBinaryPath,
+          debugEngine,
+        });
+
+        addLog(`${debugEngine} debug session launched successfully`);
+
+        // Configuration done and other post-launch steps
+        await invoke("configuration_done")
+          .then((response) => {
+            addLog("configurationDone: " + response);
+          })
+          .catch((error) => {
+            addLog(
+              "Failed configuration_done: " +
+                (error instanceof Error ? error.message : error),
+            );
+          });
+      } catch (error) {
+        addLog(
+          `Failed launching debug session: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+        setIsDebugSessionActive(false);
+      }
       return;
     }
 
-    // Validate selected file based on debug engine
-    if (debugEngine === "rust") {
-      // For Rust debugging, check if the file looks like a binary
-      // This is a simple heuristic and might need adjustment
-      const fileName = selectedFile.name.toLowerCase();
-      if (
-        fileName.endsWith(".rs") ||
-        fileName.endsWith(".py") ||
-        fileName.endsWith(".txt")
-      ) {
-        addLog(
-          <div className="text-amber-600">
-            Warning: "{selectedFile.name}" doesn't appear to be a compiled
-            binary. In Rust debug mode, please select the compiled binary file.
-          </div>,
-        );
-        // Continue anyway, as this is just a warning
-      }
+    // For Python debugging, we need a selected file
+    if (!selectedFile || selectedFile.type !== "file") {
+      addLog("No file selected to run for Python debugging");
+      return;
     }
 
     setIsDebugSessionActive(true);
@@ -534,14 +563,6 @@ export default function Home() {
                   onSelectFile={handleFileSelect}
                   onOpenWorkspace={handleOpenWorkspace}
                 />
-                {debugEngine === "rust" && (
-                  <div className="p-2 mt-2 bg-amber-50 border border-amber-200 rounded-md text-amber-800">
-                    <p className="text-sm">
-                      <strong>Rust Debug Mode:</strong> Please select the
-                      compiled binary file you wish to debug.
-                    </p>
-                  </div>
-                )}
               </div>
             </ResizablePanel>
             {/* Section 2: Debug Panel – Controls always visible with tabs below */}
@@ -557,6 +578,8 @@ export default function Home() {
                     hasWorkspace={hasWorkspace}
                     debugEngine={debugEngine}
                     onDebugEngineChange={setDebugEngine}
+                    rustBinaryPath={rustBinaryPath}
+                    onRustBinaryPathChange={setRustBinaryPath}
                   />
                 </div>
                 {/* Tab Header */}
