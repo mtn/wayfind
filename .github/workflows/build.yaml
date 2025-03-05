@@ -26,12 +26,7 @@ jobs:
         run: cd app && npm ci
 
       - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v0
+        working-directory: app
+        run: npx tauri build --ci
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: app
-          tauriScript: npx tauri
-          includeDebug: false
-          includeRelease: false
-          args: build --ci
