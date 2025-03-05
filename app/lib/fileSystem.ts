@@ -4,10 +4,11 @@ export interface FileEntry {
   type: "file" | "directory";
   children?: FileEntry[];
   content?: string;
+  expanded?: boolean;
 }
 
 export class InMemoryFileSystem {
-  private root: FileEntry;
+  private files: FileEntry[];
   private workspacePath: string | null = null;
 
   constructor(
@@ -15,16 +16,25 @@ export class InMemoryFileSystem {
     workspacePath: string | null = null,
   ) {
     this.workspacePath = workspacePath;
-    this.root = {
-      name: "/",
-      path: "/",
-      type: "directory",
-      children: initialFiles,
-    };
+    this.files = initialFiles;
   }
 
-  // Get entries in a directory
+  // Toggle directory expansion state
+  async toggleDirectoryExpanded(path: string): Promise<boolean> {
+    const entry = this.findEntry(path);
+    if (!entry || entry.type !== "directory") {
+      return false;
+    }
+    entry.expanded = !entry.expanded;
+    return true;
+  }
+
+  // Get entries at the root level
   async getEntries(path: string = "/"): Promise<FileEntry[]> {
+    if (path === "/") {
+      return this.files;
+    }
+
     const entry = this.findEntry(path);
     if (!entry || entry.type !== "directory") {
       return [];
@@ -55,6 +65,7 @@ export class InMemoryFileSystem {
     if (!this.workspacePath) {
       throw new Error("No workspace path set");
     }
+    // Handle the case where relativePath starts with a slash
     const cleanPath = relativePath.startsWith("/")
       ? relativePath.slice(1)
       : relativePath;
@@ -69,18 +80,29 @@ export class InMemoryFileSystem {
     return this.workspacePath;
   }
 
+  // Find entry by path - basic implementation
   private findEntry(path: string): FileEntry | null {
-    if (path === "/" || path === "") return this.root;
+    // Root path is not a real entry
+    if (path === "/" || path === "") return null;
 
-    const parts = path.split("/").filter(Boolean);
-    let current: FileEntry = this.root;
+    // For simplicity, we only handle top-level files and directories
+    const name = path.startsWith("/") ? path.slice(1) : path;
 
-    for (const part of parts) {
-      const child = current.children?.find((c) => c.name === part);
-      if (!child) return null;
-      current = child;
+    // First check if it's a top-level entry
+    const topLevelEntry = this.files.find((f) => f.name === name);
+    if (topLevelEntry) return topLevelEntry;
+
+    // If not found, let's check inside directories
+    for (const dir of this.files.filter(
+      (f) => f.type === "directory" && f.children,
+    )) {
+      if (dir.children) {
+        // Check if it's a direct child of this directory
+        const directChild = dir.children.find((f) => f.name === name);
+        if (directChild) return directChild;
+      }
     }
 
-    return current;
+    return null;
   }
 }
