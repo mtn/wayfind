@@ -44,7 +44,6 @@ export default function Home() {
     loadFiles();
   }, [fs]);
 
-  const [sessionToken, setSessionToken] = useState<string>("");
   const [debugEngine, setDebugEngine] = useState<string>("python");
   const [rustBinaryPath, setRustBinaryPath] = useState<string>("");
 
@@ -324,7 +323,6 @@ export default function Home() {
         const fullFilePath = fs.getFullPath(selectedFileRef.current.path);
 
         invoke("set_breakpoints", {
-          token: sessionToken,
           breakpoints: newBreakpoints.filter(
             (bp) => bp.file === currentFileName,
           ),
@@ -463,7 +461,6 @@ export default function Home() {
         const bpResp = await invoke<{ breakpoints?: IBreakpoint[] }>(
           "set_breakpoints",
           {
-            token: sessionToken,
             breakpoints: fileBreakpoints,
             filePath: fullFilePath, // Use full path instead of just the file name
           },
@@ -573,7 +570,6 @@ export default function Home() {
                   <DebugToolbar
                     onDebugSessionStart={handleDebugSessionStart}
                     debugStatus={debugStatus}
-                    sessionToken={sessionToken}
                     addLog={addLog}
                     hasWorkspace={hasWorkspace}
                     debugEngine={debugEngine}
@@ -688,7 +684,6 @@ export default function Home() {
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}
                 onEvaluate={evaluateExpression}
-                sessionToken={sessionToken}
               />
             </ResizablePanel>
           </ResizablePanelGroup>

@@ -21,7 +21,6 @@ import {
 interface DebugToolbarProps {
   onDebugSessionStart: (force: boolean) => void;
   debugStatus?: string;
-  sessionToken?: string;
   addLog: (msg: React.ReactNode) => void;
   hasWorkspace: boolean;
   debugEngine?: string;
@@ -33,7 +32,6 @@ interface DebugToolbarProps {
 export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
-  sessionToken,
   addLog,
   hasWorkspace,
   debugEngine = "python",
