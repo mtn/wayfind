@@ -117,9 +117,18 @@ export default function Home() {
 
   const handleToggleDirectory = useCallback(
     async (directory: FileEntry) => {
-      await fs.toggleDirectoryExpanded(directory.path);
-      const entries = await fs.getEntries("/");
-      setFiles(entries);
+      console.log(`Toggling directory: ${directory.path}`);
+      const success = await fs.toggleDirectoryExpanded(directory.path);
+
+      if (success) {
+        console.log(`Successfully toggled directory: ${directory.path}`);
+        // Create a fresh copy of the file list to trigger re-render
+        const entries = await fs.getEntries("/");
+        console.log("Updated entries after toggle:", entries);
+        setFiles([...entries]); // Create a new array to ensure state update
+      } else {
+        console.error(`Failed to toggle directory: ${directory.path}`);
+      }
     },
     [fs],
   );
@@ -187,7 +196,7 @@ export default function Home() {
         // Then, collect all files
         const filesOnly = entries.filter((entry) => !entry.is_dir);
 
-        // Add directories first
+        // Add directories first - mark directories as NOT expanded initially
         for (const dir of directories) {
           newFiles.push({
             name: dir.name,

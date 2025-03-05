@@ -35,10 +35,14 @@ struct FrameInfo {
 
 #[tauri::command]
 async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
-    let entries = fs::read_dir(path.clone()).map_err(|e| e.to_string())?;
-    let mut files = Vec::new();
-
     println!("Reading directory: {}", path); // Log the path
+
+    let entries = fs::read_dir(path.clone()).map_err(|e| {
+        println!("Error reading directory {}: {}", path, e);
+        e.to_string()
+    })?;
+
+    let mut files = Vec::new();
 
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -54,7 +58,13 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
         println!("Found entry: {} (is_dir: {})", name, is_dir); // Log each entry
 
         let content = if !is_dir {
-            fs::read_to_string(&path).ok()
+            match fs::read_to_string(&path) {
+                Ok(content) => Some(content),
+                Err(e) => {
+                    println!("Error reading file {}: {}", path.display(), e);
+                    None
+                }
+            }
         } else {
             None
         };
@@ -79,7 +89,7 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
         a.name.cmp(&b.name)
     });
 
-    println!("Returning {} entries", files.len()); // Log the count
+    println!("Returning {} entries from {}", files.len(), path); // Log the count
     Ok(files)
 }
 
