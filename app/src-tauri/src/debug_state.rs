@@ -22,6 +22,8 @@ pub struct DebugSessionState {
     // Wrap in Arc
     pub status_seq: Arc<AtomicU64>,
     pub state: RwLock<DebuggerState>,
+    // Add the missing debugger_type field
+    pub debugger_type: RwLock<Option<String>>,
 }
 
 impl DebugSessionState {
@@ -32,6 +34,8 @@ impl DebugSessionState {
             // Initialize as Arc
             status_seq: Arc::new(AtomicU64::new(0)),
             state: RwLock::new(DebuggerState::NotStarted),
+            // Initialize the new field
+            debugger_type: RwLock::new(None),
         }
     }
 

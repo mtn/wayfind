@@ -24,6 +24,10 @@ interface DebugToolbarProps {
   sessionToken?: string;
   addLog: (msg: React.ReactNode) => void;
   hasWorkspace: boolean;
+  debugEngine?: string;
+  onDebugEngineChange?: (engine: string) => void;
+  rustBinaryPath?: string;
+  onRustBinaryPathChange?: (path: string) => void;
 }
 
 export function DebugToolbar({
@@ -32,6 +36,10 @@ export function DebugToolbar({
   sessionToken,
   addLog,
   hasWorkspace,
+  debugEngine = "python",
+  onDebugEngineChange,
+  rustBinaryPath = "",
+  onRustBinaryPathChange,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
 
@@ -178,14 +186,48 @@ export function DebugToolbar({
   return (
     <div className="flex flex-col h-full p-4 border-t">
       {/* Debug session status indicator */}
-      <div className="mb-2">
-        <strong>Status:</strong>{" "}
-        {debugStatus === "terminated" ? (
-          <span className="text-red-600">Terminated</span>
-        ) : (
-          <span>{debugStatus}</span>
-        )}
+      <div className="mb-2 flex justify-between items-center">
+        <div>
+          <strong>Status:</strong>{" "}
+          {debugStatus === "terminated" ? (
+            <span className="text-red-600">Terminated</span>
+          ) : (
+            <span>{debugStatus}</span>
+          )}
+        </div>
+
+        {/* Debug engine selector */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm">Debug Engine:</span>
+          <select
+            value={debugEngine}
+            onChange={(e) => onDebugEngineChange?.(e.target.value)}
+            className="border rounded px-2 py-1 text-sm"
+            disabled={isSessionActive}
+          >
+            <option value="python">Python</option>
+            <option value="rust">Rust</option>
+          </select>
+        </div>
       </div>
+
+      {/* Rust binary path input */}
+      {debugEngine === "rust" && !isSessionActive && (
+        <div className="mb-4">
+          <label htmlFor="rustBinaryPath" className="block text-sm mb-1">
+            Rust Binary Path:
+          </label>
+          <input
+            id="rustBinaryPath"
+            type="text"
+            value={rustBinaryPath}
+            onChange={(e) => onRustBinaryPathChange?.(e.target.value)}
+            placeholder="Enter path to compiled Rust binary"
+            className="w-full border rounded px-2 py-1 text-sm"
+          />
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-4 mb-4">
         {!isSessionActive && (
           <TooltipProvider>

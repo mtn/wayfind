@@ -4,7 +4,8 @@ mod debug_state;
 mod debugger;
 
 use debug_state::DebugSessionState;
-use debugger::client::{emit_status_update, BreakpointInput, DAPClient};
+use debugger::client::{emit_status_update, BreakpointInput, DAPClient, DAPMessage, MessageType};
+use debugger::util::parse_lldb_result;
 use serde_json::Value;
 use std::fs;
 use std::io::BufRead;
@@ -68,101 +69,271 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
 async fn launch_debug_session(
     app_handle: tauri::AppHandle,
     script_path: String,
+    debug_engine: String, // New parameter to specify Python or Rust
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
 ) -> Result<String, String> {
-    // 1. Find an available port to use for debugpy (starting at 5679)
-    let debugpy_port = crate::debugger::util::find_available_port(5678)
-        .map_err(|e| format!("Could not find available port: {}", e))?;
-
-    println!("Using port {} for debugpy", debugpy_port);
-
-    // 2. Spawn the Python process running debugpy.
-    // TODO need to not hardcode this :)
-    let mut child = Command::new("/Users/mtn/.pyenv/versions/dbg/bin/python")
-        .args(&[
-            "-Xfrozen_modules=off",
-            "-u",
-            "-m",
-            "debugpy",
-            "--listen",
-            &format!("127.0.0.1:{}", debugpy_port),
-            "--wait-for-client",
-            &script_path,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn debugpy process: {}", e))?;
-
-    println!("Spawned debugpy process with PID: {}", child.id());
-
-    if let Some(stdout) = child.stdout.take() {
-        let app_handle_clone = app_handle.clone();
-        thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().flatten() {
-                println!("Python stdout: {}", line);
-                let _ = app_handle_clone.emit("program-output", line);
+    // Create a basic validation check for the debug_engine parameter
+    match debug_engine.as_str() {
+        "python" => {
+            // Set the debugger type
+            {
+                let mut debugger_type = debug_state.debugger_type.write();
+                *debugger_type = Some("python".to_string());
             }
-        });
-    }
 
-    if let Some(stderr) = child.stderr.take() {
-        let app_handle_clone = app_handle.clone();
-        thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().flatten() {
-                println!("Python stderr: {}", line);
-                let _ = app_handle_clone.emit("program-error", line);
+            // Existing Python/debugpy implementation
+            // 1. Find an available port to use for debugpy (starting at 5679)
+            let debugpy_port = crate::debugger::util::find_available_port(5678)
+                .map_err(|e| format!("Could not find available port: {}", e))?;
+
+            println!("Using port {} for debugpy", debugpy_port);
+
+            // 2. Spawn the Python process running debugpy.
+            let mut child = Command::new("/Users/mtn/.pyenv/versions/dbg/bin/python")
+                .args(&[
+                    "-Xfrozen_modules=off",
+                    "-u",
+                    "-m",
+                    "debugpy",
+                    "--listen",
+                    &format!("127.0.0.1:{}", debugpy_port),
+                    "--wait-for-client",
+                    &script_path,
+                ])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("Failed to spawn debugpy process: {}", e))?;
+
+            println!("Spawned debugpy process with PID: {}", child.id());
+
+            if let Some(stdout) = child.stdout.take() {
+                let app_handle_clone = app_handle.clone();
+                thread::spawn(move || {
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines().flatten() {
+                        println!("Python stdout: {}", line);
+                        let _ = app_handle_clone.emit("program-output", line);
+                    }
+                });
             }
-        });
-    }
 
-    // Give debugpy time to start up.
-    std::thread::sleep(std::time::Duration::from_secs(2));
+            if let Some(stderr) = child.stderr.take() {
+                let app_handle_clone = app_handle.clone();
+                thread::spawn(move || {
+                    let reader = BufReader::new(stderr);
+                    for line in reader.lines().flatten() {
+                        println!("Python stderr: {}", line);
+                        let _ = app_handle_clone.emit("program-error", line);
+                    }
+                });
+            }
 
-    // 3. Create a new DAPClient, connect it, and start its receiver.
-    let (mut dap_client, _rx) = DAPClient::new(app_handle.clone(), Arc::clone(&*debug_state));
-    dap_client
-        .connect("127.0.0.1", debugpy_port as u16)
-        .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
+            // Give debugpy time to start up.
+            std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // Get a clone of the status_seq counter for the receiver thread
-    let status_seq = Arc::clone(&debug_state.status_seq);
+            // 3. Create a new DAPClient, connect it, and start its receiver.
+            let (mut dap_client, _rx) =
+                DAPClient::new(app_handle.clone(), Arc::clone(&*debug_state));
+            dap_client
+                .connect("127.0.0.1", debugpy_port as u16)
+                .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
 
-    // Start the receiver loop so incoming DAP messages get handled.
-    {
-        // We call start_receiver() on the mutable client.
-        let mut client = dap_client;
-        // Pass the status_seq to start_receiver
-        client.start_receiver(Some(status_seq));
+            // Get a clone of the status_seq counter for the receiver thread
+            let status_seq = Arc::clone(&debug_state.status_seq);
 
-        // Initialize and attach.
-        client
-            .initialize()
-            .await
-            .map_err(|e| format!("Initialize failed: {}", e))?;
-        client
-            .attach("127.0.0.1", debugpy_port as u16)
-            .await
-            .map_err(|e| format!("Attach failed: {}", e))?;
+            // Start the receiver loop so incoming DAP messages get handled.
+            {
+                // We call start_receiver() on the mutable client.
+                let mut client = dap_client;
+                // Pass the status_seq to start_receiver
+                client.start_receiver(Some(status_seq));
 
-        // Store the DAPClient in debug_state.
-        {
-            let mut client_lock = debug_state.client.lock().await;
-            client_lock.replace(client);
+                // Initialize and attach.
+                client
+                    .initialize()
+                    .await
+                    .map_err(|e| format!("Initialize failed: {}", e))?;
+                client
+                    .attach("127.0.0.1", debugpy_port as u16)
+                    .await
+                    .map_err(|e| format!("Attach failed: {}", e))?;
+
+                // Store the DAPClient in debug_state.
+                {
+                    let mut client_lock = debug_state.client.lock().await;
+                    client_lock.replace(client);
+                }
+            }
+
+            {
+                let mut proc_lock = debug_state.process.lock().await;
+                proc_lock.replace(child);
+            }
+
+            // Emit an initializing status (to be updated by canonical events later)
+            emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
+            println!("Debug session launched successfully");
+            Ok("Debug session launched successfully".into())
         }
-    }
+        "rust" => {
+            // First, make sure the provided path exists and looks executable
+            let script_path_obj = std::path::Path::new(&script_path);
+            if !script_path_obj.exists() {
+                return Err(format!("Binary not found at path: {}", script_path));
+            }
 
-    {
-        let mut proc_lock = debug_state.process.lock().await;
-        proc_lock.replace(child);
-    }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                // On Unix-like systems, check if the file is executable
+                if let Ok(metadata) = std::fs::metadata(&script_path) {
+                    let permissions = metadata.permissions();
+                    if permissions.mode() & 0o111 == 0 {
+                        println!("Warning: The selected file does not have executable permissions");
+                        // Just a warning, continue anyway
+                    }
+                }
+            }
 
-    // Emit an initializing status (to be updated by canonical events later)
-    emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
-    println!("Debug session launched successfully");
-    Ok("Debug session launched successfully".into())
+            // Set the debugger type
+            {
+                let mut debugger_type = debug_state.debugger_type.write();
+                *debugger_type = Some("rust".to_string());
+            }
+
+            // Find an available port for lldb-dap
+            let lldb_port = crate::debugger::util::find_available_port(9123)
+                .map_err(|e| format!("Could not find available port: {}", e))?;
+
+            println!("Using port {} for lldb-dap", lldb_port);
+
+            // Search for lldb-dap in various locations
+            let lldb_dap_paths = [
+                "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap",
+                "/usr/bin/lldb-dap",
+                "/usr/local/bin/lldb-dap",
+            ];
+
+            let lldb_dap_path = lldb_dap_paths
+                .iter()
+                .find(|&&path| std::path::Path::new(path).exists())
+                .ok_or_else(|| "Could not find lldb-dap executable. Please ensure LLDB with DAP support is installed.".to_string())?;
+
+            println!("Using lldb-dap at: {}", lldb_dap_path);
+
+            // 2. Spawn the lldb-dap process
+            let mut child = Command::new(lldb_dap_path)
+                .arg("--port")
+                .arg(lldb_port.to_string())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("Failed to spawn lldb-dap process: {}", e))?;
+
+            println!("Spawned lldb-dap process with PID: {}", child.id());
+
+            // Handle stdout and stderr just like with the Python debugger
+            if let Some(stdout) = child.stdout.take() {
+                let app_handle_clone = app_handle.clone();
+                thread::spawn(move || {
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines().flatten() {
+                        println!("lldb-dap stdout: {}", line);
+                        let _ = app_handle_clone.emit("program-output", line);
+                    }
+                });
+            }
+
+            if let Some(stderr) = child.stderr.take() {
+                let app_handle_clone = app_handle.clone();
+                thread::spawn(move || {
+                    let reader = BufReader::new(stderr);
+                    for line in reader.lines().flatten() {
+                        println!("lldb-dap stderr: {}", line);
+                        let _ = app_handle_clone.emit("program-error", line);
+                    }
+                });
+            }
+
+            // Give lldb-dap time to start up
+            std::thread::sleep(std::time::Duration::from_secs(1));
+
+            // 3. Create a new DAPClient, connect to it, and start its receiver
+            let (mut dap_client, _rx) =
+                DAPClient::new(app_handle.clone(), Arc::clone(&*debug_state));
+            dap_client
+                .connect("127.0.0.1", lldb_port)
+                .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
+
+            // Get a clone of the status_seq counter for the receiver thread
+            let status_seq = Arc::clone(&debug_state.status_seq);
+
+            // 4. Initialize the client and launch the program
+            {
+                let mut client = dap_client;
+                client.start_receiver(Some(status_seq));
+
+                // Initialize
+                client
+                    .initialize()
+                    .await
+                    .map_err(|e| format!("Initialize failed: {}", e))?;
+
+                // Launch instead of attach for Rust debugging
+                // Send a launch request using the script_path as the program path
+                let launch_seq = client
+                    .send_message(DAPMessage {
+                        seq: -1,
+                        message_type: MessageType::Request,
+                        command: Some("launch".to_string()),
+                        request_seq: None,
+                        success: None,
+                        arguments: Some(serde_json::json!({
+                            "program": script_path,
+                            "stopOnEntry": true,
+                            "args": [],
+                            "cwd": std::path::Path::new(&script_path)
+                                .parent()
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_else(|| ".".to_string()),
+                        })),
+                        body: None,
+                        event: None,
+                    })
+                    .map_err(|e| format!("Failed to send launch request: {}", e))?;
+
+                // Wait for launch response
+                let launch_resp = client
+                    .wait_for_response(launch_seq, 10.0)
+                    .await
+                    .ok_or_else(|| "Timeout waiting for launch response".to_string())?;
+
+                if let Some(success) = launch_resp.success {
+                    if !success {
+                        return Err(format!("Launch failed: {:?}", launch_resp.body));
+                    }
+                }
+
+                // Store the DAPClient in debug_state
+                {
+                    let mut client_lock = debug_state.client.lock().await;
+                    client_lock.replace(client);
+                }
+            }
+
+            {
+                let mut proc_lock = debug_state.process.lock().await;
+                proc_lock.replace(child);
+            }
+
+            // Emit an initializing status
+            emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
+            println!("Rust debug session launched successfully");
+            Ok("Rust debug session launched successfully".into())
+        }
+        _ => Err(format!("Unsupported debug engine: {}", debug_engine)),
+    }
 }
 
 #[tauri::command]
@@ -322,9 +493,26 @@ async fn evaluate_expression(
     let client_lock = debug_state.client.lock().await;
     let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
 
-    // Instead of needing the current state, simply hardcode the threadId as 1.
-    // TODO get rid of this hardcoding
-    // Also, we ask the DAP client for a stack trace so we can extract a frame id.
+    // Get the current debugger type
+    let debugger_type = {
+        let type_guard = debug_state.debugger_type.read();
+        type_guard.clone()
+    };
+
+    // Adjust the expression based on the debugger type
+    let eval_expression = match debugger_type.as_deref() {
+        Some("rust") => {
+            // LLDB requires expressions to be prefixed with "expr" or "expression"
+            if !expression.starts_with("expr ") && !expression.starts_with("expression ") {
+                format!("expr -- {}", expression)
+            } else {
+                expression
+            }
+        }
+        _ => expression.clone(), // No change for Python/other debuggers
+    };
+
+    // Get frame ID for evaluation
     let frame_id = match dap_client.stack_trace(1).await {
         Ok(st_resp) => {
             if let Some(body) = st_resp.body {
@@ -351,14 +539,40 @@ async fn evaluate_expression(
         }
     };
 
-    // Now call the evaluate command, passing in the frame id (if we obtained one)
+    // Now call evaluate with the potentially modified expression
     let eval_resp = dap_client
-        .evaluate(&expression, frame_id)
+        .evaluate(&eval_expression, frame_id)
         .await
         .map_err(|e| format!("Failed to evaluate expression: {}", e))?;
 
     if let Some(body) = eval_resp.body {
-        // Return the full body instead of just the string result
+        // For Rust/LLDB, we might want to parse the result to extract the actual value
+        if let Some("rust") = debugger_type.as_deref() {
+            if let Some(result_str) = body.get("result").and_then(|r| r.as_str()) {
+                // Process the result for LLDB
+                let processed_result = parse_lldb_result(result_str);
+
+                // Create a new body with the processed result
+                let mut processed_body = serde_json::Map::new();
+                processed_body.insert(
+                    "result".to_string(),
+                    serde_json::Value::String(processed_result),
+                );
+                processed_body.insert(
+                    "type".to_string(),
+                    body.get("type").cloned().unwrap_or(serde_json::Value::Null),
+                );
+                processed_body.insert(
+                    "variablesReference".to_string(),
+                    body.get("variablesReference")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Number(0.into())),
+                );
+
+                return Ok(serde_json::Value::Object(processed_body));
+            }
+        }
+        // Return the full body if no special processing was done
         return Ok(body);
     }
     Err("No result returned from evaluate".into())

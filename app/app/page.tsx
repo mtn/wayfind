@@ -45,6 +45,8 @@ export default function Home() {
   }, [fs]);
 
   const [sessionToken, setSessionToken] = useState<string>("");
+  const [debugEngine, setDebugEngine] = useState<string>("python");
+  const [rustBinaryPath, setRustBinaryPath] = useState<string>("");
 
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
@@ -362,25 +364,74 @@ export default function Home() {
       return;
     }
 
+    // For Rust debugging, check for rust binary path
+    if (debugEngine === "rust") {
+      if (!rustBinaryPath) {
+        addLog(
+          <div className="text-red-600">
+            Please enter a path to the Rust binary
+          </div>,
+        );
+        return;
+      }
+
+      setIsDebugSessionActive(true);
+      addLog(`Launching ${debugEngine} debug session...`);
+      lastStatusSeqRef.current = null;
+
+      try {
+        addLog(`Using binary path: ${rustBinaryPath}`);
+
+        await invoke("launch_debug_session", {
+          scriptPath: rustBinaryPath,
+          debugEngine,
+        });
+
+        addLog(`${debugEngine} debug session launched successfully`);
+
+        // Configuration done and other post-launch steps
+        await invoke("configuration_done")
+          .then((response) => {
+            addLog("configurationDone: " + response);
+          })
+          .catch((error) => {
+            addLog(
+              "Failed configuration_done: " +
+                (error instanceof Error ? error.message : error),
+            );
+          });
+      } catch (error) {
+        addLog(
+          `Failed launching debug session: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+        setIsDebugSessionActive(false);
+      }
+      return;
+    }
+
+    // For Python debugging, we need a selected file
     if (!selectedFile || selectedFile.type !== "file") {
-      addLog("No file selected to run");
+      addLog("No file selected to run for Python debugging");
       return;
     }
 
     setIsDebugSessionActive(true);
-    addLog("Launching debug session...");
+    addLog(`Launching ${debugEngine} debug session...`);
     // Reset the sequence counter when starting a new session
     lastStatusSeqRef.current = null;
 
     try {
       const scriptPath = fs.getFullPath(selectedFile.path);
-      addLog(`Running script: ${scriptPath}`);
+      addLog(`Using path: ${scriptPath}`);
 
       await invoke("launch_debug_session", {
         scriptPath,
+        debugEngine,
       });
 
-      addLog("Debug session launched successfully");
+      addLog(`${debugEngine} debug session launched successfully`);
 
       // Merge queued and active breakpoints and set them for the new session.
       const allBreakpoints = mergeBreakpoints(
@@ -486,7 +537,7 @@ export default function Home() {
 
   const handleContinue = async () => {
     try {
-      await invoke("continue_execution");
+      await invoke("continue_debug");
       addLog("Continuing execution");
     } catch (err) {
       addLog(
@@ -525,6 +576,10 @@ export default function Home() {
                     sessionToken={sessionToken}
                     addLog={addLog}
                     hasWorkspace={hasWorkspace}
+                    debugEngine={debugEngine}
+                    onDebugEngineChange={setDebugEngine}
+                    rustBinaryPath={rustBinaryPath}
+                    onRustBinaryPathChange={setRustBinaryPath}
                   />
                 </div>
                 {/* Tab Header */}
@@ -613,7 +668,7 @@ export default function Home() {
               <div className="h-full">
                 <MonacoEditorWrapper
                   content={selectedFile?.content || ""}
-                  language="python"
+                  language={debugEngine === "rust" ? "rust" : "python"}
                   onChange={handleFileChange}
                   breakpoints={mergeBreakpoints(
                     queuedBreakpoints,
