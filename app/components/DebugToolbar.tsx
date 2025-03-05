@@ -29,6 +29,13 @@ interface DebugToolbarProps {
   onRustBinaryPathChange?: (path: string) => void;
 }
 
+export interface EvaluationResult {
+  result: string;
+  type?: string;
+  variablesReference?: number;
+  [key: string]: unknown;
+}
+
 export function DebugToolbar({
   onDebugSessionStart,
   debugStatus,
@@ -63,13 +70,12 @@ export function DebugToolbar({
       return;
     }
     try {
-      const result = await invoke<any>("evaluate_expression", {
+      const result = await invoke<EvaluationResult>("evaluate_expression", {
         expression,
-        threadId: 1,
       });
 
       // Format the result based on its type
-      let displayValue = result.result; // Default to the string result
+      let displayValue: string | number = result.result;
 
       // For numeric types, try to parse the result
       if (result.type === "int" || result.type === "float") {

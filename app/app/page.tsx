@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, ReactNode } from "react";
+import type { EvaluationResult } from "@/components/DebugToolbar";
 import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -507,7 +508,7 @@ export default function Home() {
 
   const evaluateExpression = async (expression: string) => {
     try {
-      const result = await invoke<any>("evaluate_expression", {
+      const result = await invoke<EvaluationResult>("evaluate_expression", {
         expression,
       });
 
@@ -519,7 +520,7 @@ export default function Home() {
           {e instanceof Error ? e.message : String(e)}
         </div>,
       );
-      return "";
+      return null;
     }
   };
 
