@@ -45,6 +45,7 @@ export default function Home() {
   }, [fs]);
 
   const [sessionToken, setSessionToken] = useState<string>("");
+  const [debugEngine, setDebugEngine] = useState<string>("python");
 
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
@@ -378,6 +379,7 @@ export default function Home() {
 
       await invoke("launch_debug_session", {
         scriptPath,
+        debugEngine,
       });
 
       addLog("Debug session launched successfully");
@@ -525,6 +527,8 @@ export default function Home() {
                     sessionToken={sessionToken}
                     addLog={addLog}
                     hasWorkspace={hasWorkspace}
+                    debugEngine={debugEngine}
+                    onDebugEngineChange={setDebugEngine}
                   />
                 </div>
                 {/* Tab Header */}
@@ -613,7 +617,7 @@ export default function Home() {
               <div className="h-full">
                 <MonacoEditorWrapper
                   content={selectedFile?.content || ""}
-                  language="python"
+                  language={debugEngine === "rust" ? "rust" : "python"}
                   onChange={handleFileChange}
                   breakpoints={mergeBreakpoints(
                     queuedBreakpoints,

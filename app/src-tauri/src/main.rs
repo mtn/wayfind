@@ -68,101 +68,113 @@ async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
 async fn launch_debug_session(
     app_handle: tauri::AppHandle,
     script_path: String,
+    debug_engine: String, // New parameter to specify Python or Rust
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
 ) -> Result<String, String> {
-    // 1. Find an available port to use for debugpy (starting at 5679)
-    let debugpy_port = crate::debugger::util::find_available_port(5678)
-        .map_err(|e| format!("Could not find available port: {}", e))?;
+    // Create a basic validation check for the debug_engine parameter
+    match debug_engine.as_str() {
+        "python" => {
+            // Existing Python/debugpy implementation
+            // 1. Find an available port to use for debugpy (starting at 5679)
+            let debugpy_port = crate::debugger::util::find_available_port(5678)
+                .map_err(|e| format!("Could not find available port: {}", e))?;
 
-    println!("Using port {} for debugpy", debugpy_port);
+            println!("Using port {} for debugpy", debugpy_port);
 
-    // 2. Spawn the Python process running debugpy.
-    // TODO need to not hardcode this :)
-    let mut child = Command::new("/Users/mtn/.pyenv/versions/dbg/bin/python")
-        .args(&[
-            "-Xfrozen_modules=off",
-            "-u",
-            "-m",
-            "debugpy",
-            "--listen",
-            &format!("127.0.0.1:{}", debugpy_port),
-            "--wait-for-client",
-            &script_path,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn debugpy process: {}", e))?;
+            // 2. Spawn the Python process running debugpy.
+            let mut child = Command::new("/Users/mtn/.pyenv/versions/dbg/bin/python")
+                .args(&[
+                    "-Xfrozen_modules=off",
+                    "-u",
+                    "-m",
+                    "debugpy",
+                    "--listen",
+                    &format!("127.0.0.1:{}", debugpy_port),
+                    "--wait-for-client",
+                    &script_path,
+                ])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("Failed to spawn debugpy process: {}", e))?;
 
-    println!("Spawned debugpy process with PID: {}", child.id());
+            println!("Spawned debugpy process with PID: {}", child.id());
 
-    if let Some(stdout) = child.stdout.take() {
-        let app_handle_clone = app_handle.clone();
-        thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().flatten() {
-                println!("Python stdout: {}", line);
-                let _ = app_handle_clone.emit("program-output", line);
+            if let Some(stdout) = child.stdout.take() {
+                let app_handle_clone = app_handle.clone();
+                thread::spawn(move || {
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines().flatten() {
+                        println!("Python stdout: {}", line);
+                        let _ = app_handle_clone.emit("program-output", line);
+                    }
+                });
             }
-        });
-    }
 
-    if let Some(stderr) = child.stderr.take() {
-        let app_handle_clone = app_handle.clone();
-        thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().flatten() {
-                println!("Python stderr: {}", line);
-                let _ = app_handle_clone.emit("program-error", line);
+            if let Some(stderr) = child.stderr.take() {
+                let app_handle_clone = app_handle.clone();
+                thread::spawn(move || {
+                    let reader = BufReader::new(stderr);
+                    for line in reader.lines().flatten() {
+                        println!("Python stderr: {}", line);
+                        let _ = app_handle_clone.emit("program-error", line);
+                    }
+                });
             }
-        });
-    }
 
-    // Give debugpy time to start up.
-    std::thread::sleep(std::time::Duration::from_secs(2));
+            // Give debugpy time to start up.
+            std::thread::sleep(std::time::Duration::from_secs(2));
 
-    // 3. Create a new DAPClient, connect it, and start its receiver.
-    let (mut dap_client, _rx) = DAPClient::new(app_handle.clone(), Arc::clone(&*debug_state));
-    dap_client
-        .connect("127.0.0.1", debugpy_port as u16)
-        .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
+            // 3. Create a new DAPClient, connect it, and start its receiver.
+            let (mut dap_client, _rx) =
+                DAPClient::new(app_handle.clone(), Arc::clone(&*debug_state));
+            dap_client
+                .connect("127.0.0.1", debugpy_port as u16)
+                .map_err(|e| format!("Error connecting DAPClient: {}", e))?;
 
-    // Get a clone of the status_seq counter for the receiver thread
-    let status_seq = Arc::clone(&debug_state.status_seq);
+            // Get a clone of the status_seq counter for the receiver thread
+            let status_seq = Arc::clone(&debug_state.status_seq);
 
-    // Start the receiver loop so incoming DAP messages get handled.
-    {
-        // We call start_receiver() on the mutable client.
-        let mut client = dap_client;
-        // Pass the status_seq to start_receiver
-        client.start_receiver(Some(status_seq));
+            // Start the receiver loop so incoming DAP messages get handled.
+            {
+                // We call start_receiver() on the mutable client.
+                let mut client = dap_client;
+                // Pass the status_seq to start_receiver
+                client.start_receiver(Some(status_seq));
 
-        // Initialize and attach.
-        client
-            .initialize()
-            .await
-            .map_err(|e| format!("Initialize failed: {}", e))?;
-        client
-            .attach("127.0.0.1", debugpy_port as u16)
-            .await
-            .map_err(|e| format!("Attach failed: {}", e))?;
+                // Initialize and attach.
+                client
+                    .initialize()
+                    .await
+                    .map_err(|e| format!("Initialize failed: {}", e))?;
+                client
+                    .attach("127.0.0.1", debugpy_port as u16)
+                    .await
+                    .map_err(|e| format!("Attach failed: {}", e))?;
 
-        // Store the DAPClient in debug_state.
-        {
-            let mut client_lock = debug_state.client.lock().await;
-            client_lock.replace(client);
+                // Store the DAPClient in debug_state.
+                {
+                    let mut client_lock = debug_state.client.lock().await;
+                    client_lock.replace(client);
+                }
+            }
+
+            {
+                let mut proc_lock = debug_state.process.lock().await;
+                proc_lock.replace(child);
+            }
+
+            // Emit an initializing status (to be updated by canonical events later)
+            emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
+            println!("Debug session launched successfully");
+            Ok("Debug session launched successfully".into())
         }
+        "rust" => {
+            // We'll implement Rust/lldb-dap support in the next step
+            Err("Rust debugging not yet implemented".into())
+        }
+        _ => Err(format!("Unsupported debug engine: {}", debug_engine)),
     }
-
-    {
-        let mut proc_lock = debug_state.process.lock().await;
-        proc_lock.replace(child);
-    }
-
-    // Emit an initializing status (to be updated by canonical events later)
-    emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
-    println!("Debug session launched successfully");
-    Ok("Debug session launched successfully".into())
 }
 
 #[tauri::command]
