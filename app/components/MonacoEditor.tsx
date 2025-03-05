@@ -80,6 +80,8 @@ export function MonacoEditorWrapper({
       executionLine
     ) {
       executionDecorations.push({
+        // TODO look into this further
+        // @ts-expect-error: Monaco editor instance is properly loaded at runtime
         range: new monaco.Range(executionLine, 1, executionLine, 1),
         options: {
           isWholeLine: true,
