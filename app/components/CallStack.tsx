@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface Frame {
@@ -27,7 +27,7 @@ export function CallStack({
   const [frames, setFrames] = useState<Frame[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function fetchCallStack() {
+  const fetchCallStack = useCallback(async () => {
     setLoading(true);
     try {
       const result = await invoke<Frame[]>("get_call_stack", {
@@ -39,7 +39,7 @@ export function CallStack({
     } finally {
       setLoading(false);
     }
-  }
+  }, [threadId]);
 
   // Trigger refresh when executionLine or executionFile change.
   useEffect(() => {
@@ -47,7 +47,7 @@ export function CallStack({
     if (executionLine !== null && executionFile !== null) {
       fetchCallStack();
     }
-  }, [executionLine, executionFile, threadId]);
+  }, [executionLine, executionFile, threadId, fetchCallStack]);
 
   return (
     <div className="p-2">
