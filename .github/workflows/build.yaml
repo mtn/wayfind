@@ -17,20 +17,20 @@ jobs:
         with:
           node-version: 18
           cache: "npm"
-          cache-dependency-path: "wayfind/app/package.json"
+          cache-dependency-path: "app/package.json"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install front-end dependencies
-        run: cd wayfind/app && npm ci
+        run: cd app && npm ci
 
       - name: Build Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectPath: wayfind/app
+          projectPath: app
           tauriScript: npx tauri
           includeDebug: false
           includeRelease: false
