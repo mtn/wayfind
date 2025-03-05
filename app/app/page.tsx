@@ -368,21 +368,41 @@ export default function Home() {
       return;
     }
 
+    // Validate selected file based on debug engine
+    if (debugEngine === "rust") {
+      // For Rust debugging, check if the file looks like a binary
+      // This is a simple heuristic and might need adjustment
+      const fileName = selectedFile.name.toLowerCase();
+      if (
+        fileName.endsWith(".rs") ||
+        fileName.endsWith(".py") ||
+        fileName.endsWith(".txt")
+      ) {
+        addLog(
+          <div className="text-amber-600">
+            Warning: "{selectedFile.name}" doesn't appear to be a compiled
+            binary. In Rust debug mode, please select the compiled binary file.
+          </div>,
+        );
+        // Continue anyway, as this is just a warning
+      }
+    }
+
     setIsDebugSessionActive(true);
-    addLog("Launching debug session...");
+    addLog(`Launching ${debugEngine} debug session...`);
     // Reset the sequence counter when starting a new session
     lastStatusSeqRef.current = null;
 
     try {
       const scriptPath = fs.getFullPath(selectedFile.path);
-      addLog(`Running script: ${scriptPath}`);
+      addLog(`Using path: ${scriptPath}`);
 
       await invoke("launch_debug_session", {
         scriptPath,
         debugEngine,
       });
 
-      addLog("Debug session launched successfully");
+      addLog(`${debugEngine} debug session launched successfully`);
 
       // Merge queued and active breakpoints and set them for the new session.
       const allBreakpoints = mergeBreakpoints(
@@ -488,7 +508,7 @@ export default function Home() {
 
   const handleContinue = async () => {
     try {
-      await invoke("continue_execution");
+      await invoke("continue_debug");
       addLog("Continuing execution");
     } catch (err) {
       addLog(
@@ -514,6 +534,14 @@ export default function Home() {
                   onSelectFile={handleFileSelect}
                   onOpenWorkspace={handleOpenWorkspace}
                 />
+                {debugEngine === "rust" && (
+                  <div className="p-2 mt-2 bg-amber-50 border border-amber-200 rounded-md text-amber-800">
+                    <p className="text-sm">
+                      <strong>Rust Debug Mode:</strong> Please select the
+                      compiled binary file you wish to debug.
+                    </p>
+                  </div>
+                )}
               </div>
             </ResizablePanel>
             {/* Section 2: Debug Panel – Controls always visible with tabs below */}
