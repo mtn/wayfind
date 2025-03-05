@@ -115,6 +115,24 @@ export default function Home() {
     return Array.from(merged.values());
   }
 
+  const handleToggleDirectory = useCallback(
+    async (directory: FileEntry) => {
+      console.log(`Toggling directory: ${directory.path}`);
+      const success = await fs.toggleDirectoryExpanded(directory.path);
+
+      if (success) {
+        console.log(`Successfully toggled directory: ${directory.path}`);
+        // Create a fresh copy of the file list to trigger re-render
+        const entries = await fs.getEntries("/");
+        console.log("Updated entries after toggle:", entries);
+        setFiles([...entries]); // Create a new array to ensure state update
+      } else {
+        console.error(`Failed to toggle directory: ${directory.path}`);
+      }
+    },
+    [fs],
+  );
+
   const handleFileSelect = useCallback(
     async (file: FileEntry) => {
       if (file.type === "file") {
@@ -126,9 +144,12 @@ export default function Home() {
             fs.getFullPath(freshFile.path),
           );
         }
+      } else if (file.type === "directory") {
+        // Toggle directory expansion
+        await handleToggleDirectory(file);
       }
     },
-    [fs],
+    [fs, handleToggleDirectory],
   );
 
   const handleFileChange = async (newContent: string) => {
@@ -151,6 +172,8 @@ export default function Home() {
       });
 
       if (selected) {
+        console.log("Selected workspace path:", selected);
+
         const entries = await invoke<
           Array<{
             name: string;
@@ -162,28 +185,66 @@ export default function Home() {
           path: selected,
         });
 
-        const newFiles = entries.map((entry) => ({
-          name: entry.name,
-          path: `/${entry.name}`,
-          type: entry.is_dir ? ("directory" as const) : ("file" as const),
-          content: entry.content || "",
-        }));
+        console.log("Raw entries received from backend:", entries);
 
+        // Create a simpler mapping approach
+        const newFiles: FileEntry[] = [];
+
+        // First, collect all directories
+        const directories = entries.filter((entry) => entry.is_dir);
+
+        // Then, collect all files
+        const filesOnly = entries.filter((entry) => !entry.is_dir);
+
+        // Add directories first - mark directories as NOT expanded initially
+        for (const dir of directories) {
+          newFiles.push({
+            name: dir.name,
+            path: `/${dir.name}`, // Simple path
+            type: "directory",
+            expanded: false,
+            children: [], // Initialize with empty children
+          });
+        }
+
+        // Add files
+        for (const file of filesOnly) {
+          newFiles.push({
+            name: file.name,
+            path: `/${file.name}`, // Simple path
+            type: "file",
+            content: file.content || "",
+          });
+        }
+
+        console.log("Processed file entries:", newFiles);
+
+        // Create fresh file system
         const newFs = new InMemoryFileSystem(newFiles, selected);
         setFs(newFs);
-
         setFiles(newFiles);
 
-        if (newFiles.length > 0) {
-          const firstFile = newFiles.find((f) => f.type === "file");
-          if (firstFile) {
-            setSelectedFile(firstFile);
-          }
+        // Select first file if available
+        const firstFile = newFiles.find((f) => f.type === "file");
+        if (firstFile) {
+          setSelectedFile(firstFile);
         }
       }
     } catch (error) {
       console.error("Error opening workspace:", error);
     }
+  };
+
+  const findFirstFile = (entries: FileEntry[]): FileEntry | undefined => {
+    for (const entry of entries) {
+      if (entry.type === "file") {
+        return entry;
+      } else if (entry.children && entry.children.length > 0) {
+        const found = findFirstFile(entry.children);
+        if (found) return found;
+      }
+    }
+    return undefined;
   };
 
   const isDebugSessionActiveRef = useRef(isDebugSessionActive);
@@ -551,6 +612,7 @@ export default function Home() {
                   selectedFilePath={selectedFile?.path}
                   onSelectFile={handleFileSelect}
                   onOpenWorkspace={handleOpenWorkspace}
+                  onToggleDirectory={handleToggleDirectory}
                 />
               </div>
             </ResizablePanel>
