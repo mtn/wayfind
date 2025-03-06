@@ -107,7 +107,7 @@ def main():
     # Buffer to capture the output of the target script
     output_buffer = []
 
-    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "test_data", "a.py"))
+    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "test_data", "python", "a.py"))
     debugpy_port = 5678
 
     # Step 1: Launch target script with debugpy.

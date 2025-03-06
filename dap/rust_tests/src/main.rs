@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 1: Launch target script with debugpy
     let debugpy_port = 5678;
-    let script_path = Path::new("../test_data/a.py")
+    let script_path = Path::new("../test_data/python/a.py")
         .canonicalize()
         .expect("Failed to get absolute path to script");
     let script_path_str = script_path.to_str().unwrap();
