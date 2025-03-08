@@ -58,6 +58,7 @@ async def read_dap_message(reader):
 async def handle_start_debugging_request(writer, request):
     """Handle a startDebugging request from the debug adapter."""
     print(f"Received startDebugging request: {request}")
+    target_id = request["arguments"]["configuration"]["__pendingTargetId"]
 
     # Send a response to acknowledge the request
     response = {
@@ -68,82 +69,11 @@ async def handle_start_debugging_request(writer, request):
         "success": True
     }
     await send_dap_message(writer, response)
-    print(f"Sent startDebugging response: {response}")
 
-async def dap_receiver(reader, writer):
-    """Async function that continuously reads and processes DAP messages."""
-    while True:
-        try:
-            msg = await read_dap_message(reader)
-        except Exception as e:
-            print(f"Receiver terminating: {e}")
-            break
-        msg_type = msg.get("type")
-        # We key responses by request_seq for responses,
-        # and simply append events to a list.
-        if msg_type == "response":
-            req_seq = msg.get("request_seq")
-            responses[req_seq] = msg
-        elif msg_type == "event":
-            events.setdefault(msg.get("event"), []).append(msg)
-        elif msg_type == "request":
-            # Handle specific requests from the debug adapter
-            if msg.get("command") == "startDebugging":
-                await handle_start_debugging_request(writer, msg)
-            else:
-                print(f"Unhandled request type: {msg}")
-        else:
-            print("Unknown message type", msg)
-
-async def wait_for_event(event_name, timeout=10):
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        if event_name in events and events[event_name]:
-            return events[event_name].pop(0)
-        await asyncio.sleep(0.1)
-    raise TimeoutError(f"Timeout waiting for event {event_name}")
-
-async def wait_for_response(seq, timeout=10):
-    end_time = time.time() + timeout
-    while time.time() < end_time:
-        if seq in responses:
-            return responses.pop(seq)
-        await asyncio.sleep(0.1)
-    raise TimeoutError(f"Timeout waiting for response to seq {seq}")
-
-async def read_subprocess_output(proc, buffer):
-    """Read subprocess output asynchronously."""
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-        buffer.append(line.decode().rstrip())
-
-async def main_async():
-    # Buffer to capture the output
-    output_buffer = []
-
-    # Start DAP server
-    print(f"Starting DAP server from: {DAP_SERVER_PATH}")
-    # proc = await asyncio.create_subprocess_exec(
-    #     "node", DAP_SERVER_PATH, str(DAP_PORT), "0.0.0.0",
-    #     stdout=asyncio.subprocess.PIPE,
-    #     stderr=asyncio.subprocess.STDOUT
-    # )
-    # output_task = asyncio.create_task(read_subprocess_output(proc, output_buffer))
-
-    # Wait a moment for the server to start
-    await asyncio.sleep(2)
-
-    # Connect to DAP server
     reader, writer = await asyncio.open_connection("127.0.0.1", DAP_PORT)
-    print("Connected to DAP server")
+    _ = asyncio.create_task(dap_receiver(reader, writer))
 
-    # Start message receiver task
-    recv_task = asyncio.create_task(dap_receiver(reader, writer))
-
-    # Step 3: Send initialize.
-    init_seq = next_sequence()
+    init_seq = 0
     init_req = {
         "seq": init_seq,
         "type": "request",
@@ -168,17 +98,19 @@ async def main_async():
     launch_req = {
         "seq": launch_seq,
         "type": "request",
-        "command": "launch",
+        "command": "attach",
         "arguments": {
             "program": TARGET_SCRIPT,
             "args": [],
             "cwd": os.path.dirname(TARGET_SCRIPT),
             "stopOnEntry": True,
-            "type": "pwa-node"
+            "type": "pwa-node",
+            "__pendingTargetId": target_id
         }
     }
     await send_dap_message(writer, launch_req)
     await asyncio.sleep(0.2)
+    breakpoint()
 
     # Wait for the "initialized" event sent by the adapter.
     _ = await wait_for_event("initialized")
@@ -295,10 +227,130 @@ async def main_async():
         except TimeoutError:
             break
 
+
+    print("done?")
+
+async def dap_receiver(reader, writer):
+    """Async function that continuously reads and processes DAP messages."""
+    while True:
+        try:
+            msg = await read_dap_message(reader)
+        except Exception as e:
+            print(f"Receiver terminating: {e}")
+            break
+        msg_type = msg.get("type")
+        # We key responses by request_seq for responses,
+        # and simply append events to a list.
+        if msg_type == "response":
+            req_seq = msg.get("request_seq")
+            responses[req_seq] = msg
+        elif msg_type == "event":
+            events.setdefault(msg.get("event"), []).append(msg)
+        elif msg_type == "request":
+            # Handle specific requests from the debug adapter
+            if msg.get("command") == "startDebugging":
+                await handle_start_debugging_request(writer, msg)
+            else:
+                print(f"Unhandled request type: {msg}")
+        else:
+            print("Unknown message type", msg)
+
+async def wait_for_event(event_name, timeout=10):
+    end_time = time.time() + timeout
+    while time.time() < end_time:
+        if event_name in events and events[event_name]:
+            return events[event_name].pop(0)
+        await asyncio.sleep(0.1)
+    raise TimeoutError(f"Timeout waiting for event {event_name}")
+
+async def wait_for_response(seq, timeout=10):
+    end_time = time.time() + timeout
+    while time.time() < end_time:
+        if seq in responses:
+            return responses.pop(seq)
+        await asyncio.sleep(0.1)
+    raise TimeoutError(f"Timeout waiting for response to seq {seq}")
+
+async def read_subprocess_output(proc, buffer):
+    """Read subprocess output asynchronously."""
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+        buffer.append(line.decode().rstrip())
+
+async def main_async():
+    # Buffer to capture the output
+    output_buffer = []
+
+    # Start DAP server
+    print(f"Starting DAP server from: {DAP_SERVER_PATH}")
+    # proc = await asyncio.create_subprocess_exec(
+    #     "node", DAP_SERVER_PATH, str(DAP_PORT), "0.0.0.0",
+    #     stdout=asyncio.subprocess.PIPE,
+    #     stderr=asyncio.subprocess.STDOUT
+    # )
+    # output_task = asyncio.create_task(read_subprocess_output(proc, output_buffer))
+
+    # Wait a moment for the server to start
+    await asyncio.sleep(2)
+
+    # Connect to DAP server
+    reader, writer = await asyncio.open_connection("127.0.0.1", DAP_PORT)
+    print("Connected to DAP server")
+
+    # Start message receiver task
+    _ = asyncio.create_task(dap_receiver(reader, writer))
+
+    # Step 3: Send initialize.
+    init_seq = next_sequence()
+    init_req = {
+        "seq": init_seq,
+        "type": "request",
+        "command": "initialize",
+        "arguments": {
+            "adapterID": "python",
+            "clientID": "dap_test_client",
+            "clientName": "DAP Test",
+            "linesStartAt1": True,
+            "columnsStartAt1": True,
+            "pathFormat": "path",
+            "supportsVariableType": True,
+            "supportsEvaluateForHovers": True,
+            "supportsStartDebuggingRequest": True
+        }
+    }
+    await send_dap_message(writer, init_req)
+    init_resp = await wait_for_response(init_seq)
+    print("Received initialize response:", init_resp)
+
+    launch_seq = next_sequence()
+    launch_req = {
+        "seq": launch_seq,
+        "type": "request",
+        "command": "launch",
+        "arguments": {
+            "program": TARGET_SCRIPT,
+            "args": [],
+            "cwd": os.path.dirname(TARGET_SCRIPT),
+            "stopOnEntry": True,
+            "type": "pwa-node"
+        }
+    }
+    await send_dap_message(writer, launch_req)
+    await asyncio.sleep(0.2)
+
+    # Wait for the "initialized" event sent by the adapter.
+    _ = await wait_for_event("initialized")
+    print("Initialization complete")
+
+
+
     # Now, wait for the target process to terminate.
     # await proc.wait()  # You could add a longer timeout here, if needed.
     print("Target process terminated.")
 
+    breakpoint()
     writer.close()
     await writer.wait_closed()
 
