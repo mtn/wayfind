@@ -110,7 +110,6 @@ async def handle_start_debugging_request(writer, request):
     }
     await send_dap_message(writer, launch_req)
     await asyncio.sleep(0.2)
-    breakpoint()
 
     # Wait for the "initialized" event sent by the adapter.
     _ = await wait_for_event("initialized")
@@ -227,9 +226,6 @@ async def handle_start_debugging_request(writer, request):
         except TimeoutError:
             break
 
-
-    print("done?")
-
 async def dap_receiver(reader, writer):
     """Async function that continuously reads and processes DAP messages."""
     while True:
@@ -344,13 +340,121 @@ async def main_async():
     _ = await wait_for_event("initialized")
     print("Initialization complete")
 
+    # Step 5: Send setBreakpoints.
+    bp_seq = next_sequence()
+    set_bp_req = {
+        "seq": bp_seq,
+        "type": "request",
+        "command": "setBreakpoints",
+        "arguments": {
+            "source": {
+                "path": TARGET_SCRIPT,
+                "name": os.path.basename(TARGET_SCRIPT)
+            },
+            "breakpoints": [
+                {"line": 15}
+            ],
+            "sourceModified": False
+        }
+    }
+    await send_dap_message(writer, set_bp_req)
+    bp_resp = await wait_for_response(bp_seq)
+    print("Breakpoints response:", bp_resp)
+    if not bp_resp.get("success"):
+        print("Error setting breakpoints:", bp_resp.get("message"))
 
+    # Step 6: Send configurationDone.
+    conf_seq = next_sequence()
+    conf_req = {
+        "seq": conf_seq,
+        "type": "request",
+        "command": "configurationDone",
+        "arguments": {}
+    }
+    await send_dap_message(writer, conf_req)
+    conf_resp = await wait_for_response(conf_seq)
+    print("ConfigurationDone response:", conf_resp)
+
+    # Step 7: Wait for the "stopped" event.
+    print("Waiting for the target to hit the breakpoint (stopped event)...")
+    # Removed the breakpoint() call as it was likely for debugging
+    stopped_event = await wait_for_event("stopped", timeout=15)
+    print("Received stopped event:", stopped_event)
+    thread_id = stopped_event.get("body", {}).get("threadId", 1)
+
+    # Request a stack trace to get the correct frame id.
+    st_seq = next_sequence()
+    st_req = {
+        "seq": st_seq,
+        "type": "request",
+        "command": "stackTrace",
+        "arguments": {
+            "threadId": thread_id,
+            "startFrame": 0,
+            "levels": 1
+        }
+    }
+    await send_dap_message(writer, st_req)
+    st_resp = await wait_for_response(st_seq)
+    print("StackTrace response:", st_resp)
+    frames = st_resp.get("body", {}).get("stackFrames", [])
+    frame_id = frames[0].get("id") if frames else None
+    print("Using frameId:", frame_id)
+
+    # Step 8: While stopped, send an evaluate request for "next_val".
+    eval_seq = next_sequence()
+    eval_args = {
+        "expression": "nextVal",
+        "context": "hover",
+    }
+    if frame_id:
+        eval_args["frameId"] = frame_id
+    eval_req = {
+        "seq": eval_seq,
+        "type": "request",
+        "command": "evaluate",
+        "arguments": eval_args
+    }
+    await send_dap_message(writer, eval_req)
+    eval_resp = await wait_for_response(eval_seq)
+    print("Evaluate response:", eval_resp)
+    result_value = eval_resp.get("body", {}).get("result")
+    print("Value of next_val at breakpoint:", result_value)
+
+    # Step 9: Send a continue request.
+    cont_seq = next_sequence()
+    cont_req = {
+        "seq": cont_seq,
+        "type": "request",
+        "command": "continue",
+        "arguments": {"threadId": thread_id}
+    }
+    await send_dap_message(writer, cont_req)
+    cont_resp = await wait_for_response(cont_seq)
+    print("Continue response:", cont_resp)
+
+    # Loop to send continue requests until no stopped event remains.
+    while True:
+        try:
+            _ = await wait_for_event("stopped", timeout=1)
+            print("Extra stopped event received; sending another continue.")
+            cont_seq = next_sequence()
+            cont_req = {
+                "seq": cont_seq,
+                "type": "request",
+                "command": "continue",
+                "arguments": {"threadId": thread_id}
+            }
+            await send_dap_message(writer, cont_req)
+            extra_cont = await wait_for_response(cont_seq)
+            print("Extra continue response:", extra_cont)
+        except TimeoutError:
+            break
 
     # Now, wait for the target process to terminate.
     # await proc.wait()  # You could add a longer timeout here, if needed.
     print("Target process terminated.")
 
-    breakpoint()
     writer.close()
     await writer.wait_closed()
 
