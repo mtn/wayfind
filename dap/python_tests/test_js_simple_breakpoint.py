@@ -66,6 +66,21 @@ def read_dap_message(sock):
     print(f"<-- Received: {json.dumps(message)}\n")
     return message
 
+def handle_start_debugging_request(sock, request):
+    """Handle a startDebugging request from the debug adapter."""
+    print(f"Received startDebugging request: {request}")
+
+    # Send a response to acknowledge the request
+    response = {
+        "seq": next_sequence(),
+        "type": "response",
+        "request_seq": request.get("seq"),
+        "command": "startDebugging",
+        "success": True
+    }
+    send_dap_message(sock, response)
+    print(f"Sent startDebugging response: {response}")
+
 def dap_receiver(sock):
     """Thread function that continuously reads and processes DAP messages."""
     while True:
@@ -82,6 +97,12 @@ def dap_receiver(sock):
             responses[req_seq] = msg
         elif msg_type == "event":
             events.setdefault(msg.get("event"), []).append(msg)
+        elif msg_type == "request":
+            # Handle specific requests from the debug adapter
+            if msg.get("command") == "startDebugging":
+                handle_start_debugging_request(sock, msg)
+            else:
+                print(f"Unhandled request type: {msg}")
         else:
             print("Unknown message type", msg)
 
@@ -152,25 +173,42 @@ def main():
             "columnsStartAt1": True,
             "pathFormat": "path",
             "supportsVariableType": True,
-            "supportsEvaluateForHovers": True
+            "supportsEvaluateForHovers": True,
+            "supportsStartDebuggingRequest": True
         }
     }
     send_dap_message(sock, init_req)
     init_resp = wait_for_response(init_seq)
     print("Received initialize response:", init_resp)
 
-    # attach_seq = next_sequence()
-    # attach_req = {
-    #     "seq": attach_seq,
-    #     "type": "request",
-    #     "command": "attach",
-    #     "arguments": {
-    #         "host": "127.0.0.1",
-    #         "port": DAP_PORT
-    #     }
-    # }
-    # send_dap_message(sock, attach_req)
-    # time.sleep(0.2)
+    launch_seq = next_sequence()
+    launch_req = {
+        "seq": launch_seq,
+        "type": "request",
+        "command": "launch",
+        "arguments": {
+            "program": TARGET_SCRIPT,
+            "args": [],
+            "cwd": os.path.dirname(TARGET_SCRIPT),
+            "stopOnEntry": True,
+            "type": "pwa-node"
+        }
+    }
+    send_dap_message(sock, launch_req)
+    time.sleep(0.2)
+
+    attach_seq = next_sequence()
+    attach_req = {
+        "seq": attach_seq,
+        "type": "request",
+        "command": "attach",
+        "arguments": {
+            "host": "127.0.0.1",
+            "port": DAP_PORT
+        }
+    }
+    send_dap_message(sock, attach_req)
+    time.sleep(0.2)
 
     # Wait for the "initialized" event sent by the adapter.
     _ = wait_for_event("initialized")
@@ -210,6 +248,8 @@ def main():
     send_dap_message(sock, conf_req)
     conf_resp = wait_for_response(conf_seq)
     print("ConfigurationDone response:", conf_resp)
+
+    # TODO Need to wait for a startDebugging request here
 
     # Step 7: Wait for the "stopped" event.
     print("Waiting for the target to hit the breakpoint (stopped event)...")
