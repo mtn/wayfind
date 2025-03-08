@@ -115,22 +115,22 @@ def main():
 
     # Start DAP server
     print(f"Starting DAP server from: {DAP_SERVER_PATH}")
-    dap_process = subprocess.Popen(
-        ["node", DAP_SERVER_PATH, str(DAP_PORT), "0.0.0.0"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        bufsize=1
-    )
-    output_thread = threading.Thread(target=stream_output, args=(dap_process, output_buffer), daemon=True)
-    output_thread.start()
+    # dap_process = subprocess.Popen(
+    #     ["node", DAP_SERVER_PATH, str(DAP_PORT), "0.0.0.0"],
+    #     stdout=subprocess.STDOUT,
+    #     stderr=subprocess.STDOUT,
+    #     universal_newlines=True,
+    #     bufsize=1
+    # )
+    # output_thread = threading.Thread(target=stream_output, args=(dap_process, output_buffer), daemon=True)
+    # output_thread.start()
 
     # Wait a moment for the server to start
     time.sleep(2)
 
     # Connect to DAP server
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(("localhost", DAP_PORT))
+    sock.connect(("127.0.0.1", DAP_PORT))
     print("Connected to DAP server")
 
     # Start message receiver thread
@@ -159,19 +159,18 @@ def main():
     init_resp = wait_for_response(init_seq)
     print("Received initialize response:", init_resp)
 
-    # Step 4: Send an attach request (since --wait-for-client was used).
-    attach_seq = next_sequence()
-    attach_req = {
-        "seq": attach_seq,
-        "type": "request",
-        "command": "attach",
-        "arguments": {
-            "host": "127.0.0.1",
-            "port": DAP_PORT
-        }
-    }
-    send_dap_message(sock, attach_req)
-    time.sleep(0.2)
+    # attach_seq = next_sequence()
+    # attach_req = {
+    #     "seq": attach_seq,
+    #     "type": "request",
+    #     "command": "attach",
+    #     "arguments": {
+    #         "host": "127.0.0.1",
+    #         "port": DAP_PORT
+    #     }
+    # }
+    # send_dap_message(sock, attach_req)
+    # time.sleep(0.2)
 
     # Wait for the "initialized" event sent by the adapter.
     _ = wait_for_event("initialized")
@@ -294,10 +293,10 @@ def main():
 
     sock.close()
 
-    output_thread.join(timeout=1.0)
-    print("\n----- Captured Target Output -----")
-    for line in output_buffer:
-        print(line)
+    # output_thread.join(timeout=1.0)
+    # print("\n----- Captured Target Output -----")
+    # for line in output_buffer:
+    #     print(line)
 
 if __name__ == "__main__":
     try:
