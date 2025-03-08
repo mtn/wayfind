@@ -137,186 +137,171 @@ def main():
     recv_thread = threading.Thread(target=dap_receiver, args=(sock,), daemon=True)
     recv_thread.start()
 
-    try:
-        # Step 3: Send initialize request
-        init_seq = next_sequence()
-        init_req = {
-            "seq": init_seq,
-            "type": "request",
-            "command": "initialize",
-            "arguments": {
-                "adapterID": "javascript",
-                "clientID": "dap_test_client",
-                "clientName": "DAP Test",
-                "linesStartAt1": True,
-                "columnsStartAt1": True,
-                "pathFormat": "path",
-                "supportsVariableType": True,
-                "supportsEvaluateForHovers": True
+
+    # Step 3: Send initialize.
+    init_seq = next_sequence()
+    init_req = {
+        "seq": init_seq,
+        "type": "request",
+        "command": "initialize",
+        "arguments": {
+            "adapterID": "python",
+            "clientID": "dap_test_client",
+            "clientName": "DAP Test",
+            "linesStartAt1": True,
+            "columnsStartAt1": True,
+            "pathFormat": "path",
+            "supportsVariableType": True,
+            "supportsEvaluateForHovers": True
+        }
+    }
+    send_dap_message(sock, init_req)
+    init_resp = wait_for_response(init_seq)
+    print("Received initialize response:", init_resp)
+
+    # Step 4: Send an attach request (since --wait-for-client was used).
+    attach_seq = next_sequence()
+    attach_req = {
+        "seq": attach_seq,
+        "type": "request",
+        "command": "attach",
+        "arguments": {
+            "host": "127.0.0.1",
+            "port": DAP_PORT
+        }
+    }
+    send_dap_message(sock, attach_req)
+    time.sleep(0.2)
+
+    # Wait for the "initialized" event sent by the adapter.
+    _ = wait_for_event("initialized")
+    print("Initialization complete")
+
+    # Step 5: Send setBreakpoints.
+    bp_seq = next_sequence()
+    set_bp_req = {
+        "seq": bp_seq,
+        "type": "request",
+        "command": "setBreakpoints",
+        "arguments": {
+            "source": {
+                "path": TARGET_SCRIPT,
+                "name": os.path.basename(TARGET_SCRIPT)
+            },
+            "breakpoints": [
+                {"line": 15}
+            ],
+            "sourceModified": False
+        }
+    }
+    send_dap_message(sock, set_bp_req)
+    bp_resp = wait_for_response(bp_seq)
+    print("Breakpoints response:", bp_resp)
+    if not bp_resp.get("success"):
+        print("Error setting breakpoints:", bp_resp.get("message"))
+
+    # Step 6: Send configurationDone.
+    conf_seq = next_sequence()
+    conf_req = {
+        "seq": conf_seq,
+        "type": "request",
+        "command": "configurationDone",
+        "arguments": {}
+    }
+    send_dap_message(sock, conf_req)
+    conf_resp = wait_for_response(conf_seq)
+    print("ConfigurationDone response:", conf_resp)
+
+    # Step 7: Wait for the "stopped" event.
+    print("Waiting for the target to hit the breakpoint (stopped event)...")
+    stopped_event = wait_for_event("stopped", timeout=15)
+    print("Received stopped event:", stopped_event)
+    thread_id = stopped_event.get("body", {}).get("threadId", 1)
+
+    # New Step: Request a stack trace to get the correct frame id.
+    st_seq = next_sequence()
+    st_req = {
+        "seq": st_seq,
+        "type": "request",
+        "command": "stackTrace",
+        "arguments": {
+            "threadId": thread_id,
+            "startFrame": 0,
+            "levels": 1
+        }
+    }
+    send_dap_message(sock, st_req)
+    st_resp = wait_for_response(st_seq)
+    print("StackTrace response:", st_resp)
+    frames = st_resp.get("body", {}).get("stackFrames", [])
+    frame_id = frames[0].get("id") if frames else None
+    print("Using frameId:", frame_id)
+
+    # Step 8: While stopped, send an evaluate request for "next_val".
+    eval_seq = next_sequence()
+    eval_args = {
+        "expression": "nextVal",
+        "context": "hover",
+    }
+    if frame_id:
+        eval_args["frameId"] = frame_id
+    eval_req = {
+        "seq": eval_seq,
+        "type": "request",
+        "command": "evaluate",
+        "arguments": eval_args
+    }
+    send_dap_message(sock, eval_req)
+    eval_resp = wait_for_response(eval_seq)
+    print("Evaluate response:", eval_resp)
+    result_value = eval_resp.get("body", {}).get("result")
+    print("Value of next_val at breakpoint:", result_value)
+
+    # Step 9: Send a continue request.
+    cont_seq = next_sequence()
+    cont_req = {
+        "seq": cont_seq,
+        "type": "request",
+        "command": "continue",
+        "arguments": {"threadId": thread_id}
+    }
+    send_dap_message(sock, cont_req)
+    cont_resp = wait_for_response(cont_seq)
+    print("Continue response:", cont_resp)
+
+    # Our debugger received a second stopped event (i.e. the breakpoint was hit again).
+    # Loop to send continue requests until no stopped event remains.
+    while True:
+        try:
+            _ = wait_for_event("stopped", timeout=1)
+            print("Extra stopped event received; sending another continue.")
+            cont_seq = next_sequence()
+            cont_req = {
+                "seq": cont_seq,
+                "type": "request",
+                "command": "continue",
+                "arguments": {"threadId": thread_id}
             }
-        }
-        send_dap_message(sock, init_req)
-        init_resp = wait_for_response(init_seq)
-        print("Received initialize response:", init_resp)
+            send_dap_message(sock, cont_req)
+            extra_cont = wait_for_response(cont_seq)
+            print("Extra continue response:", extra_cont)
+        except TimeoutError:
+            break
 
-        # Step 4: Send launch request (equivalent to the attach request in Python)
-        launch_seq = next_sequence()
-        launch_req = {
-            "seq": launch_seq,
-            "type": "request",
-            "command": "launch",
-            "arguments": {
-                "program": TARGET_SCRIPT,
-                "type": "node",
-                "request": "launch",
-                "stopOnEntry": False,
-                "console": "integratedTerminal",
-                "cwd": os.path.dirname(TARGET_SCRIPT)
-            }
-        }
-        send_dap_message(sock, launch_req)
-        launch_resp = wait_for_response(launch_seq)
-        print("Launch response:", launch_resp)
-        # Sleep a short time after launch
-        time.sleep(0.2)
+    # Now, wait for the target process to terminate.
+    # proc.wait()  # You could add a longer timeout here, if needed.
+    print("Target process terminated.")
 
-        # Wait for the "initialized" event sent by the adapter
-        initialized_event = wait_for_event("initialized")
-        print("Initialization complete")
+    sock.close()
 
-        # Step 5: Send setBreakpoints request
-        bp_seq = next_sequence()
-        set_bp_req = {
-            "seq": bp_seq,
-            "type": "request",
-            "command": "setBreakpoints",
-            "arguments": {
-                "source": {
-                    "path": TARGET_SCRIPT,
-                    "name": os.path.basename(TARGET_SCRIPT)
-                },
-                "breakpoints": [
-                    {"line": 14}  # Line where nextVal is calculated in computeFibonacci
-                ],
-                "sourceModified": False
-            }
-        }
-        send_dap_message(sock, set_bp_req)
-        bp_resp = wait_for_response(bp_seq)
-        print("Breakpoints response:", bp_resp)
-        if not bp_resp.get("success", False):
-            print("Error setting breakpoints:", bp_resp.get("message"))
-
-        # Step 6: Send configurationDone request
-        conf_seq = next_sequence()
-        conf_req = {
-            "seq": conf_seq,
-            "type": "request",
-            "command": "configurationDone",
-            "arguments": {}
-        }
-        send_dap_message(sock, conf_req)
-        conf_resp = wait_for_response(conf_seq)
-        print("ConfigurationDone response:", conf_resp)
-
-        # Step 7: Wait for the "stopped" event
-        print("Waiting for the target to hit the breakpoint (stopped event)...")
-        stopped_event = wait_for_event("stopped", timeout=15)
-        print("Received stopped event:", stopped_event)
-        thread_id = stopped_event.get("body", {}).get("threadId", 1)
-
-        # Request a stack trace to get the correct frame id
-        st_seq = next_sequence()
-        st_req = {
-            "seq": st_seq,
-            "type": "request",
-            "command": "stackTrace",
-            "arguments": {
-                "threadId": thread_id,
-                "startFrame": 0,
-                "levels": 1
-            }
-        }
-        send_dap_message(sock, st_req)
-        st_resp = wait_for_response(st_seq)
-        print("StackTrace response:", st_resp)
-        frames = st_resp.get("body", {}).get("stackFrames", [])
-        frame_id = frames[0].get("id") if frames else None
-        print("Using frameId:", frame_id)
-
-        # Step 8: While stopped, send an evaluate request for "nextVal"
-        eval_seq = next_sequence()
-        eval_args = {
-            "expression": "nextVal",
-            "context": "hover",
-        }
-        if frame_id:
-            eval_args["frameId"] = frame_id
-        eval_req = {
-            "seq": eval_seq,
-            "type": "request",
-            "command": "evaluate",
-            "arguments": eval_args
-        }
-        send_dap_message(sock, eval_req)
-        eval_resp = wait_for_response(eval_seq)
-        print("Evaluate response:", eval_resp)
-        result_value = eval_resp.get("body", {}).get("result")
-        print("Value of nextVal at breakpoint:", result_value)
-
-        # Step 9: Send a continue request
-        cont_seq = next_sequence()
-        cont_req = {
-            "seq": cont_seq,
-            "type": "request",
-            "command": "continue",
-            "arguments": {"threadId": thread_id}
-        }
-        send_dap_message(sock, cont_req)
-        cont_resp = wait_for_response(cont_seq)
-        print("Continue response:", cont_resp)
-
-        # Loop to send continue requests until no stopped event remains
-        while True:
-            try:
-                extra_stopped_event = wait_for_event("stopped", timeout=1)
-                print("Extra stopped event received; sending another continue.")
-                extra_cont_seq = next_sequence()
-                extra_cont_req = {
-                    "seq": extra_cont_seq,
-                    "type": "request",
-                    "command": "continue",
-                    "arguments": {"threadId": thread_id}
-                }
-                send_dap_message(sock, extra_cont_req)
-                extra_cont_resp = wait_for_response(extra_cont_seq)
-                print("Extra continue response:", extra_cont_resp)
-            except TimeoutError:
-                # No more stopped events - timeout occurred
-                break
-
-        # Wait for the target process to terminate
-        terminated_event = wait_for_event("terminated", timeout=10)
-        print("Program has terminated.")
-
-        # Clean up
-        sock.close()
-        dap_process.terminate()
-        dap_process.wait()
-
-        output_thread.join(timeout=1.0)
-        print("\n----- Captured Server Output -----")
-        for line in output_buffer:
-            print(line)
-
-        print("\n----- Test completed successfully -----")
-
-    except Exception as ex:
-        print("Error during DAP test:", ex)
-        sock.close()
-        dap_process.terminate()
-        dap_process.wait()
-        sys.exit(1)
+    output_thread.join(timeout=1.0)
+    print("\n----- Captured Target Output -----")
+    for line in output_buffer:
+        print(line)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as ex:
+        print("Error during dap test:", ex)
+        sys.exit(1)
