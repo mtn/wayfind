@@ -197,19 +197,6 @@ def main():
     send_dap_message(sock, launch_req)
     time.sleep(0.2)
 
-    attach_seq = next_sequence()
-    attach_req = {
-        "seq": attach_seq,
-        "type": "request",
-        "command": "attach",
-        "arguments": {
-            "host": "127.0.0.1",
-            "port": DAP_PORT
-        }
-    }
-    send_dap_message(sock, attach_req)
-    time.sleep(0.2)
-
     # Wait for the "initialized" event sent by the adapter.
     _ = wait_for_event("initialized")
     print("Initialization complete")
@@ -249,10 +236,9 @@ def main():
     conf_resp = wait_for_response(conf_seq)
     print("ConfigurationDone response:", conf_resp)
 
-    # TODO Need to wait for a startDebugging request here
-
     # Step 7: Wait for the "stopped" event.
     print("Waiting for the target to hit the breakpoint (stopped event)...")
+    breakpoint()
     stopped_event = wait_for_event("stopped", timeout=15)
     print("Received stopped event:", stopped_event)
     thread_id = stopped_event.get("body", {}).get("threadId", 1)
