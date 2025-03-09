@@ -235,18 +235,6 @@ export default function Home() {
     }
   };
 
-  const findFirstFile = (entries: FileEntry[]): FileEntry | undefined => {
-    for (const entry of entries) {
-      if (entry.type === "file") {
-        return entry;
-      } else if (entry.children && entry.children.length > 0) {
-        const found = findFirstFile(entry.children);
-        if (found) return found;
-      }
-    }
-    return undefined;
-  };
-
   const isDebugSessionActiveRef = useRef(isDebugSessionActive);
   useEffect(() => {
     isDebugSessionActiveRef.current = isDebugSessionActive;

@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { FileEntry } from "@/lib/fileSystem";
 import { Button } from "./ui/button";
-import { useState } from "react";
 
 interface FileTreeProps {
   files: FileEntry[];
