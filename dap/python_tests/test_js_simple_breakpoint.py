@@ -304,12 +304,12 @@ async def main_async():
 
     # Start DAP server
     print(f"Starting DAP server from: {DAP_SERVER_PATH}")
-    # proc = await asyncio.create_subprocess_exec(
-    #     "node", DAP_SERVER_PATH, str(DAP_PORT), "0.0.0.0",
-    #     stdout=asyncio.subprocess.PIPE,
-    #     stderr=asyncio.subprocess.STDOUT
-    # )
-    # output_task = asyncio.create_task(read_subprocess_output(proc, output_buffer))
+    proc = await asyncio.create_subprocess_exec(
+        "node", DAP_SERVER_PATH, str(DAP_PORT), "0.0.0.0",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT
+    )
+    output_task = asyncio.create_task(read_subprocess_output(proc, output_buffer))
 
     # Wait a moment for the server to start
     await asyncio.sleep(2)
@@ -414,10 +414,10 @@ async def main_async():
     await writer.wait_closed()
 
     # Wait for the output task to complete
-    # await output_task
-    # print("\n----- Captured Target Output -----")
-    # for line in output_buffer:
-    #     print(line)
+    await output_task
+    print("\n----- Captured Target Output -----")
+    for line in output_buffer:
+        print(line)
 
 def main():
     asyncio.run(main_async())
