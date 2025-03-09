@@ -56,7 +56,10 @@ class DapConnection:
                 raise ConnectionError(f"[{self.name}] Socket closed while reading body")
             body += chunk
         message = json.loads(body.decode('utf-8'))
-        print(f"<-- Received [{self.name}]: {json.dumps(message)}\n")
+        if "event" in message and message["event"] == "output":
+            pass
+        else:
+            print(f"<-- Received [{self.name}]: {json.dumps(message)}\n")
         return message
 
     async def read_loop(self):
@@ -78,7 +81,8 @@ class DapConnection:
             elif msg_type == "event":
                 event_name = msg.get("event")
                 self.events.setdefault(event_name, []).append(msg)
-                print(f"[{self.name}] Added event: {event_name}")
+                if event_name != "output":
+                    print(f"[{self.name}] Added event: {event_name}")
             elif msg_type == "request":
                 if msg.get("command") == "startDebugging":
                     await self.handle_start_debugging_request(msg)
@@ -167,7 +171,7 @@ class DapConnection:
                 "program": TARGET_SCRIPT,
                 "args": [],
                 "cwd": os.path.dirname(TARGET_SCRIPT),
-                "stopOnEntry": True,
+                "stopOnEntry": False,
                 "type": "pwa-node",
                 "__pendingTargetId": target_id
             }
@@ -350,7 +354,7 @@ async def main_async():
             "program": TARGET_SCRIPT,
             "args": [],
             "cwd": os.path.dirname(TARGET_SCRIPT),
-            "stopOnEntry": True,
+            "stopOnEntry": False,
             "type": "pwa-node"
         }
     }
@@ -361,28 +365,28 @@ async def main_async():
     _ = await parent_conn.wait_for_event("initialized")
     print("Initialization complete")
 
-    # Set breakpoints
-    bp_seq = parent_conn.next_sequence()
-    set_bp_req = {
-        "seq": bp_seq,
-        "type": "request",
-        "command": "setBreakpoints",
-        "arguments": {
-            "source": {
-                "path": TARGET_SCRIPT,
-                "name": os.path.basename(TARGET_SCRIPT)
-            },
-            "breakpoints": [
-                {"line": 15}
-            ],
-            "sourceModified": False
-        }
-    }
-    await parent_conn.send_dap_message(set_bp_req)
-    bp_resp = await parent_conn.wait_for_response(bp_seq)
-    print("Breakpoints response:", bp_resp)
-    if not bp_resp.get("success"):
-        print("Error setting breakpoints:", bp_resp.get("message"))
+    # # Set breakpoints
+    # bp_seq = parent_conn.next_sequence()
+    # set_bp_req = {
+    #     "seq": bp_seq,
+    #     "type": "request",
+    #     "command": "setBreakpoints",
+    #     "arguments": {
+    #         "source": {
+    #             "path": TARGET_SCRIPT,
+    #             "name": os.path.basename(TARGET_SCRIPT)
+    #         },
+    #         "breakpoints": [
+    #             {"line": 15}
+    #         ],
+    #         "sourceModified": False
+    #     }
+    # }
+    # await parent_conn.send_dap_message(set_bp_req)
+    # bp_resp = await parent_conn.wait_for_response(bp_seq)
+    # print("Breakpoints response:", bp_resp)
+    # if not bp_resp.get("success"):
+    #     print("Error setting breakpoints:", bp_resp.get("message"))
 
     # Send configurationDone
     conf_seq = parent_conn.next_sequence()
