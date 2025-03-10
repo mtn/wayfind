@@ -46,7 +46,9 @@ export default function Home() {
   }, [fs]);
 
   const [debugEngine, setDebugEngine] = useState<string>("python");
-  const [rustBinaryPath, setRustBinaryPath] = useState<string>("");
+  const [rustBinaryPath, setRustBinaryPath] = useState<string>(
+    "~/Documents/workspace/wayfind/target/debug/rust_program",
+  );
 
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
