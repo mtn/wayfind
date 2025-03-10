@@ -267,6 +267,28 @@ impl DAPClient {
                                         );
                                     }
                                 }
+                            } else if evt == "output" {
+                                // Handle output events from Rust debugger
+                                if let Some(ref body) = msg.body {
+                                    if let Some(category) =
+                                        body.get("category").and_then(|c| c.as_str())
+                                    {
+                                        if category == "stdout" || category == "stderr" {
+                                            if let Some(output) =
+                                                body.get("output").and_then(|o| o.as_str())
+                                            {
+                                                // Forward to UI using the same events as Python output
+                                                let event_name = if category == "stderr" {
+                                                    "program-error"
+                                                } else {
+                                                    "program-output"
+                                                };
+                                                let _ =
+                                                    app_handle.emit(event_name, output.to_string());
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
