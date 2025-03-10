@@ -94,8 +94,6 @@ export function FileTree({
   onOpenWorkspace,
   onToggleDirectory,
 }: FileTreeProps) {
-  console.log("FileTree rendering with files:", files);
-
   return (
     <div className="p-2 flex flex-col h-full">
       <div className="flex items-center justify-between p-2">

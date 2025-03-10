@@ -17,9 +17,11 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+// TODO try and make these types non-optional
 export interface IBreakpoint {
   line: number;
   verified?: boolean;
+  // Path relative to the workspace root
   file?: string;
 }
 
@@ -341,34 +343,34 @@ export default function Home() {
   }, [files, selectedFile, handleFileSelect]);
 
   const handleBreakpointChange = (lineNumber: number) => {
-    const currentFileName = selectedFileRef.current?.name;
-    if (!currentFileName) return;
+    const currentFilePath = selectedFileRef.current?.path;
+    if (!currentFilePath) return;
 
     if (!isDebugSessionActiveRef.current) {
       setQueuedBreakpoints((currentQueued) => {
         const exists = currentQueued.some(
-          (bp) => bp.line === lineNumber && bp.file === currentFileName,
+          (bp) => bp.line === lineNumber && bp.file === currentFilePath,
         );
         if (!exists) {
           return [
             ...currentQueued,
-            { line: lineNumber, file: currentFileName },
+            { line: lineNumber, file: currentFilePath },
           ];
         }
         return currentQueued.filter(
-          (bp) => !(bp.line === lineNumber && bp.file === currentFileName),
+          (bp) => !(bp.line === lineNumber && bp.file === currentFilePath),
         );
       });
     } else {
       setActiveBreakpoints((currentActive) => {
         const exists = currentActive.some(
-          (bp) => bp.line === lineNumber && bp.file === currentFileName,
+          (bp) => bp.line === lineNumber && bp.file === currentFilePath,
         );
         const newBreakpoints = exists
           ? currentActive.filter(
-              (bp) => !(bp.line === lineNumber && bp.file === currentFileName),
+              (bp) => !(bp.line === lineNumber && bp.file === currentFilePath),
             )
-          : [...currentActive, { line: lineNumber, file: currentFileName }];
+          : [...currentActive, { line: lineNumber, file: currentFilePath }];
 
         // Get full file path for the current file
         if (!selectedFileRef.current) return newBreakpoints;
@@ -376,7 +378,7 @@ export default function Home() {
 
         invoke("set_breakpoints", {
           breakpoints: newBreakpoints.filter(
-            (bp) => bp.file === currentFileName,
+            (bp) => bp.file === currentFilePath,
           ),
           filePath: fullFilePath, // Use full path instead of just the filename
         })
@@ -386,14 +388,14 @@ export default function Home() {
               // Update active breakpoints with verification status
               const verifiedBps = typedData.breakpoints.map((bp) => ({
                 ...bp,
-                file: currentFileName, // Ensure file is set on returned breakpoints
+                file: currentFilePath, // Ensure file is set on returned breakpoints
                 verified: bp.verified !== false, // Default to true if undefined
               }));
 
               setActiveBreakpoints((current) => {
                 // Remove current breakpoints for this file
                 const othersInOtherFiles = current.filter(
-                  (bp) => bp.file !== currentFileName,
+                  (bp) => bp.file !== currentFilePath,
                 );
                 // Add the newly verified breakpoints
                 return [...othersInOtherFiles, ...verifiedBps];
