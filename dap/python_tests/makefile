@@ -1,2 +1,2 @@
 run:
-	python test_js_simple_breakpoint.py
+	python test_lldb_dap.py

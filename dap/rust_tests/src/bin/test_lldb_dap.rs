@@ -282,13 +282,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Find the workspace root
     let current_dir = std::env::current_dir()?;
-    let workspace_root = current_dir
-        .ancestors()
-        .find(|p| p.join("Cargo.toml").exists())
-        .ok_or("Could not find workspace root")?;
+    let workspace_root = current_dir.parent().unwrap().parent().unwrap();
 
     // Path to the test program
-    let test_program_src = workspace_root;
+    let test_program_src = workspace_root
+        .join("dap")
+        .join("test_data")
+        .join("rust_program");
 
     // Build the test program
     println!("Building test program...");
@@ -303,8 +303,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Path to the binary
     let mut target_program = workspace_root
-        .join("..")
-        .join("..")
         .join("target")
         .join("debug")
         .join("rust_program");
