@@ -7,6 +7,7 @@ use debug_state::DebugSessionState;
 use debugger::client::{emit_status_update, BreakpointInput, DAPClient, DAPMessage, MessageType};
 use debugger::util::parse_lldb_result;
 use serde_json::Value;
+use shellexpand;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -205,17 +206,17 @@ async fn launch_debug_session(
             Ok("Debug session launched successfully".into())
         }
         "rust" => {
-            // First, make sure the provided path exists and looks executable
-            let script_path_obj = std::path::Path::new(&script_path);
-            if !script_path_obj.exists() {
-                return Err(format!("Binary not found at path: {}", script_path));
-            }
+            // Resolve the provided path (e.g. expand ~ and normalize relative segments)
+            let expanded_path = shellexpand::tilde(&script_path).into_owned();
+            let resolved_path = std::fs::canonicalize(&expanded_path)
+                .map_err(|e| format!("Failed to resolve path {}: {}", expanded_path, e))?;
+            println!("Resolved binary path: {}", resolved_path.to_string_lossy());
 
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 // On Unix-like systems, check if the file is executable
-                if let Ok(metadata) = std::fs::metadata(&script_path) {
+                if let Ok(metadata) = std::fs::metadata(&resolved_path) {
                     let permissions = metadata.permissions();
                     if permissions.mode() & 0o111 == 0 {
                         println!("Warning: The selected file does not have executable permissions");
@@ -309,7 +310,7 @@ async fn launch_debug_session(
                     .map_err(|e| format!("Initialize failed: {}", e))?;
 
                 // Launch instead of attach for Rust debugging
-                // Send a launch request using the script_path as the program path
+                // Send a launch request using the resolved_path as the program path
                 let launch_seq = client
                     .send_message(DAPMessage {
                         seq: -1,
@@ -318,11 +319,10 @@ async fn launch_debug_session(
                         request_seq: None,
                         success: None,
                         arguments: Some(serde_json::json!({
-                            "program": script_path,
+                            "program": resolved_path.to_string_lossy(),
                             "stopOnEntry": true,
                             "args": [],
-                            "cwd": std::path::Path::new(&script_path)
-                                .parent()
+                            "cwd": resolved_path.parent()
                                 .map(|p| p.to_string_lossy().to_string())
                                 .unwrap_or_else(|| ".".to_string()),
                         })),
