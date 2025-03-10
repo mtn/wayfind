@@ -204,7 +204,7 @@ export default function Home() {
         for (const dir of directories) {
           newFiles.push({
             name: dir.name,
-            path: `/${dir.name}`, // Simple path
+            path: `./${dir.name}`, // Simple path
             type: "directory",
             expanded: false,
             children: [], // Initialize with empty children
@@ -215,7 +215,7 @@ export default function Home() {
         for (const file of filesOnly) {
           newFiles.push({
             name: file.name,
-            path: `/${file.name}`, // Simple path
+            path: `./${file.name}`, // Simple path
             type: "file",
             content: file.content || "",
           });
@@ -343,46 +343,74 @@ export default function Home() {
   }, [files, selectedFile, handleFileSelect]);
 
   const handleBreakpointChange = (lineNumber: number) => {
+    console.log(`handleBreakpointChange called with lineNumber: ${lineNumber}`);
     const currentFilePath = selectedFileRef.current?.path;
+    console.log(`Current file path: ${currentFilePath}`);
     if (!currentFilePath) return;
 
     if (!isDebugSessionActiveRef.current) {
+      console.log(`Debug session not active, queueing breakpoint`);
       setQueuedBreakpoints((currentQueued) => {
+        console.log(
+          `Current queued breakpoints: ${JSON.stringify(currentQueued)}`,
+        );
         const exists = currentQueued.some(
           (bp) => bp.line === lineNumber && bp.file === currentFilePath,
         );
+        console.log(`Breakpoint exists in queue? ${exists}`);
         if (!exists) {
+          console.log(
+            `Adding breakpoint to queue: line ${lineNumber}, file ${currentFilePath}`,
+          );
           return [
             ...currentQueued,
             { line: lineNumber, file: currentFilePath },
           ];
         }
+        console.log(
+          `Removing breakpoint from queue: line ${lineNumber}, file ${currentFilePath}`,
+        );
         return currentQueued.filter(
           (bp) => !(bp.line === lineNumber && bp.file === currentFilePath),
         );
       });
     } else {
+      console.log(`Debug session active, setting active breakpoint`);
       setActiveBreakpoints((currentActive) => {
+        console.log(
+          `Current active breakpoints: ${JSON.stringify(currentActive)}`,
+        );
         const exists = currentActive.some(
           (bp) => bp.line === lineNumber && bp.file === currentFilePath,
         );
+        console.log(`Breakpoint exists in active? ${exists}`);
         const newBreakpoints = exists
           ? currentActive.filter(
               (bp) => !(bp.line === lineNumber && bp.file === currentFilePath),
             )
           : [...currentActive, { line: lineNumber, file: currentFilePath }];
+        console.log(
+          `New breakpoints after toggle: ${JSON.stringify(newBreakpoints)}`,
+        );
 
         // Get full file path for the current file
         if (!selectedFileRef.current) return newBreakpoints;
         const fullFilePath = fs.getFullPath(selectedFileRef.current.path);
+        console.log(`Full file path for request: ${fullFilePath}`);
+
+        const breakpointsToSend = newBreakpoints.filter(
+          (bp) => bp.file === currentFilePath,
+        );
+        console.log(
+          `Sending breakpoints for current file: ${JSON.stringify(breakpointsToSend)}`,
+        );
 
         invoke("set_breakpoints", {
-          breakpoints: newBreakpoints.filter(
-            (bp) => bp.file === currentFilePath,
-          ),
+          breakpoints: breakpointsToSend,
           filePath: fullFilePath, // Use full path instead of just the filename
         })
           .then((data) => {
+            console.log(`set_breakpoints response: ${JSON.stringify(data)}`);
             const typedData = data as { breakpoints?: IBreakpoint[] };
             if (typedData.breakpoints) {
               // Update active breakpoints with verification status
@@ -391,20 +419,26 @@ export default function Home() {
                 file: currentFilePath, // Ensure file is set on returned breakpoints
                 verified: bp.verified !== false, // Default to true if undefined
               }));
+              console.log(
+                `Verified breakpoints from server: ${JSON.stringify(verifiedBps)}`,
+              );
 
               setActiveBreakpoints((current) => {
                 // Remove current breakpoints for this file
                 const othersInOtherFiles = current.filter(
                   (bp) => bp.file !== currentFilePath,
                 );
+                console.log(
+                  `Preserving breakpoints for other files: ${JSON.stringify(othersInOtherFiles)}`,
+                );
                 // Add the newly verified breakpoints
                 return [...othersInOtherFiles, ...verifiedBps];
               });
             }
           })
-          .catch((error) =>
-            console.error("Failed to update active breakpoints:", error),
-          );
+          .catch((error) => {
+            console.error("Failed to update active breakpoints:", error);
+          });
         return newBreakpoints;
       });
     }
@@ -715,7 +749,7 @@ export default function Home() {
                   breakpoints={mergeBreakpoints(
                     queuedBreakpoints,
                     activeBreakpoints,
-                  ).filter((bp) => bp.file === selectedFile?.name)}
+                  ).filter((bp) => bp.file === selectedFile?.path)}
                   onBreakpointChange={handleBreakpointChange}
                   executionFile={executionFile}
                   executionLine={executionLine}
