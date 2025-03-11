@@ -320,7 +320,7 @@ async fn launch_debug_session(
                         success: None,
                         arguments: Some(serde_json::json!({
                             "program": resolved_path.to_string_lossy(),
-                            "stopOnEntry": true,
+                            "stopOnEntry": false,
                             "args": [],
                             "cwd": resolved_path.parent()
                                 .map(|p| p.to_string_lossy().to_string())

@@ -223,7 +223,7 @@ def main():
                 "program": target_program,
                 "args": [],
                 "cwd": os.path.dirname(target_program),
-                "stopOnEntry": True
+                "stopOnEntry": False
             }
         }
         send_dap_message(sock, launch_req)
@@ -265,26 +265,6 @@ def main():
         send_dap_message(sock, config_req)
         config_resp = wait_for_response(config_seq)
         print(f"ConfigurationDone response: {json.dumps(config_resp, indent=2)}")
-
-        # Step 6: Wait for stopped event (due to stopOnEntry)
-        print("Waiting for stopped event (due to stopOnEntry)...")
-        stopped_event = wait_for_event("stopped", timeout=5)
-        print(f"Stopped event: {json.dumps(stopped_event, indent=2)}")
-        thread_id = stopped_event.get("body", {}).get("threadId", 1)
-
-        # Step 7: Continue to hit the breakpoint
-        continue_seq = next_sequence()
-        continue_req = {
-            "seq": continue_seq,
-            "type": "request",
-            "command": "continue",
-            "arguments": {
-                "threadId": thread_id
-            }
-        }
-        send_dap_message(sock, continue_req)
-        continue_resp = wait_for_response(continue_seq)
-        print(f"Continue response: {json.dumps(continue_resp, indent=2)}")
 
         # Step 8: Wait for the breakpoint hit (another stopped event)
         print("Waiting for breakpoint hit...")
