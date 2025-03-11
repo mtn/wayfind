@@ -664,33 +664,35 @@ async fn terminate_program(
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    let client_lock = debug_state.client.lock().await;
+    let debugger_type = {
+        let dt = debug_state.debugger_type.read();
+        dt.clone()
+    };
 
-    if let Some(client) = client_lock.as_ref() {
-        // Send the terminate request
-        // Note: We're properly handling the error here by converting it to a String
-        match client.terminate().await {
-            Ok(_) => {
-                println!("Terminate request sent successfully");
-            }
-            Err(e) => {
-                // Convert the boxed error to a String right away
-                let error_str = e.to_string();
-                println!("Error sending terminate request: {}", error_str);
+    if let Some(client) = debug_state.client.lock().await.as_ref() {
+        if debugger_type.as_deref() == Some("rust") {
+            println!("Rust debug termination: fire and forget");
 
-                // Emit terminated status in case of error
-                emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
-
-                // Try to kill the process directly
-                // We need to drop the client_lock before acquiring process_lock to avoid deadlock
+            // We manually emit a "terminated" status update since lldb-DAP exits without emitting one
+            // It's emitted first rather than waiting for client.terminate() to complete
+            emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
+            let _ = client.terminate().await;
+        } else {
+            match client.terminate().await {
+                Ok(_) => {
+                    println!("Terminate request sent successfully");
+                }
+                Err(e) => {
+                    let error_str = e.to_string();
+                    println!("Error sending terminate request: {}", error_str);
+                    emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
+                }
             }
         }
     } else {
-        // No active debug session, just emit terminated status
         emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
     }
 
-    // After we're done with client_lock, it's safe to acquire process_lock
     let mut proc_lock = debug_state.process.lock().await;
     if let Some(child) = proc_lock.as_mut() {
         let _ = child.kill();
