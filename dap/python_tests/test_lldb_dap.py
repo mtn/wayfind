@@ -313,62 +313,16 @@ def main():
         result_value = eval_resp.get("body", {}).get("result")
         print(f"Value of 'a + b' at breakpoint: {parse_lldb_result(result_value)}")
 
-        # Step 11: Continue to completion
-        continue_seq = next_sequence()
-        continue_req = {
-            "seq": continue_seq,
+        terminate_seq = next_sequence()
+        terminate_req = {
+            "seq": terminate_seq,
             "type": "request",
-            "command": "continue",
+            "command": "terminate",
             "arguments": {
-                "threadId": thread_id
+                "restart": False
             }
         }
-        send_dap_message(sock, continue_req)
-        continue_resp = wait_for_response(continue_seq)
-        print(f"Final continue response: {json.dumps(continue_resp, indent=2)}")
-
-        # Like in the Python example, handle any additional stops
-        while True:
-            try:
-                extra_stop = wait_for_event("stopped", timeout=1)
-                print(f"Extra stopped event received: {json.dumps(extra_stop, indent=2)}")
-                cont_seq = next_sequence()
-                cont_req = {
-                    "seq": cont_seq,
-                    "type": "request",
-                    "command": "continue",
-                    "arguments": {
-                        "threadId": extra_stop.get("body", {}).get("threadId", thread_id)
-                    }
-                }
-                send_dap_message(sock, cont_req)
-                extra_cont = wait_for_response(cont_seq)
-                print(f"Extra continue response: {json.dumps(extra_cont, indent=2)}")
-            except TimeoutError:
-                print("No more stopped events received")
-                break
-
-        # Wait for termination
-        print("Waiting for termination...")
-        try:
-            terminated_event = wait_for_event("terminated", timeout=5)
-            print(f"Terminated event: {json.dumps(terminated_event, indent=2)}")
-        except TimeoutError:
-            print("No termination event received (may be normal for some adapters)")
-
-        # Disconnect
-        disconnect_seq = next_sequence()
-        disconnect_req = {
-            "seq": disconnect_seq,
-            "type": "request",
-            "command": "disconnect",
-            "arguments": {
-                "terminateDebuggee": True
-            }
-        }
-        send_dap_message(sock, disconnect_req)
-        disconnect_resp = wait_for_response(disconnect_seq)
-        print(f"Disconnect response: {json.dumps(disconnect_resp, indent=2)}")
+        send_dap_message(sock, terminate_req)
 
     except Exception as e:
         print(f"Error during test: {e}")
