@@ -246,7 +246,7 @@ def main():
                     "path": os.path.join(test_program_src, "src", "main.rs")
                 },
                 "breakpoints": [
-                    {"line": 18}  # Line with calculate_sum call
+                    {"line": 10}
                 ],
                 "sourceModified": False
             }
@@ -272,6 +272,19 @@ def main():
         print(f"Breakpoint hit event: {json.dumps(breakpoint_hit_event, indent=2)}")
         thread_id = breakpoint_hit_event.get("body", {}).get("threadId", 1)
 
+        next_seq = next_sequence()
+        next_req = {
+            "seq": next_seq,
+            "type": "request",
+            "command": "next",
+            "arguments": {
+                "threadId": thread_id
+            }
+        }
+        send_dap_message(sock, next_req)
+        next_resp = wait_for_response(next_seq)
+        print(f"Next response: {json.dumps(next_resp, indent=2)}")
+
         # Step 9: Get stack trace to get the frame ID
         stack_seq = next_sequence()
         stack_req = {
@@ -294,7 +307,7 @@ def main():
         # Step 10: Evaluate an expression
         eval_seq = next_sequence()
         eval_args = {
-            "expression": "expr -- a + b",
+            "expression": "expr -- result",
             "context": "repl"
         }
         if frame_id:
@@ -311,7 +324,7 @@ def main():
         eval_resp = wait_for_response(eval_seq)
         print(f"Evaluate response: {json.dumps(eval_resp, indent=2)}")
         result_value = eval_resp.get("body", {}).get("result")
-        print(f"Value of 'a + b' at breakpoint: {parse_lldb_result(result_value)}")
+        print(f"Value of 'result' at breakpoint: {parse_lldb_result(result_value)}")
 
         terminate_seq = next_sequence()
         terminate_req = {
