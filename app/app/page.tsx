@@ -541,10 +541,7 @@ export default function Home() {
         );
         console.log(`Processing file: ${file}`, fileBreakpoints);
 
-        // Find the FileEntry with this name to get its path
         const fileEntry = await fs.getFile(file);
-        console.log("FILES", files);
-        console.log("FILE ENTRY", fileEntry);
         if (!fileEntry) {
           addLog(`Could not find file entry for ${file}, skipping breakpoints`);
           console.warn(`File entry not found for ${file}`);
