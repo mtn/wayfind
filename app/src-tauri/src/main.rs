@@ -462,17 +462,17 @@ async fn continue_debug(
 
 #[tauri::command]
 async fn step_in(
-    thread_id: i64,
     granularity: Option<String>,
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
 ) -> Result<String, String> {
     let client_lock = debug_state.client.lock().await;
     let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
+    let thread_id = match *debug_state.current_thread_id.read() {
+        Some(tid) => tid,
+        None => return Err("No current thread id available; debugger is not paused.".into()),
+    };
     match dap_client.step_in(thread_id, granularity.as_deref()).await {
-        Ok(_) => {
-            // Do not manually emit "running" status; canonical events will update the state.
-            Ok("Step in executed".into())
-        }
+        Ok(_) => Ok("Step in executed".into()),
         Err(e) => Err(format!("Failed to step in: {}", e)),
     }
 }
