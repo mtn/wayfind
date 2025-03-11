@@ -82,10 +82,6 @@ export function ChatInterface({
       });
     }
   });
-  console.log(
-    "Attachments",
-    attachments.map((attachment) => attachment.name),
-  );
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();

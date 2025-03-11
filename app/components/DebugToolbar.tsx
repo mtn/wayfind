@@ -54,7 +54,6 @@ export function DebugToolbar({
   const canLaunch =
     debugStatus === "notstarted" || debugStatus === "terminated";
   const isPaused = debugStatus === "paused";
-  console.log("DEBUG STATUS:", debugStatus);
 
   async function handleLaunch() {
     try {

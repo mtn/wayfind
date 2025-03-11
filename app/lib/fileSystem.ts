@@ -123,10 +123,12 @@ export class InMemoryFileSystem {
     if (!this.workspacePath) {
       throw new Error("No workspace path set");
     }
-    // Handle the case where relativePath starts with a slash
-    const cleanPath = relativePath.startsWith("/")
-      ? relativePath.slice(1)
-      : relativePath;
+    let cleanPath = relativePath;
+    if (cleanPath.startsWith("./")) {
+      cleanPath = cleanPath.slice(2);
+    } else if (cleanPath.startsWith("/")) {
+      cleanPath = cleanPath.slice(1);
+    }
     return `${this.workspacePath}/${cleanPath}`;
   }
 
@@ -144,7 +146,10 @@ export class InMemoryFileSystem {
     if (path === "/" || path === "") return null;
 
     // Split the path into components
-    const parts = path.split("/").filter(Boolean);
+    let parts = path.split("/").filter(Boolean);
+    if (parts[0] === ".") {
+      parts = parts.slice(1);
+    }
 
     // Start at the root level
     let current: FileEntry[] = this.files;
