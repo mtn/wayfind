@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufReader, ErrorKind, Read, Write};
+use std::net::Shutdown;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -187,8 +188,12 @@ impl DAPClient {
                                 break;
                             }
                         }
-                        Err(ref e) if e.kind() == ErrorKind::UnexpectedEof => {
-                            // Connection closed.
+                        Err(ref e)
+                            if e.kind() == ErrorKind::UnexpectedEof
+                                || e.kind() == ErrorKind::NotConnected
+                                || e.kind() == ErrorKind::BrokenPipe =>
+                        {
+                            // Connection closed or broken.
                             return;
                         }
                         Err(e) => {
@@ -651,6 +656,17 @@ impl DAPClient {
             Ok(response)
         } else {
             Err("Timeout waiting for terminate response".into())
+        }
+    }
+
+    pub fn close(&mut self) {
+        // Shut down the write (and read) half so that the local socket is fully closed.
+        if let Some(writer) = self.writer.take() {
+            let _ = writer.lock().unwrap().shutdown(Shutdown::Both);
+        }
+        self.reader.take();
+        if let Some(handle) = self.receiver_handle.take() {
+            let _ = handle.join();
         }
     }
 }

@@ -676,12 +676,11 @@ async fn terminate_program(
         dt.clone()
     };
 
-    if let Some(client) = debug_state.client.lock().await.as_ref() {
+    if let Some(client) = debug_state.client.lock().await.as_mut() {
         if debugger_type.as_deref() == Some("rust") {
             println!("Rust debug termination: fire and forget");
 
-            // We manually emit a "terminated" status update since lldb-DAP exits without emitting one
-            // It's emitted first rather than waiting for client.terminate() to complete
+            // Emit terminated status since lldb-DAP exits without emitting one.
             emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
             let _ = client.terminate().await;
         } else {
@@ -696,13 +695,18 @@ async fn terminate_program(
                 }
             }
         }
+        // Explicitly shut down the DAP socket.
+        client.close();
     } else {
         emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
     }
 
     let mut proc_lock = debug_state.process.lock().await;
     if let Some(child) = proc_lock.as_mut() {
+        println!("Killing process... {}", child.id());
         let _ = child.kill();
+        let _ = child.wait();
+        println!("Done killing process... {}", child.id());
     }
     *proc_lock = None;
 
