@@ -475,7 +475,72 @@ export default function Home() {
 
         addLog(`${debugEngine} debug session launched successfully`);
 
-        // Configuration done and other post-launch steps
+        // Merge queued and active breakpoints and set them for the new session.
+        const allBreakpoints = mergeBreakpoints(
+          queuedBreakpoints,
+          activeBreakpoints,
+        );
+        setQueuedBreakpoints([]);
+        addLog(`Merged breakpoints: ${JSON.stringify(allBreakpoints)}`);
+
+        const uniqueFiles = Array.from(
+          new Set(allBreakpoints.map((bp) => bp.file).filter(Boolean)),
+        );
+        addLog(`Unique files from breakpoints: ${JSON.stringify(uniqueFiles)}`);
+
+        for (const file of uniqueFiles) {
+          const fileBreakpoints = allBreakpoints.filter(
+            (bp) => bp.file === file,
+          );
+          addLog(
+            `Processing file: ${file} with breakpoints: ${JSON.stringify(fileBreakpoints)}`,
+          );
+
+          const fileEntry = await fs.getFile(file);
+          if (!fileEntry) {
+            addLog(
+              `Could not find file entry for ${file}, skipping breakpoints`,
+            );
+            console.warn(`File entry not found for ${file}`);
+            continue;
+          }
+
+          // Get the full filesystem path
+          const fullFilePath = fs.getFullPath(fileEntry.path);
+          addLog(
+            `File entry found for ${file}: ${JSON.stringify(fileEntry)} with full path: ${fullFilePath}`,
+          );
+          addLog(
+            `Setting breakpoints for ${file} (path: ${fullFilePath}): ${JSON.stringify(fileBreakpoints)}`,
+          );
+
+          const bpResp = await invoke<{ breakpoints?: IBreakpoint[] }>(
+            "set_breakpoints",
+            {
+              breakpoints: fileBreakpoints,
+              filePath: fullFilePath,
+            },
+          );
+          addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpResp)}`);
+          if (bpResp.breakpoints) {
+            const verifiedBps = bpResp.breakpoints.map((bp) => ({
+              ...bp,
+              file,
+              verified: bp.verified !== false,
+            }));
+            addLog(
+              `Verified breakpoints for ${file}: ${JSON.stringify(verifiedBps)}`,
+            );
+            setActiveBreakpoints((current) => {
+              const othersInOtherFiles = current.filter(
+                (bp) => bp.file !== file,
+              );
+              return [...othersInOtherFiles, ...verifiedBps];
+            });
+          }
+        }
+
+        // Call configuration_done after setting all breakpoints
         await invoke("configuration_done")
           .then((response) => {
             addLog("configurationDone: " + response);
