@@ -6,7 +6,6 @@ mod debugger;
 use debug_state::DebugSessionState;
 use debugger::client::{emit_status_update, BreakpointInput, DAPClient, DAPMessage, MessageType};
 use debugger::util::parse_lldb_result;
-use rand::Rng;
 use serde_json::Value;
 use shellexpand;
 use std::fs;
@@ -16,7 +15,6 @@ use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 #[derive(serde::Serialize)]
@@ -233,82 +231,36 @@ async fn launch_debug_session(
                 *debugger_type = Some("rust".to_string());
             }
 
-            let mut attempt = 0;
-            let max_attempts = 5;
-            let mut lldb_port;
-            let mut child = loop {
-                // Choose a starting port based on base 9123 and a random offset for attempts > 0.
-                let base_port = 9123;
-                let offset = if attempt == 0 {
-                    0
-                } else {
-                    rand::rng().random_range(1..100)
-                };
-                lldb_port = base_port + offset;
+            // Find an available port for lldb-dap
+            let lldb_port = crate::debugger::util::find_available_port(9123)
+                .map_err(|e| format!("Could not find available port: {}", e))?;
 
-                println!(
-                    "Attempt {}: Using port {} for lldb-dap",
-                    attempt + 1,
-                    lldb_port
-                );
+            println!("Using port {} for lldb-dap", lldb_port);
 
-                // (Keep lldb_dap_paths and lldb_dap_path lookup as before.)
-                let lldb_dap_paths = [
-                    "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap",
-                    "/usr/bin/lldb-dap",
-                    "/usr/local/bin/lldb-dap",
-                ];
+            // Search for lldb-dap in various locations
+            let lldb_dap_paths = [
+                "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap",
+                "/usr/bin/lldb-dap",
+                "/usr/local/bin/lldb-dap",
+            ];
 
-                let lldb_dap_path = lldb_dap_paths
-                    .iter()
-                    .find(|&&path| std::path::Path::new(path).exists())
-                    .ok_or_else(|| "Could not find lldb-dap executable. Please ensure LLDB with DAP support is installed.".to_string())?;
+            let lldb_dap_path = lldb_dap_paths
+                .iter()
+                .find(|&&path| std::path::Path::new(path).exists())
+                .ok_or_else(|| "Could not find lldb-dap executable. Please ensure LLDB with DAP support is installed.".to_string())?;
 
-                println!("Using lldb-dap at: {}", lldb_dap_path);
+            println!("Using lldb-dap at: {}", lldb_dap_path);
 
-                // Spawn the lldb-dap process.
-                let mut child = Command::new(lldb_dap_path)
-                    .arg("--port")
-                    .arg(lldb_port.to_string())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                    .map_err(|e| format!("Failed to spawn lldb-dap process: {}", e))?;
+            // 2. Spawn the lldb-dap process
+            let mut child = Command::new(lldb_dap_path)
+                .arg("--port")
+                .arg(lldb_port.to_string())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("Failed to spawn lldb-dap process: {}", e))?;
 
-                println!("Spawned lldb-dap process with PID: {}", child.id());
-
-                // Poll the process for up to 500ms.
-                let start = Instant::now();
-                let mut exit_code = None;
-                while start.elapsed() < Duration::from_millis(500) {
-                    if let Ok(Some(status)) = child.try_wait() {
-                        exit_code = status.code();
-                        break;
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-
-                if let Some(code) = exit_code {
-                    if code == 1 {
-                        println!("Process exited quickly with code 1; retrying with a new port.");
-                        attempt += 1;
-                        if attempt >= max_attempts {
-                            return Err(format!(
-                                "Failed to spawn lldb-dap on a new port after {} attempts",
-                                max_attempts
-                            ));
-                        }
-                        continue; // Loop to try a new port.
-                    } else {
-                        println!("Process launched with exit code {:?}", code);
-                        break child;
-                    }
-                } else {
-                    // Process did not exit within 500ms (assume it is running),
-                    // so break out of loop.
-                    break child;
-                }
-            };
+            println!("Spawned lldb-dap process with PID: {}", child.id());
 
             // Handle stdout and stderr just like with the Python debugger
             if let Some(stdout) = child.stdout.take() {
