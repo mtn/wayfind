@@ -1,10 +1,19 @@
-use std::net::TcpListener;
+use socket2::{Domain, Protocol, Socket, Type};
+use std::io;
+use std::net::{Ipv4Addr, SocketAddrV4};
 
-/// Find a free (available) TCP port starting at `start_port`.
-pub fn find_available_port(start_port: u16) -> std::io::Result<u16> {
+pub fn find_available_port(start_port: u16) -> io::Result<u16> {
     let mut port = start_port;
     loop {
-        if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+        // Create an IPv4 TCP socket.
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+        // Disable address reuse so lingering CLOSE_WAIT connections block new binds.
+        socket.set_reuse_address(false)?;
+
+        let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+        // Convert to a socket2 SockAddr.
+        let sock_addr = socket2::SockAddr::from(addr);
+        if socket.bind(&sock_addr).is_ok() {
             return Ok(port);
         }
         port = port.saturating_add(1);
