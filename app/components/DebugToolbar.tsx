@@ -136,7 +136,6 @@ export function DebugToolbar({
       console.log("Clicked step in");
       // Call the step_in command we just implemented
       await invoke("step_in", {
-        threadId: 1,
         granularity: "statement", // Default granularity
       });
       addLog("Stepping into next function");
@@ -151,7 +150,6 @@ export function DebugToolbar({
     try {
       // Call the step_out command we just implemented
       await invoke("step_out", {
-        threadId: 1,
         granularity: "statement", // Default granularity
       });
       addLog("Stepping out of current function");
