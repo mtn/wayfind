@@ -24,6 +24,8 @@ pub struct DebugSessionState {
     pub state: RwLock<DebuggerState>,
     // Add the missing debugger_type field
     pub debugger_type: RwLock<Option<String>>,
+    // Field to store the current thread id when stopped
+    pub current_thread_id: RwLock<Option<i64>>,
 }
 
 impl DebugSessionState {
@@ -36,6 +38,7 @@ impl DebugSessionState {
             state: RwLock::new(DebuggerState::NotStarted),
             // Initialize the new field
             debugger_type: RwLock::new(None),
+            current_thread_id: RwLock::new(None),
         }
     }
 
@@ -60,6 +63,7 @@ impl DebugSessionState {
                             let thread_id =
                                 body.get("threadId").and_then(|v| v.as_i64()).unwrap_or(1);
                             *guard = DebuggerState::Paused { reason, thread_id };
+                            *self.current_thread_id.write() = Some(thread_id);
                         }
                     }
                     "terminated" => {
