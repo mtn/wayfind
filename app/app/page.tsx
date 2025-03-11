@@ -525,27 +525,46 @@ export default function Home() {
         activeBreakpoints,
       );
       setQueuedBreakpoints([]);
+      addLog(`Merged breakpoints: ${JSON.stringify(allBreakpoints)}`);
+      console.log("Merged breakpoints", allBreakpoints);
 
       const uniqueFiles = Array.from(
         new Set(allBreakpoints.map((bp) => bp.file).filter(Boolean)),
       );
+      addLog(`Unique files from breakpoints: ${JSON.stringify(uniqueFiles)}`);
+      console.log("Unique files", uniqueFiles);
+
       for (const file of uniqueFiles) {
         const fileBreakpoints = allBreakpoints.filter((bp) => bp.file === file);
+        addLog(
+          `Processing file: ${file} with breakpoints: ${JSON.stringify(fileBreakpoints)}`,
+        );
+        console.log(`Processing file: ${file}`, fileBreakpoints);
 
         // Find the FileEntry with this name to get its path
-        const fileEntry = files.find((f) => f.name === file);
+        const fileEntry = await fs.getFile(file);
+        console.log("FILES", files);
+        console.log("FILE ENTRY", fileEntry);
         if (!fileEntry) {
           addLog(`Could not find file entry for ${file}, skipping breakpoints`);
+          console.warn(`File entry not found for ${file}`);
           continue;
         }
 
         // Get the full filesystem path
         const fullFilePath = fs.getFullPath(fileEntry.path);
+        addLog(
+          `File entry found for ${file}: ${JSON.stringify(fileEntry)} with full path: ${fullFilePath}`,
+        );
+        console.log(`Full file path for ${file}:`, fullFilePath);
 
         addLog(
           `Setting breakpoints for ${file} (path: ${fullFilePath}): ${JSON.stringify(fileBreakpoints)}`,
         );
-
+        console.log(`Invoking set_breakpoints for ${file}`, {
+          breakpoints: fileBreakpoints,
+          filePath: fullFilePath,
+        });
         const bpResp = await invoke<{ breakpoints?: IBreakpoint[] }>(
           "set_breakpoints",
           {
@@ -554,18 +573,38 @@ export default function Home() {
           },
         );
         addLog(`Breakpoint response for ${file}: ${JSON.stringify(bpResp)}`);
+        console.log(`Breakpoint response for ${file}:`, bpResp);
         if (bpResp.breakpoints) {
           const verifiedBps = bpResp.breakpoints.map((bp) => ({
             ...bp,
             file, // Ensure file is set on returned breakpoints
             verified: bp.verified !== false, // Default to true if undefined
           }));
+          addLog(
+            `Verified breakpoints for ${file}: ${JSON.stringify(verifiedBps)}`,
+          );
+          console.log(`Verified breakpoints for ${file}:`, verifiedBps);
 
           setActiveBreakpoints((current) => {
             // Remove current breakpoints for this file
             const othersInOtherFiles = current.filter((bp) => bp.file !== file);
+            console.log(
+              `Preserving breakpoints for other files:`,
+              othersInOtherFiles,
+            );
+            addLog(
+              `Preserving breakpoints for other files for ${file}: ${JSON.stringify(othersInOtherFiles)}`,
+            );
             // Add the newly verified breakpoints
-            return [...othersInOtherFiles, ...verifiedBps];
+            const newActive = [...othersInOtherFiles, ...verifiedBps];
+            console.log(
+              `New active breakpoints after adding ${file}:`,
+              newActive,
+            );
+            addLog(
+              `New active breakpoints for ${file}: ${JSON.stringify(newActive)}`,
+            );
+            return newActive;
           });
         }
       }
