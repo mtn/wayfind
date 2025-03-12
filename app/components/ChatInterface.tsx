@@ -43,16 +43,26 @@ export function ChatInterface({
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
 
   const updateSlashSuggestions = (text: string) => {
-    if (text.startsWith("/")) {
+    if (text.startsWith("/file ")) {
+      const query = text.slice(6).trim();
+      const matches = files.filter((f) =>
+        f.name.toLowerCase().includes(query.toLowerCase()),
+      );
+      setFileSuggestions(matches);
+      setSuggestions([]);
+    } else if (text.startsWith("/")) {
       if ("/file".startsWith(text)) {
         setSuggestions(["/file"]);
       } else {
         setSuggestions([]);
       }
+      setFileSuggestions([]);
     } else {
       setSuggestions([]);
+      setFileSuggestions([]);
     }
   };
 
@@ -77,7 +87,6 @@ export function ChatInterface({
         const result = await onEvaluate(expression);
         return { message: `Evaluation result: ${result}` };
       }
-      // For unknown tools, return nothing.
     },
   });
 
@@ -100,7 +109,6 @@ export function ChatInterface({
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
-    // Send the prompt along with the session token
     handleSubmit(e, {
       body: { content: input },
       experimental_attachments: attachments,
@@ -174,7 +182,7 @@ export function ChatInterface({
         )}
       </div>
 
-      {/* Suggestions Dropdown */}
+      {/* Suggestions Dropdown for Commands */}
       {suggestions.length > 0 && (
         <div
           className="absolute bg-white border rounded shadow p-1 z-10"
@@ -190,6 +198,30 @@ export function ChatInterface({
               }}
             >
               <div className="font-medium">{s}</div>
+              <div className="text-xs text-gray-500">
+                Insert file and/or directory
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* File Suggestions Dropdown */}
+      {fileSuggestions.length > 0 && (
+        <div
+          className="absolute bg-white border rounded shadow p-1 z-10"
+          style={{ bottom: "60px", left: "16px", maxWidth: "300px" }}
+        >
+          {fileSuggestions.map((file, idx) => (
+            <div
+              key={idx}
+              className="cursor-pointer hover:bg-gray-200 p-1"
+              onClick={() => {
+                setInput("/file " + file.name + " ");
+                setFileSuggestions([]);
+              }}
+            >
+              <div className="font-medium">{file.name}</div>
               <div className="text-xs text-gray-500">
                 Insert file and/or directory
               </div>
