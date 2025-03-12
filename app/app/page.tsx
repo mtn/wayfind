@@ -49,7 +49,7 @@ export default function Home() {
 
   const [debugEngine, setDebugEngine] = useState<string>("python");
   const [rustBinaryPath, setRustBinaryPath] = useState<string>(
-    "~/Documents/workspace/wayfind/target/debug/rust_program",
+    "~/Documents/workspace/scratch/zed/target/debug/zed",
   );
 
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
