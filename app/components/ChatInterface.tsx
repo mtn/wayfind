@@ -234,13 +234,13 @@ export function ChatInterface({
       {/* Suggestions Dropdown for Commands */}
       {suggestions.length > 0 && (
         <div
-          className="absolute bg-white border rounded shadow p-1 z-10"
-          style={{ bottom: "60px", left: "16px", maxWidth: "300px" }}
+          className="absolute bg-white border rounded shadow py-1 px-2 z-10 w-auto"
+          style={{ bottom: "60px", left: "16px", right: "16px" }}
         >
           {suggestions.map((s, idx) => (
             <div
               key={idx}
-              className="cursor-pointer hover:bg-gray-200 p-1"
+              className="cursor-pointer hover:bg-gray-200 p-0.5"
               onClick={() => {
                 setInput(s + " ");
                 setSuggestions([]);
@@ -258,13 +258,13 @@ export function ChatInterface({
       {/* File Suggestions Dropdown */}
       {fileSuggestions.length > 0 && (
         <div
-          className="absolute bg-white border rounded shadow p-1 z-10 max-h-64 overflow-y-auto"
-          style={{ bottom: "60px", left: "16px", maxWidth: "300px" }}
+          className="absolute bg-white border rounded shadow py-1 px-2 z-10 max-h-64 overflow-y-auto w-auto"
+          style={{ bottom: "60px", left: "16px", right: "16px" }}
         >
           {fileSuggestions.map((file, idx) => (
             <div
               key={idx}
-              className="cursor-pointer hover:bg-gray-200 p-1"
+              className="cursor-pointer hover:bg-gray-200 p-0.5"
               onClick={() => {
                 const currentQuery = input.slice(6).trim();
                 const parts = currentQuery.split("/");
