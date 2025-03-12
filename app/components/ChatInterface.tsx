@@ -26,6 +26,8 @@ interface ChatInterfaceProps {
   onContinue: () => void;
   // Callback to evaluate an expression. Should return a promise resolving to a string.
   onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
+  // Optional callback to lazily expand a directory based on its relative path.
+  onLazyExpandDirectory?: (directoryPath: string) => Promise<void>;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -34,12 +36,48 @@ function extractUserPrompt(content: string): string {
   return match ? match[1].trim() : content;
 }
 
+// Helper function to locate a directory in the file tree based on an array of path parts.
+function findDirectory(
+  pathParts: string[],
+  fileNodes: FileEntry[],
+): FileEntry | undefined {
+  let currentNodes = fileNodes;
+  let result: FileEntry | undefined;
+  for (const part of pathParts) {
+    result = currentNodes.find(
+      (f) =>
+        f.name.toLowerCase() === part.toLowerCase() && f.type === "directory",
+    );
+    if (!result) return undefined;
+    currentNodes = result.children || [];
+  }
+  return result;
+}
+
+// Helper function to get file suggestions based on a query.
+function getFileSuggestions(query: string, fileTree: FileEntry[]): FileEntry[] {
+  const parts = query.split("/");
+  if (parts.length === 1) {
+    return fileTree.filter((f) =>
+      f.name.toLowerCase().startsWith(query.toLowerCase()),
+    );
+  }
+  const dirPath = parts.slice(0, parts.length - 1);
+  const partial = parts[parts.length - 1];
+  const dir = findDirectory(dirPath, fileTree);
+  if (!dir || !dir.children) return [];
+  return dir.children.filter((child) =>
+    child.name.toLowerCase().startsWith(partial.toLowerCase()),
+  );
+}
+
 export function ChatInterface({
   files,
   onSetBreakpoint,
   onLaunch,
   onContinue,
   onEvaluate,
+  onLazyExpandDirectory,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -48,10 +86,21 @@ export function ChatInterface({
   const updateSlashSuggestions = (text: string) => {
     if (text.startsWith("/file ")) {
       const query = text.slice(6).trim();
-      const matches = files.filter((f) =>
-        f.name.toLowerCase().includes(query.toLowerCase()),
-      );
-      setFileSuggestions(matches);
+      if (query.endsWith("/")) {
+        const dirPath = query.slice(0, -1);
+        if (onLazyExpandDirectory) {
+          onLazyExpandDirectory(dirPath).then(() => {
+            const matches = getFileSuggestions(query, files);
+            setFileSuggestions(matches);
+          });
+        } else {
+          const matches = getFileSuggestions(query, files);
+          setFileSuggestions(matches);
+        }
+      } else {
+        const matches = getFileSuggestions(query, files);
+        setFileSuggestions(matches);
+      }
       setSuggestions([]);
     } else if (text.startsWith("/")) {
       if ("/file".startsWith(text)) {
@@ -209,7 +258,7 @@ export function ChatInterface({
       {/* File Suggestions Dropdown */}
       {fileSuggestions.length > 0 && (
         <div
-          className="absolute bg-white border rounded shadow p-1 z-10"
+          className="absolute bg-white border rounded shadow p-1 z-10 max-h-64 overflow-y-auto"
           style={{ bottom: "60px", left: "16px", maxWidth: "300px" }}
         >
           {fileSuggestions.map((file, idx) => (
@@ -217,7 +266,11 @@ export function ChatInterface({
               key={idx}
               className="cursor-pointer hover:bg-gray-200 p-1"
               onClick={() => {
-                setInput("/file " + file.name + " ");
+                const currentQuery = input.slice(6).trim();
+                const parts = currentQuery.split("/");
+                parts[parts.length - 1] = file.name;
+                const newQuery = parts.join("/") + " ";
+                setInput("/file " + newQuery);
                 setFileSuggestions([]);
               }}
             >

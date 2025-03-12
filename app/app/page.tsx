@@ -414,7 +414,7 @@ export default function Home() {
 
         invoke("set_breakpoints", {
           breakpoints: breakpointsToSend,
-          filePath: fullFilePath, // Use full path instead of just the filename
+          filePath: fullFilePath, // Use full path instead of just the file name
         })
           .then((data) => {
             console.log(`set_breakpoints response: ${JSON.stringify(data)}`);
@@ -876,6 +876,11 @@ export default function Home() {
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}
                 onEvaluate={evaluateExpression}
+                onLazyExpandDirectory={async (directoryPath: string) => {
+                  await fs.toggleDirectoryExpanded(directoryPath);
+                  const updated = await fs.getEntries("/");
+                  setFiles([...updated]);
+                }}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
