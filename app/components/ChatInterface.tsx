@@ -42,6 +42,19 @@ export function ChatInterface({
   onEvaluate,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  const updateSlashSuggestions = (text: string) => {
+    if (text.startsWith("/")) {
+      if ("/file".startsWith(text)) {
+        setSuggestions(["/file"]);
+      } else {
+        setSuggestions([]);
+      }
+    } else {
+      setSuggestions([]);
+    }
+  };
 
   // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
   // Instead, intercept tool calls via onToolCall.
@@ -96,7 +109,7 @@ export function ChatInterface({
   };
 
   return (
-    <div className="flex flex-col h-full border-t">
+    <div className="flex flex-col h-full border-t relative">
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message) => (
@@ -104,7 +117,11 @@ export function ChatInterface({
             key={message.id}
             className={`
               p-3 rounded-lg text-sm
-              ${message.role === "user" ? "bg-primary/10 ml-auto max-w-[80%]" : "bg-muted mr-auto max-w-[80%]"}
+              ${
+                message.role === "user"
+                  ? "bg-primary/10 ml-auto max-w-[80%]"
+                  : "bg-muted mr-auto max-w-[80%]"
+              }
             `}
           >
             {message.parts ? (
@@ -157,6 +174,30 @@ export function ChatInterface({
         )}
       </div>
 
+      {/* Suggestions Dropdown */}
+      {suggestions.length > 0 && (
+        <div
+          className="absolute bg-white border rounded shadow p-1 z-10"
+          style={{ bottom: "60px", left: "16px", maxWidth: "300px" }}
+        >
+          {suggestions.map((s, idx) => (
+            <div
+              key={idx}
+              className="cursor-pointer hover:bg-gray-200 p-1"
+              onClick={() => {
+                setInput(s + " ");
+                setSuggestions([]);
+              }}
+            >
+              <div className="font-medium">{s}</div>
+              <div className="text-xs text-gray-500">
+                Insert file and/or directory
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Input Form */}
       <form
         onSubmit={onSubmit}
@@ -167,6 +208,7 @@ export function ChatInterface({
           onChange={(e) => {
             setInput(e.target.value);
             handleInputChange(e);
+            updateSlashSuggestions(e.target.value);
           }}
           placeholder="Type your message..."
           className="flex-1 px-3 py-2 text-sm rounded-md border bg-background"
