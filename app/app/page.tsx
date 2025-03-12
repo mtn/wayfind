@@ -277,6 +277,13 @@ export default function Home() {
             setExecutionFile(null);
             setExecutionLine(null);
             setIsDebugSessionActive(false);
+            setActiveBreakpoints((currActive) => {
+              setQueuedBreakpoints((prevQueued) => [
+                ...prevQueued,
+                ...currActive.map((bp) => ({ ...bp, verified: false })),
+              ]);
+              return [];
+            });
           } else if (status === "paused") {
             // When paused, force watch expressions to update
             forceWatchEvaluation();
