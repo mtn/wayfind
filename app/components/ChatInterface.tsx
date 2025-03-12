@@ -8,6 +8,7 @@ import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 import type { EvaluationResult } from "@/components/DebugToolbar";
+import { LexicalEditor } from "@/components/LexicalEditor";
 
 interface Attachment {
   name: string;
@@ -335,15 +336,13 @@ export function ChatInterface({
             return null;
           })()}
         <div className="flex gap-2">
-          <input
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              handleInputChange(e);
-              updateSlashSuggestions(e.target.value);
+          <LexicalEditor
+            initialValue={input}
+            onChange={(val) => {
+              setInput(val);
+              // Optionally, if you need to trigger suggestions, you may call updateSlashSuggestions(val) here.
+              updateSlashSuggestions(val);
             }}
-            placeholder="Type your message..."
-            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background"
           />
           <Button type="submit" size="icon">
             <SendIcon className="h-4 w-4" />
