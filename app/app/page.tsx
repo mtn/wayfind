@@ -484,7 +484,9 @@ export default function Home() {
         addLog(`Merged breakpoints: ${JSON.stringify(allBreakpoints)}`);
 
         const uniqueFiles = Array.from(
-          new Set(allBreakpoints.map((bp) => bp.file).filter(Boolean)),
+          new Set(
+            allBreakpoints.map((bp) => bp.file).filter((f): f is string => !!f),
+          ),
         );
         addLog(`Unique files from breakpoints: ${JSON.stringify(uniqueFiles)}`);
 
@@ -594,7 +596,9 @@ export default function Home() {
       console.log("Merged breakpoints", allBreakpoints);
 
       const uniqueFiles = Array.from(
-        new Set(allBreakpoints.map((bp) => bp.file).filter(Boolean)),
+        new Set(
+          allBreakpoints.map((bp) => bp.file).filter((f): f is string => !!f),
+        ),
       );
       addLog(`Unique files from breakpoints: ${JSON.stringify(uniqueFiles)}`);
       console.log("Unique files", uniqueFiles);
