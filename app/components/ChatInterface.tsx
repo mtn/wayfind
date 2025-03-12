@@ -115,6 +115,17 @@ export function ChatInterface({
     }
   };
 
+  const parseFileCommand = (input: string): FileEntry | null => {
+    if (!input.startsWith("/file ")) return null;
+    const candidate = input.slice(6).trim();
+    return (
+      files.find(
+        (f) =>
+          f.type === "file" && f.name.toLowerCase() === candidate.toLowerCase(),
+      ) || null
+    );
+  };
+
   // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
   // Instead, intercept tool calls via onToolCall.
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
@@ -158,9 +169,20 @@ export function ChatInterface({
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
+    const experimentalAttachments = [...attachments];
+    if (input.startsWith("/file ")) {
+      const fileEntry = parseFileCommand(input);
+      if (fileEntry && fileEntry.content) {
+        experimentalAttachments.push({
+          name: fileEntry.name,
+          contentType: "text/plain",
+          url: `data:text/plain;base64,${btoa(fileEntry.content)}`,
+        });
+      }
+    }
     handleSubmit(e, {
       body: { content: input },
-      experimental_attachments: attachments,
+      experimental_attachments: experimentalAttachments,
     });
     setInput("");
   };
@@ -286,21 +308,47 @@ export function ChatInterface({
       {/* Input Form */}
       <form
         onSubmit={onSubmit}
-        className="p-4 flex gap-2 border-t bg-background"
+        className="p-4 flex flex-col gap-2 border-t bg-background"
       >
-        <input
-          value={input}
-          onChange={(e) => {
-            setInput(e.target.value);
-            handleInputChange(e);
-            updateSlashSuggestions(e.target.value);
-          }}
-          placeholder="Type your message..."
-          className="flex-1 px-3 py-2 text-sm rounded-md border bg-background"
-        />
-        <Button type="submit" size="icon">
-          <SendIcon className="h-4 w-4" />
-        </Button>
+        {input.startsWith("/file ") &&
+          (() => {
+            const match = input.match(/^\/file\s+(\S+)(.*)$/);
+            if (match) {
+              const fileCandidate = match[1];
+              const rest = match[2];
+              const valid = !!parseFileCommand("/file " + fileCandidate);
+              return (
+                <div>
+                  <span
+                    className={
+                      valid
+                        ? "text-green-500 text-xs font-medium"
+                        : "text-red-500 text-xs font-medium"
+                    }
+                  >
+                    /file {fileCandidate}
+                  </span>
+                  <span className="text-xs font-medium">{rest}</span>
+                </div>
+              );
+            }
+            return null;
+          })()}
+        <div className="flex gap-2">
+          <input
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              handleInputChange(e);
+              updateSlashSuggestions(e.target.value);
+            }}
+            placeholder="Type your message..."
+            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background"
+          />
+          <Button type="submit" size="icon">
+            <SendIcon className="h-4 w-4" />
+          </Button>
+        </div>
       </form>
     </div>
   );
