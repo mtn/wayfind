@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { FileEntry } from "@/lib/fileSystem";
 import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import ChatInput from "@/components/ChatInput"; // ensure this file exists and is exported as default
 
 import type { EvaluationResult } from "@/components/DebugToolbar";
 
@@ -19,15 +18,15 @@ interface Attachment {
 interface ChatInterfaceProps {
   // An array of files that provide context.
   files: FileEntry[];
-  // Callback to update breakpoints.
+  // Callback to update breakpoints (as if the user clicked the gutter).
   onSetBreakpoint: (line: number) => void;
   // Callback to launch a debug session.
   onLaunch: () => void;
   // Callback to continue execution.
   onContinue: () => void;
-  // Callback to evaluate an expression.
+  // Callback to evaluate an expression. Should return a promise resolving to a string.
   onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
-  // Optional callback to lazily expand a directory.
+  // Optional callback to lazily expand a directory based on its relative path.
   onLazyExpandDirectory?: (directoryPath: string) => Promise<void>;
 }
 
@@ -37,7 +36,7 @@ function extractUserPrompt(content: string): string {
   return match ? match[1].trim() : content;
 }
 
-// Helper function to locate a directory in the file tree.
+// Helper function to locate a directory in the file tree based on an array of path parts.
 function findDirectory(
   pathParts: string[],
   fileNodes: FileEntry[],
@@ -80,12 +79,10 @@ export function ChatInterface({
   onEvaluate,
   onLazyExpandDirectory,
 }: ChatInterfaceProps) {
-  // editorText holds the plain text from our Lexical-based ChatInput.
-  const [editorText, setEditorText] = useState("");
+  const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
 
-  // Update suggestions based on input.
   const updateSlashSuggestions = (text: string) => {
     if (text.startsWith("/file ")) {
       const query = text.slice(6).trim();
@@ -118,10 +115,9 @@ export function ChatInterface({
     }
   };
 
-  // Parse a file command from text.
-  const parseFileCommand = (text: string): FileEntry | null => {
-    if (!text.startsWith("/file ")) return null;
-    const candidate = text.slice(6).trim();
+  const parseFileCommand = (input: string): FileEntry | null => {
+    if (!input.startsWith("/file ")) return null;
+    const candidate = input.slice(6).trim();
     return (
       files.find(
         (f) =>
@@ -130,8 +126,9 @@ export function ChatInterface({
     );
   };
 
-  // Configure useChat.
-  const { messages, handleSubmit, isLoading } = useChat({
+  // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
+  // Instead, intercept tool calls via onToolCall.
+  const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 5,
     async onToolCall({ toolCall }) {
@@ -153,23 +150,28 @@ export function ChatInterface({
     },
   });
 
-  // Build attachments from files (for extra context) – left as stub.
+  // TODO for larger projects we can't just append everything into the context
+  // Create attachments from files (for additional context).
   const attachments: Attachment[] = [];
   files.forEach((f) => {
     if (f.type === "directory") {
-      // TODO: handle directories.
+      // TODO
     } else {
-      // Optional: add file attachment based on file content.
-      // attachments.push({ ... });
+      // TODO need to improve / reenable functionality for getting code into LLM
+      // attachments.push({
+      //   name: f.name,
+      //   contentType: "text/plain",
+      //   url: f.content ? `data:text/plain;base64,${btoa(f.content)}` : "",
+      // });
     }
   });
 
-  const handleChatSubmit = (e: React.FormEvent) => {
+  const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editorText.trim()) return;
+    if (!input.trim()) return;
     const experimentalAttachments = [...attachments];
-    if (editorText.startsWith("/file ")) {
-      const fileEntry = parseFileCommand(editorText);
+    if (input.startsWith("/file ")) {
+      const fileEntry = parseFileCommand(input);
       if (fileEntry && fileEntry.content) {
         experimentalAttachments.push({
           name: fileEntry.name,
@@ -179,10 +181,10 @@ export function ChatInterface({
       }
     }
     handleSubmit(e, {
-      body: { content: editorText },
+      body: { content: input },
       experimental_attachments: experimentalAttachments,
     });
-    setEditorText("");
+    setInput("");
   };
 
   return (
@@ -193,7 +195,8 @@ export function ChatInterface({
           <div
             key={message.id}
             className={`
-              p-3 rounded-lg text-sm ${
+              p-3 rounded-lg text-sm
+              ${
                 message.role === "user"
                   ? "bg-primary/10 ml-auto max-w-[80%]"
                   : "bg-muted mr-auto max-w-[80%]"
@@ -261,7 +264,7 @@ export function ChatInterface({
               key={idx}
               className="cursor-pointer hover:bg-gray-200 p-0.5"
               onClick={() => {
-                setEditorText(s + " ");
+                setInput(s + " ");
                 setSuggestions([]);
               }}
             >
@@ -285,11 +288,11 @@ export function ChatInterface({
               key={idx}
               className="cursor-pointer hover:bg-gray-200 p-0.5"
               onClick={() => {
-                const currentQuery = editorText.slice(6).trim();
+                const currentQuery = input.slice(6).trim();
                 const parts = currentQuery.split("/");
                 parts[parts.length - 1] = file.name;
                 const newQuery = parts.join("/") + " ";
-                setEditorText("/file " + newQuery);
+                setInput("/file " + newQuery);
                 setFileSuggestions([]);
               }}
             >
@@ -304,18 +307,48 @@ export function ChatInterface({
 
       {/* Input Form */}
       <form
-        onSubmit={handleChatSubmit}
+        onSubmit={onSubmit}
         className="p-4 flex flex-col gap-2 border-t bg-background"
       >
-        <ChatInput
-          onChange={(text) => {
-            setEditorText(text);
-            updateSlashSuggestions(text);
-          }}
-        />
-        <Button type="submit" size="icon">
-          <SendIcon className="h-4 w-4" />
-        </Button>
+        {input.startsWith("/file ") &&
+          (() => {
+            const match = input.match(/^\/file\s+(\S+)(.*)$/);
+            if (match) {
+              const fileCandidate = match[1];
+              const rest = match[2];
+              const valid = !!parseFileCommand("/file " + fileCandidate);
+              return (
+                <div>
+                  <span
+                    className={
+                      valid
+                        ? "text-green-500 text-xs font-medium"
+                        : "text-red-500 text-xs font-medium"
+                    }
+                  >
+                    /file {fileCandidate}
+                  </span>
+                  <span className="text-xs font-medium">{rest}</span>
+                </div>
+              );
+            }
+            return null;
+          })()}
+        <div className="flex gap-2">
+          <input
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              handleInputChange(e);
+              updateSlashSuggestions(e.target.value);
+            }}
+            placeholder="Type your message..."
+            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background"
+          />
+          <Button type="submit" size="icon">
+            <SendIcon className="h-4 w-4" />
+          </Button>
+        </div>
       </form>
     </div>
   );
