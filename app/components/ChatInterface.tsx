@@ -75,11 +75,12 @@ export function ChatInterface({
     if (f.type === "directory") {
       // TODO
     } else {
-      attachments.push({
-        name: f.name,
-        contentType: "text/plain",
-        url: f.content ? `data:text/plain;base64,${btoa(f.content)}` : "",
-      });
+      // TODO need to improve / reenable functionality for getting code into LLM
+      // attachments.push({
+      //   name: f.name,
+      //   contentType: "text/plain",
+      //   url: f.content ? `data:text/plain;base64,${btoa(f.content)}` : "",
+      // });
     }
   });
 
