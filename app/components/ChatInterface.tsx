@@ -86,19 +86,15 @@ export function ChatInterface({
   const editorRef = useRef<HTMLDivElement>(null);
 
   const updateSlashSuggestions = (text: string) => {
-    if (text.startsWith("/file ")) {
-      const query = text.slice(6).trim();
-      if (query.endsWith("/")) {
+    const fileCommandMatch = text.match(/^\/file\s+(\S*)$/);
+    if (fileCommandMatch) {
+      const query = fileCommandMatch[1];
+      if (query.endsWith("/") && onLazyExpandDirectory) {
         const dirPath = query.slice(0, -1);
-        if (onLazyExpandDirectory) {
-          onLazyExpandDirectory(dirPath).then(() => {
-            const matches = getFileSuggestions(query, files);
-            setFileSuggestions(matches);
-          });
-        } else {
+        onLazyExpandDirectory(dirPath).then(() => {
           const matches = getFileSuggestions(query, files);
           setFileSuggestions(matches);
-        }
+        });
       } else {
         const matches = getFileSuggestions(query, files);
         setFileSuggestions(matches);
