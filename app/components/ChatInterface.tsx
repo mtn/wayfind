@@ -371,7 +371,7 @@ export function ChatInterface({
                 submitMessage();
               }
             }}
-            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[50px]"
+            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[30px]"
           />
           <Button type="submit" size="icon">
             <SendIcon className="h-4 w-4" />
