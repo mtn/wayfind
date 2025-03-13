@@ -27,15 +27,12 @@ export default function FileOpener({
 }: FileOpenerProps) {
   const [search, setSearch] = useState("");
 
-  // Limit to the first 50 files if no search text to keep the list small:
-  const filteredFiles =
-    search.length > 0
-      ? files.filter(
-          (f) =>
-            f.type === "file" &&
-            f.name.toLowerCase().includes(search.toLowerCase()),
-        )
-      : files.filter((f) => f.type === "file").slice(0, 10);
+  const filteredFiles = files.filter(
+    (f) =>
+      f.type === "file" &&
+      (search.length === 0 ||
+        f.name.toLowerCase().includes(search.toLowerCase())),
+  );
 
   return (
     // Outer wrapper covers the screen. We do NOT attach onClick={onClose} here,
@@ -66,7 +63,7 @@ export default function FileOpener({
           autoFocus
           className="w-full px-3 py-2 border-b outline-none"
         />
-        <CommandList>
+        <CommandList className="max-h-64 overflow-y-auto">
           {filteredFiles.map((file) => (
             <CommandItem
               key={file.path}
