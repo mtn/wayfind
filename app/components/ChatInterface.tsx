@@ -213,6 +213,14 @@ export function ChatInterface({
     }
   };
 
+  const submitMessage = () => {
+    // Create a fake event to pass to onSubmit.
+    const fakeEvent = {
+      preventDefault: () => {},
+    } as React.FormEvent<HTMLFormElement>;
+    onSubmit(fakeEvent);
+  };
+
   return (
     <div className="flex flex-col h-full border-t relative">
       {/* Chat Messages */}
@@ -343,11 +351,11 @@ export function ChatInterface({
             onInput={(e) => {
               const newText = e.currentTarget.textContent || "";
               setInput(newText);
-              handleInputChange(e);
+              handleInputChange({
+                target: { value: newText },
+              } as React.ChangeEvent<HTMLInputElement>);
               updateSlashSuggestions(newText);
-              requestAnimationFrame(() => {
-                highlightFileCommand();
-              });
+              requestAnimationFrame(() => highlightFileCommand());
             }}
             onPaste={(e) => {
               e.preventDefault();
@@ -356,6 +364,12 @@ export function ChatInterface({
               requestAnimationFrame(() => {
                 highlightFileCommand();
               });
+            }}
+            onKeyDown={(e) => {
+              if (e.metaKey && e.key === "Enter") {
+                e.preventDefault();
+                submitMessage();
+              }
             }}
             className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[50px]"
           />
