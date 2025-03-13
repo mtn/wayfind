@@ -6,6 +6,7 @@ import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
 import DebugToolbar from "@/components/DebugToolbar";
+import FileOpener from "@/components/FileOpener";
 import WatchExpressions, {
   WatchExpressionsHandle,
 } from "@/components/WatchExpressions";
@@ -746,6 +747,18 @@ export default function Home() {
     }
   };
 
+  const [showFileOpener, setShowFileOpener] = useState(false);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === "p") {
+        e.preventDefault();
+        setShowFileOpener(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const hasWorkspace = Boolean(fs.getWorkspacePath());
   return (
     <div className="h-screen flex flex-col">
@@ -905,6 +918,14 @@ export default function Home() {
           </ResizablePanelGroup>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {showFileOpener && (
+        <FileOpener
+          files={files}
+          onSelectFile={handleFileSelect}
+          onClose={() => setShowFileOpener(false)}
+        />
+      )}
     </div>
   );
 }
