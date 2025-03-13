@@ -30,8 +30,9 @@ export default function FileOpener({
   const allFiles = fileSystem.getAllFileEntries();
   const filteredFiles = allFiles.filter(
     (f) =>
-      search.length === 0 ||
-      f.name.toLowerCase().includes(search.toLowerCase()),
+      f.type === "file" &&
+      (search.length === 0 ||
+        f.path.toLowerCase().includes(search.toLowerCase())),
   );
 
   return (
@@ -73,7 +74,7 @@ export default function FileOpener({
               }}
               className="p-2 hover:bg-gray-100 cursor-pointer"
             >
-              {file.name}
+              {file.path}
             </CommandItem>
           ))}
           {filteredFiles.length === 0 && (
