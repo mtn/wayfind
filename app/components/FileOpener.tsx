@@ -57,7 +57,7 @@ export default function FileOpener({
         <CommandInput
           placeholder="Type file name..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onValueChange={setSearch}
           autoFocus
           className="w-full px-3 py-2 border-b outline-none"
         />
