@@ -183,4 +183,51 @@ export class InMemoryFileSystem {
 
     return null;
   }
+
+  // Recursively collects all file entries from the tree.
+  public getAllFileEntries(): FileEntry[] {
+    function flatten(entries: FileEntry[]): FileEntry[] {
+      return entries.reduce((acc, entry) => {
+        acc.push(entry);
+        if (entry.type === "directory" && entry.children) {
+          acc.push(...flatten(entry.children));
+        }
+        return acc;
+      }, [] as FileEntry[]);
+    }
+    return flatten(this.files);
+  }
+
+  // Expand non-hidden and non-gitignored directories in the background.
+  public async expandDefaultDirectories(): Promise<void> {
+    async function processDir(
+      fs: InMemoryFileSystem,
+      entries: FileEntry[],
+    ): Promise<void> {
+      const promises = entries
+        .filter(
+          (e) =>
+            e.type === "directory" &&
+            !e.name.startsWith(".") &&
+            e.name !== ".git" &&
+            e.name !== "node_modules" &&
+            e.name !== "target",
+        )
+        .map(async (entry) => {
+          // Expand directory if not already expanded or if children are empty.
+          if (
+            !entry.expanded ||
+            !entry.children ||
+            entry.children.length === 0
+          ) {
+            await fs.toggleDirectoryExpanded(entry.path);
+          }
+          if (entry.children && entry.children.length > 0) {
+            await processDir(fs, entry.children);
+          }
+        });
+      await Promise.all(promises);
+    }
+    await processDir(this, this.files);
+  }
 }

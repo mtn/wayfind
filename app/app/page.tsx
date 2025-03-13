@@ -240,6 +240,11 @@ export default function Home() {
         setFs(newFs);
         setFiles(newFiles);
 
+        // In the background, expand non-hidden and non-gitignored directories
+        newFs.expandDefaultDirectories().then(() => {
+          setFiles(newFs.getAllFileEntries());
+        });
+
         // Select first file if available
         const firstFile = newFiles.find((f) => f.type === "file");
         if (firstFile) {
@@ -546,8 +551,8 @@ export default function Home() {
           if (bpResp.breakpoints) {
             const verifiedBps = bpResp.breakpoints.map((bp) => ({
               ...bp,
-              file,
-              verified: bp.verified !== false,
+              file, // Ensure file is set on returned breakpoints
+              verified: bp.verified !== false, // Default to true if undefined
             }));
             addLog(
               `Verified breakpoints for ${file}: ${JSON.stringify(verifiedBps)}`,
@@ -921,7 +926,7 @@ export default function Home() {
 
       {showFileOpener && (
         <FileOpener
-          files={files}
+          fileSystem={fs}
           onSelectFile={handleFileSelect}
           onClose={() => setShowFileOpener(false)}
         />

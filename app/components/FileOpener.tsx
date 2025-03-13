@@ -15,23 +15,23 @@ export interface FileEntry {
 }
 
 interface FileOpenerProps {
-  files: FileEntry[];
+  fileSystem: { getAllFileEntries: () => FileEntry[] };
   onSelectFile: (file: FileEntry) => void;
   onClose: () => void;
 }
 
 export default function FileOpener({
-  files,
+  fileSystem,
   onSelectFile,
   onClose,
 }: FileOpenerProps) {
   const [search, setSearch] = useState("");
 
-  const filteredFiles = files.filter(
+  const allFiles = fileSystem.getAllFileEntries();
+  const filteredFiles = allFiles.filter(
     (f) =>
-      f.type === "file" &&
-      (search.length === 0 ||
-        f.name.toLowerCase().includes(search.toLowerCase())),
+      search.length === 0 ||
+      f.name.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
