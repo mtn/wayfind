@@ -383,8 +383,9 @@ export function ChatInterface({
             }}
             className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[30px] whitespace-pre-wrap"
           />
-          <Button type="submit" size="icon">
-            <SendIcon className="h-4 w-4" />
+          <Button type="submit">
+            <span className="text-white">Send</span>{" "}
+            <span className="text-gray-500">cmd-enter</span>
           </Button>
         </div>
       </form>
