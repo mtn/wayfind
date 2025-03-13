@@ -27,6 +27,7 @@ export default function FileOpener({
 }: FileOpenerProps) {
   const [search, setSearch] = useState("");
 
+  // Limit to the first 50 files if no search text to keep the list small:
   const filteredFiles =
     search.length > 0
       ? files.filter(
@@ -37,12 +38,19 @@ export default function FileOpener({
       : files.filter((f) => f.type === "file").slice(0, 10);
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={onClose}
-    >
+    // Outer wrapper covers the screen. We do NOT attach onClick={onClose} here,
+    // to avoid swallowing keystrokes in the child.
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      {/* This element sits behind the Command panel and closes the dialog on click */}
+      <div
+        className="absolute inset-0"
+        onClick={onClose}
+        data-testid="background-overlay"
+      />
+
+      {/* The Command panel itself, which stops click propagation so it doesn't close */}
       <Command
-        className="bg-white rounded-md shadow-lg w-1/3"
+        className="relative bg-white rounded-md shadow-lg w-1/3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-3 py-2 border-b text-sm font-bold">Open File</div>
