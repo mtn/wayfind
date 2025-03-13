@@ -6,6 +6,7 @@ import { FileTree } from "@/components/FileTree";
 import { MonacoEditorWrapper } from "@/components/MonacoEditor";
 import { ChatInterface } from "@/components/ChatInterface";
 import DebugToolbar from "@/components/DebugToolbar";
+import FileOpener from "@/components/FileOpener";
 import WatchExpressions, {
   WatchExpressionsHandle,
 } from "@/components/WatchExpressions";
@@ -238,6 +239,11 @@ export default function Home() {
         const newFs = new InMemoryFileSystem(newFiles, selected);
         setFs(newFs);
         setFiles(newFiles);
+
+        // In the background, expand non-hidden and non-gitignored directories
+        newFs.expandDefaultDirectories().then(() => {
+          setFiles(newFs.getAllFileEntries());
+        });
 
         // Select first file if available
         const firstFile = newFiles.find((f) => f.type === "file");
@@ -545,8 +551,8 @@ export default function Home() {
           if (bpResp.breakpoints) {
             const verifiedBps = bpResp.breakpoints.map((bp) => ({
               ...bp,
-              file,
-              verified: bp.verified !== false,
+              file, // Ensure file is set on returned breakpoints
+              verified: bp.verified !== false, // Default to true if undefined
             }));
             addLog(
               `Verified breakpoints for ${file}: ${JSON.stringify(verifiedBps)}`,
@@ -746,6 +752,18 @@ export default function Home() {
     }
   };
 
+  const [showFileOpener, setShowFileOpener] = useState(false);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === "p") {
+        e.preventDefault();
+        setShowFileOpener(true);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const hasWorkspace = Boolean(fs.getWorkspacePath());
   return (
     <div className="h-screen flex flex-col">
@@ -905,6 +923,14 @@ export default function Home() {
           </ResizablePanelGroup>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {showFileOpener && (
+        <FileOpener
+          fileSystem={fs}
+          onSelectFile={handleFileSelect}
+          onClose={() => setShowFileOpener(false)}
+        />
+      )}
     </div>
   );
 }
