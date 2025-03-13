@@ -27,10 +27,14 @@ export default function FileOpener({
 }: FileOpenerProps) {
   const [search, setSearch] = useState("");
 
-  const filteredFiles = files.filter(
-    (f) =>
-      f.type === "file" && f.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filteredFiles =
+    search.length > 0
+      ? files.filter(
+          (f) =>
+            f.type === "file" &&
+            f.name.toLowerCase().includes(search.toLowerCase()),
+        )
+      : files.filter((f) => f.type === "file").slice(0, 10);
 
   return (
     <div
@@ -39,14 +43,15 @@ export default function FileOpener({
     >
       <Command
         className="bg-white rounded-md shadow-lg w-1/3"
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
+        <div className="px-3 py-2 border-b text-sm font-bold">Open File</div>
         <CommandInput
-          placeholder="Type to search files..."
+          placeholder="Type file name..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           autoFocus
-          className="w-full px-3 py-2 border-b"
+          className="w-full px-3 py-2 border-b outline-none"
         />
         <CommandList>
           {filteredFiles.map((file) => (
