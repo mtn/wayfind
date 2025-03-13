@@ -52,6 +52,11 @@ export default function FileOpener({
       <Command
         className="relative bg-white rounded-md shadow-lg w-1/3"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            onClose();
+          }
+        }}
       >
         <div className="px-3 py-2 border-b text-sm font-bold">Open File</div>
         <CommandInput
