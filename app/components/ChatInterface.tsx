@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
 import { FileEntry } from "@/lib/fileSystem";
 import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
 
 import type { EvaluationResult } from "@/components/DebugToolbar";
 
@@ -82,6 +83,7 @@ export function ChatInterface({
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
+  const editorRef = useRef<HTMLDivElement>(null);
 
   const updateSlashSuggestions = (text: string) => {
     if (text.startsWith("/file ")) {
@@ -124,6 +126,31 @@ export function ChatInterface({
           f.type === "file" && f.name.toLowerCase() === candidate.toLowerCase(),
       ) || null
     );
+  };
+
+  // Function to highlight the /file command in the contenteditable div.
+  const highlightFileCommand = () => {
+    if (!editorRef.current) return;
+    const element = editorRef.current;
+    const caretPos = getCaretPosition(element);
+    const textContent = element.innerText;
+    let html = textContent;
+    const regex = /^\/file\s+(\S+)(.*)$/;
+    const match = textContent.match(regex);
+    if (match) {
+      const fileCandidate = match[1];
+      const rest = match[2];
+      const valid = files.some(
+        (f) =>
+          f.type === "file" &&
+          f.name.toLowerCase() === fileCandidate.trim().toLowerCase(),
+      );
+      html =
+        `<span style="color:${valid ? "green" : "red"}">/file ${fileCandidate}</span>` +
+        rest;
+    }
+    element.innerHTML = html;
+    setCaretPosition(element, caretPos);
   };
 
   // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
@@ -185,6 +212,9 @@ export function ChatInterface({
       experimental_attachments: experimentalAttachments,
     });
     setInput("");
+    if (editorRef.current) {
+      editorRef.current.innerText = "";
+    }
   };
 
   return (
@@ -316,7 +346,11 @@ export function ChatInterface({
             if (match) {
               const fileCandidate = match[1];
               const rest = match[2];
-              const valid = !!parseFileCommand("/file " + fileCandidate);
+              const valid = files.some(
+                (f) =>
+                  f.type === "file" &&
+                  f.name.toLowerCase() === fileCandidate.trim().toLowerCase(),
+              );
               return (
                 <div>
                   <span
@@ -335,15 +369,27 @@ export function ChatInterface({
             return null;
           })()}
         <div className="flex gap-2">
-          <input
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
+          <div
+            ref={editorRef}
+            contentEditable
+            onInput={(e) => {
+              const newText = e.currentTarget.textContent || "";
+              setInput(newText);
               handleInputChange(e);
-              updateSlashSuggestions(e.target.value);
+              updateSlashSuggestions(newText);
+              requestAnimationFrame(() => {
+                highlightFileCommand();
+              });
             }}
-            placeholder="Type your message..."
-            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background"
+            onPaste={(e) => {
+              e.preventDefault();
+              const text = e.clipboardData.getData("text/plain");
+              document.execCommand("insertText", false, text);
+              requestAnimationFrame(() => {
+                highlightFileCommand();
+              });
+            }}
+            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[50px]"
           />
           <Button type="submit" size="icon">
             <SendIcon className="h-4 w-4" />
