@@ -74,6 +74,17 @@ export default function Home() {
   // Add ref to track the last status sequence number processed
   const lastStatusSeqRef = useRef<number | null>(null);
 
+  const handleShowDebugSync = () => {
+    const syncSnapshot = {
+      debugStatus,
+      breakpoints: mergeBreakpoints(queuedBreakpoints, activeBreakpoints),
+      debugLog,
+      executionFile,
+      executionLine,
+    };
+    console.log("DebugSync Snapshot:", syncSnapshot);
+  };
+
   // Update ref whenever the state changes
   useEffect(() => {
     debugStatusRef.current = debugStatus;
@@ -738,6 +749,14 @@ export default function Home() {
   const hasWorkspace = Boolean(fs.getWorkspacePath());
   return (
     <div className="h-screen flex flex-col">
+      <div className="p-2">
+        <button
+          onClick={handleShowDebugSync}
+          className="px-4 py-2 bg-blue-500 text-white rounded"
+        >
+          Show Debug Sync Info
+        </button>
+      </div>
       <ResizablePanelGroup direction="horizontal">
         {/* Left side: three vertical sections (40:40:20) */}
         <ResizablePanel defaultSize={33} minSize={10}>
