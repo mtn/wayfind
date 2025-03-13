@@ -4,7 +4,6 @@ import { useState, useRef } from "react";
 import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
 import { FileEntry } from "@/lib/fileSystem";
-import { SendIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
 
@@ -236,7 +235,7 @@ export function ChatInterface({
           <div
             key={message.id}
             className={`
-              p-3 rounded-lg text-sm
+              p-3 rounded-lg text-sm whitespace-pre-wrap
               ${
                 message.role === "user"
                   ? "bg-primary/10 ml-auto max-w-[80%]"
