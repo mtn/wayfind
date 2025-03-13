@@ -336,34 +336,6 @@ export function ChatInterface({
         onSubmit={onSubmit}
         className="p-4 flex flex-col gap-2 border-t bg-background"
       >
-        {input.startsWith("/file ") &&
-          (() => {
-            const match = input.match(/^\/file\s+(\S+)(.*)$/);
-            if (match) {
-              const fileCandidate = match[1];
-              const rest = match[2];
-              const valid = files.some(
-                (f) =>
-                  f.type === "file" &&
-                  f.name.toLowerCase() === fileCandidate.trim().toLowerCase(),
-              );
-              return (
-                <div>
-                  <span
-                    className={
-                      valid
-                        ? "text-green-500 text-xs font-medium"
-                        : "text-red-500 text-xs font-medium"
-                    }
-                  >
-                    /file {fileCandidate}
-                  </span>
-                  <span className="text-xs font-medium">{rest}</span>
-                </div>
-              );
-            }
-            return null;
-          })()}
         <div className="flex gap-2">
           <div
             ref={editorRef}
