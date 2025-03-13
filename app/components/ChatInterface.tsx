@@ -113,16 +113,16 @@ export function ChatInterface({
     }
   };
 
-  const parseFileCommand = (input: string): FileEntry | null => {
+  function parseFileCommand(input: string): FileEntry | null {
     if (!input.startsWith("/file ")) return null;
-    const candidate = input.slice(6).trim();
+    const candidate = input.slice(6).trim().split(/\s+/)[0];
     return (
       files.find(
         (f) =>
           f.type === "file" && f.name.toLowerCase() === candidate.toLowerCase(),
       ) || null
     );
-  };
+  }
 
   // Function to highlight the /file command in the contenteditable div.
   const highlightFileCommand = () => {
