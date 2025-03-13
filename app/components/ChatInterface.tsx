@@ -72,6 +72,24 @@ function getFileSuggestions(query: string, fileTree: FileEntry[]): FileEntry[] {
   );
 }
 
+// New helper function to parse all /file commands in the text.
+function parseFileCommands(text: string, allFiles: FileEntry[]): FileEntry[] {
+  const regex = /\/file\s+([^\s]+)/g;
+  const matchedFiles: FileEntry[] = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const candidate = match[1];
+    const found = allFiles.find(
+      (f) =>
+        f.type === "file" && f.name.toLowerCase() === candidate.toLowerCase(),
+    );
+    if (found) {
+      matchedFiles.push(found);
+    }
+  }
+  return matchedFiles;
+}
+
 export function ChatInterface({
   files,
   onSetBreakpoint,
@@ -112,17 +130,6 @@ export function ChatInterface({
       setFileSuggestions([]);
     }
   };
-
-  function parseFileCommand(input: string): FileEntry | null {
-    if (!input.startsWith("/file ")) return null;
-    const candidate = input.slice(6).trim().split(/\s+/)[0];
-    return (
-      files.find(
-        (f) =>
-          f.type === "file" && f.name.toLowerCase() === candidate.toLowerCase(),
-      ) || null
-    );
-  }
 
   // Function to highlight the /file command in the contenteditable div.
   const highlightFileCommand = () => {
@@ -193,16 +200,16 @@ export function ChatInterface({
     e.preventDefault();
     if (!input.trim()) return;
     const experimentalAttachments = [...attachments];
-    if (input.startsWith("/file ")) {
-      const fileEntry = parseFileCommand(input);
-      if (fileEntry && fileEntry.content) {
+    const matchedFiles = parseFileCommands(input, files);
+    matchedFiles.forEach((fileEntry) => {
+      if (fileEntry.content) {
         experimentalAttachments.push({
           name: fileEntry.name,
           contentType: "text/plain",
           url: `data:text/plain;base64,${btoa(fileEntry.content)}`,
         });
       }
-    }
+    });
     handleSubmit(e, {
       body: { content: input },
       experimental_attachments: experimentalAttachments,
@@ -366,12 +373,15 @@ export function ChatInterface({
               });
             }}
             onKeyDown={(e) => {
-              if (e.metaKey && e.key === "Enter") {
+              if (e.key === "Enter" && !e.metaKey) {
+                e.preventDefault();
+                document.execCommand("insertLineBreak");
+              } else if (e.metaKey && e.key === "Enter") {
                 e.preventDefault();
                 submitMessage();
               }
             }}
-            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[30px]"
+            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[30px] whitespace-pre-wrap"
           />
           <Button type="submit" size="icon">
             <SendIcon className="h-4 w-4" />
