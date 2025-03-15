@@ -742,7 +742,8 @@ export default function Home() {
 
   const handleContinue = async () => {
     try {
-      await invoke("continue_debug");
+      // Hardcoded thread ID, will need to fix for non-python
+      await invoke("continue_debug", { threadId: 1 });
       addLog("Continuing execution");
     } catch (err) {
       addLog(
