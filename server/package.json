@@ -7,8 +7,8 @@
     "dev": "ts-node-dev --respawn -r tsconfig-paths/register src/index.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.1.9",
-    "ai": "^4.1.45",
+    "@ai-sdk/openai": "^1.2.5",
+    "ai": "^4.1.61",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

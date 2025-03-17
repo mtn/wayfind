@@ -1,6 +1,5 @@
 import { Router, Request, Response } from "express";
-// import { openai } from "@ai-sdk/openai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { openai } from "@ai-sdk/openai";
 import { streamText } from "ai";
 import {
   setBreakpoint,
@@ -44,7 +43,7 @@ router.post("/", async (req: Request, res: Response) => {
             it stops, evaluate it the variable, and so on until it terminates.`,
     };
     const result = streamText({
-      model: anthropic("claude-3-5-sonnet-latest"),
+      model: openai("o3-mini"),
       messages: [systemPrompt, ...messages],
       tools: {
         setBreakpoint,
