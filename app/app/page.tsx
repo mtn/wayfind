@@ -56,6 +56,20 @@ export default function Home() {
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
 
+  // Add refs for tracking breakpoints
+  const queuedBreakpointsRef = useRef<IBreakpoint[]>([]);
+  const activeBreakpointsRef = useRef<IBreakpoint[]>([]);
+
+  // Keep refs in sync with state -- should not be necessary but would be annoying to debug...
+  // Ideally this implementation can be improved.
+  useEffect(() => {
+    queuedBreakpointsRef.current = queuedBreakpoints;
+  }, [queuedBreakpoints]);
+
+  useEffect(() => {
+    activeBreakpointsRef.current = activeBreakpoints;
+  }, [activeBreakpoints]);
+
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   // Updated to use canonical debug state value "notstarted"
   const [debugStatus, setDebugStatus] = useState("notstarted");
@@ -78,7 +92,10 @@ export default function Home() {
   const handleShowDebugSync = () => {
     const syncSnapshot = {
       debugStatus,
-      breakpoints: mergeBreakpoints(queuedBreakpoints, activeBreakpoints),
+      breakpoints: mergeBreakpoints(
+        queuedBreakpointsRef.current,
+        activeBreakpointsRef.current,
+      ),
       debugLog,
       executionFile,
       executionLine,
@@ -295,10 +312,16 @@ export default function Home() {
             setExecutionLine(null);
             setIsDebugSessionActive(false);
             setActiveBreakpoints((currActive) => {
-              setQueuedBreakpoints((prevQueued) => [
-                ...prevQueued,
-                ...currActive.map((bp) => ({ ...bp, verified: false })),
-              ]);
+              const updatedBreakpoints = currActive.map((bp) => ({
+                ...bp,
+                verified: false,
+              }));
+              setQueuedBreakpoints((prevQueued) => {
+                const newQueued = [...prevQueued, ...updatedBreakpoints];
+                queuedBreakpointsRef.current = newQueued;
+                return newQueued;
+              });
+              activeBreakpointsRef.current = [];
               return [];
             });
           } else if (status === "paused") {
@@ -382,21 +405,26 @@ export default function Home() {
           (bp) => bp.line === lineNumber && bp.file === currentFilePath,
         );
         console.log(`Breakpoint exists in queue? ${exists}`);
+        let newQueuedBreakpoints: IBreakpoint[];
         if (!exists) {
           console.log(
             `Adding breakpoint to queue: line ${lineNumber}, file ${currentFilePath}`,
           );
-          return [
+          newQueuedBreakpoints = [
             ...currentQueued,
             { line: lineNumber, file: currentFilePath },
           ];
+        } else {
+          console.log(
+            `Removing breakpoint from queue: line ${lineNumber}, file ${currentFilePath}`,
+          );
+          newQueuedBreakpoints = currentQueued.filter(
+            (bp) => !(bp.line === lineNumber && bp.file === currentFilePath),
+          );
         }
-        console.log(
-          `Removing breakpoint from queue: line ${lineNumber}, file ${currentFilePath}`,
-        );
-        return currentQueued.filter(
-          (bp) => !(bp.line === lineNumber && bp.file === currentFilePath),
-        );
+        // Update the ref with the new breakpoints immediately
+        queuedBreakpointsRef.current = newQueuedBreakpoints;
+        return newQueuedBreakpoints;
       });
     } else {
       console.log(`Debug session active, setting active breakpoint`);
@@ -416,6 +444,9 @@ export default function Home() {
         console.log(
           `New breakpoints after toggle: ${JSON.stringify(newBreakpoints)}`,
         );
+
+        // Update the ref with the new breakpoints immediately
+        activeBreakpointsRef.current = newBreakpoints;
 
         // Get full file path for the current file
         if (!selectedFileRef.current) return newBreakpoints;
@@ -456,7 +487,13 @@ export default function Home() {
                   `Preserving breakpoints for other files: ${JSON.stringify(othersInOtherFiles)}`,
                 );
                 // Add the newly verified breakpoints
-                return [...othersInOtherFiles, ...verifiedBps];
+                const updatedActiveBreakpoints = [
+                  ...othersInOtherFiles,
+                  ...verifiedBps,
+                ];
+                // Update the ref with the new breakpoints immediately
+                activeBreakpointsRef.current = updatedActiveBreakpoints;
+                return updatedActiveBreakpoints;
               });
             }
           })
@@ -501,10 +538,11 @@ export default function Home() {
 
         // Merge queued and active breakpoints and set them for the new session.
         const allBreakpoints = mergeBreakpoints(
-          queuedBreakpoints,
-          activeBreakpoints,
+          queuedBreakpointsRef.current,
+          activeBreakpointsRef.current,
         );
         setQueuedBreakpoints([]);
+        queuedBreakpointsRef.current = [];
         addLog(`Merged breakpoints: ${JSON.stringify(allBreakpoints)}`);
 
         const uniqueFiles = Array.from(
@@ -561,7 +599,9 @@ export default function Home() {
               const othersInOtherFiles = current.filter(
                 (bp) => bp.file !== file,
               );
-              return [...othersInOtherFiles, ...verifiedBps];
+              const updatedActive = [...othersInOtherFiles, ...verifiedBps];
+              activeBreakpointsRef.current = updatedActive;
+              return updatedActive;
             });
           }
         }
@@ -612,10 +652,11 @@ export default function Home() {
 
       // Merge queued and active breakpoints and set them for the new session.
       const allBreakpoints = mergeBreakpoints(
-        queuedBreakpoints,
-        activeBreakpoints,
+        queuedBreakpointsRef.current,
+        activeBreakpointsRef.current,
       );
       setQueuedBreakpoints([]);
+      queuedBreakpointsRef.current = [];
       addLog(`Merged breakpoints: ${JSON.stringify(allBreakpoints)}`);
       console.log("Merged breakpoints", allBreakpoints);
 
@@ -694,6 +735,8 @@ export default function Home() {
             addLog(
               `New active breakpoints for ${file}: ${JSON.stringify(newActive)}`,
             );
+            // Update the ref with the new active breakpoints
+            activeBreakpointsRef.current = newActive;
             return newActive;
           });
         }
