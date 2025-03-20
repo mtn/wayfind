@@ -43,7 +43,7 @@ router.post("/", async (req: Request, res: Response) => {
             it stops, evaluate it the variable, and so on until it terminates.`,
     };
     const result = streamText({
-      model: openai("o3-mini"),
+      model: openai("gpt-4o-mini"),
       messages: [systemPrompt, ...messages],
       tools: {
         setBreakpoint,
