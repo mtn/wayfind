@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
 import { FileEntry } from "@/lib/fileSystem";
@@ -28,6 +28,8 @@ interface ChatInterfaceProps {
   onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
   // Optional callback to lazily expand a directory based on its relative path.
   onLazyExpandDirectory?: (directoryPath: string) => Promise<void>;
+  // Optional callback to prefill the chat input.
+  onPrefillInput?: (prefillCallback: (text: string) => void) => void;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -96,6 +98,7 @@ export function ChatInterface({
   onContinue,
   onEvaluate,
   onLazyExpandDirectory,
+  onPrefillInput,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -226,6 +229,30 @@ export function ChatInterface({
     } as React.FormEvent<HTMLFormElement>;
     onSubmit(fakeEvent);
   };
+
+  // Register the prefill callback
+  useEffect(() => {
+    if (onPrefillInput) {
+      onPrefillInput((text: string) => {
+        // Set the input state that will be submitted
+        setInput(text);
+
+        // Update the contentEditable div
+        if (editorRef.current) {
+          editorRef.current.innerText = text;
+        }
+
+        // Also update the AI SDK's input state by simulating an input change event
+        handleInputChange({
+          target: { value: text },
+        } as React.ChangeEvent<HTMLInputElement>);
+
+        // Also run any highlighting logic
+        updateSlashSuggestions(text);
+        requestAnimationFrame(() => highlightFileCommand());
+      });
+    }
+  }, [onPrefillInput, handleInputChange]);
 
   return (
     <div className="flex flex-col h-full border-t relative">

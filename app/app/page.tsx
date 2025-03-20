@@ -505,6 +505,53 @@ export default function Home() {
     }
   };
 
+  const prefillChatInputRef = useRef<((text: string) => void) | null>(null);
+  const handleTestSetup = () => {
+    // 1. Set the workspace path
+    invoke("read_directory", {
+      path: "/Users/mtn/Documents/workspace/wayfind/dap/test_data/python",
+    })
+      .then(async (entries: any) => {
+        // Process entries to match your FileEntry structure
+        const mappedEntries = entries.map((entry: any) => ({
+          name: entry.name,
+          path: `./${entry.name}`,
+          type: entry.is_dir ? "directory" : "file",
+          content: entry.content || "",
+          expanded: false,
+          children: entry.is_dir ? [] : undefined,
+        }));
+
+        // Create fresh file system
+        const newFs = new InMemoryFileSystem(
+          mappedEntries,
+          "/Users/mtn/Documents/workspace/wayfind/dap/test_data/python",
+        );
+        setFs(newFs);
+        setFiles(mappedEntries);
+        const aFile = mappedEntries.find((f) => f.name === "a.py");
+        if (aFile) {
+          setSelectedFile(aFile);
+        }
+
+        // Set debugger to Python
+        setDebugEngine("python");
+
+        const testPrompt =
+          "set a breakpoint on line 13, then launch the debug session and trace the values next_val takes on as the program runs. you should continue execution and evaluate next_val 10 times. then report to me what values next_val took on.";
+
+        if (prefillChatInputRef.current) {
+          prefillChatInputRef.current(testPrompt);
+        }
+      })
+      .catch((error) => {
+        console.error("Error loading test directory:", error);
+      });
+
+    // For the chat input, we need to address that differently
+    // since it's maintained in the ChatInterface component
+  };
+
   const handleDebugSessionStart = async (force: boolean = false) => {
     if (!force && isDebugSessionActive && debugStatus !== "terminated") {
       addLog("Debug session is already launching or active, skipping");
@@ -818,6 +865,12 @@ export default function Home() {
         >
           Show Debug Sync Info
         </button>
+        <button
+          onClick={handleTestSetup}
+          className="px-4 py-2 bg-green-500 text-white rounded"
+        >
+          Test Setup
+        </button>
       </div>
       <ResizablePanelGroup direction="horizontal">
         {/* Left side: three vertical sections (40:40:20) */}
@@ -961,6 +1014,9 @@ export default function Home() {
                   await fs.toggleDirectoryExpanded(directoryPath);
                   const updated = await fs.getEntries("/");
                   setFiles([...updated]);
+                }}
+                onPrefillInput={(callback) => {
+                  prefillChatInputRef.current = callback;
                 }}
               />
             </ResizablePanel>
