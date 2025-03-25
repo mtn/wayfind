@@ -385,7 +385,7 @@ export function ChatInterface({
         onSubmit={onSubmit}
         className="p-4 flex flex-col gap-2 border-t bg-background"
       >
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-end">
           <div
             ref={editorRef}
             contentEditable
