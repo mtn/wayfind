@@ -26,6 +26,13 @@ export interface IBreakpoint {
   file?: string;
 }
 
+interface LoadedFileEntry {
+  name: string;
+  path: string;
+  content: string | null;
+  is_dir: boolean;
+}
+
 const initialFiles: FileEntry[] = [];
 
 export default function Home() {
@@ -508,19 +515,22 @@ export default function Home() {
   const prefillChatInputRef = useRef<((text: string) => void) | null>(null);
   const handleTestSetup = () => {
     // 1. Set the workspace path
-    invoke("read_directory", {
+    invoke<LoadedFileEntry[]>("read_directory", {
       path: "/Users/mtn/Documents/workspace/wayfind/dap/test_data/python",
     })
-      .then(async (entries: any) => {
+      .then(async (entries) => {
         // Process entries to match your FileEntry structure
-        const mappedEntries = entries.map((entry: any) => ({
-          name: entry.name,
-          path: `./${entry.name}`,
-          type: entry.is_dir ? "directory" : "file",
-          content: entry.content || "",
-          expanded: false,
-          children: entry.is_dir ? [] : undefined,
-        }));
+        const mappedEntries = entries.map(
+          (entry) =>
+            ({
+              name: entry.name,
+              path: `./${entry.name}`,
+              type: entry.is_dir ? "directory" : "file",
+              content: entry.content || "",
+              expanded: false,
+              children: entry.is_dir ? [] : undefined,
+            }) satisfies FileEntry,
+        );
 
         // Create fresh file system
         const newFs = new InMemoryFileSystem(

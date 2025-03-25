@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
 import { FileEntry } from "@/lib/fileSystem";
@@ -105,36 +105,39 @@ export function ChatInterface({
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
   const editorRef = useRef<HTMLDivElement>(null);
 
-  const updateSlashSuggestions = (text: string) => {
-    const fileCommandMatch = text.match(/^\/file\s+(\S*)$/);
-    if (fileCommandMatch) {
-      const query = fileCommandMatch[1];
-      if (query.endsWith("/") && onLazyExpandDirectory) {
-        const dirPath = query.slice(0, -1);
-        onLazyExpandDirectory(dirPath).then(() => {
+  const updateSlashSuggestions = useCallback(
+    (text: string) => {
+      const fileCommandMatch = text.match(/^\/file\s+(\S*)$/);
+      if (fileCommandMatch) {
+        const query = fileCommandMatch[1];
+        if (query.endsWith("/") && onLazyExpandDirectory) {
+          const dirPath = query.slice(0, -1);
+          onLazyExpandDirectory(dirPath).then(() => {
+            const matches = getFileSuggestions(query, files);
+            setFileSuggestions(matches);
+          });
+        } else {
           const matches = getFileSuggestions(query, files);
           setFileSuggestions(matches);
-        });
-      } else {
-        const matches = getFileSuggestions(query, files);
-        setFileSuggestions(matches);
-      }
-      setSuggestions([]);
-    } else if (text.startsWith("/")) {
-      if ("/file".startsWith(text)) {
-        setSuggestions(["/file"]);
+        }
+        setSuggestions([]);
+      } else if (text.startsWith("/")) {
+        if ("/file".startsWith(text)) {
+          setSuggestions(["/file"]);
+        } else {
+          setSuggestions([]);
+        }
+        setFileSuggestions([]);
       } else {
         setSuggestions([]);
+        setFileSuggestions([]);
       }
-      setFileSuggestions([]);
-    } else {
-      setSuggestions([]);
-      setFileSuggestions([]);
-    }
-  };
+    },
+    [files, onLazyExpandDirectory],
+  );
 
   // Function to highlight the /file command in the contenteditable div.
-  const highlightFileCommand = () => {
+  const highlightFileCommand = useCallback(() => {
     if (!editorRef.current) return;
     const element = editorRef.current;
     const caretPos = getCaretPosition(element);
@@ -156,7 +159,7 @@ export function ChatInterface({
     }
     element.innerHTML = html;
     setCaretPosition(element, caretPos);
-  };
+  }, [files]);
 
   // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
   // Instead, intercept tool calls via onToolCall.
@@ -252,7 +255,12 @@ export function ChatInterface({
         requestAnimationFrame(() => highlightFileCommand());
       });
     }
-  }, [onPrefillInput, handleInputChange]);
+  }, [
+    onPrefillInput,
+    handleInputChange,
+    highlightFileCommand,
+    updateSlashSuggestions,
+  ]);
 
   return (
     <div className="flex flex-col h-full border-t relative">
