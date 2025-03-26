@@ -1,2 +1,2 @@
 run:
-	npm run dev
+	DEBUG_CHAT=true npm run dev

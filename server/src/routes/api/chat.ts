@@ -1,3 +1,7 @@
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+const debug = process.env.DEBUG_CHAT === "true";
+
 import { Router, Request, Response } from "express";
 import { openai } from "@ai-sdk/openai";
 import { streamText } from "ai";
@@ -26,6 +30,10 @@ router.post("/", async (req: Request, res: Response) => {
       return;
     }
 
+    if (debug) {
+      console.log("Incoming messages:", JSON.stringify(messages, null, 2));
+    }
+
     // Call streamText from the AI SDK with tools and multi-step support.
     const systemPrompt = {
       role: "system",
@@ -40,7 +48,7 @@ router.post("/", async (req: Request, res: Response) => {
             defined on, otherwise, it'll come back as undefined.
             For example, if the user asks you how the value of a variable changes as the program runs,
             you should use your tools to set breakpoint(s) at lines that let you read the value, launch the program, continue till
-            it stops, evaluate it the variable, and so on until it terminates.`,
+            it stops, evaluate the variable, and so on until it terminates.`,
     };
     const result = streamText({
       model: openai("gpt-4o-mini"),
@@ -56,6 +64,11 @@ router.post("/", async (req: Request, res: Response) => {
 
     // Stream the result.
     if (typeof (result as any).pipe === "function") {
+      if (debug && typeof (result as any).on === "function") {
+        (result as any).on("data", (chunk: Buffer) => {
+          console.log("Stream chunk:", chunk.toString());
+        });
+      }
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -78,7 +91,9 @@ router.post("/", async (req: Request, res: Response) => {
           res.end();
           return;
         }
-        res.write(decoder.decode(value));
+        const decoded = decoder.decode(value);
+        if (debug) console.log("Stream chunk:", decoded);
+        res.write(decoded);
         read();
       }
       read();
