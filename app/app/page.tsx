@@ -17,6 +17,7 @@ import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { cpSync } from "node:fs";
 
 // TODO try and make these types non-optional
 export interface IBreakpoint {
@@ -96,8 +97,8 @@ export default function Home() {
   // Add ref to track the last status sequence number processed
   const lastStatusSeqRef = useRef<number | null>(null);
 
-  const handleShowDebugSync = () => {
-    const syncSnapshot = {
+  const getDebugSync = () => {
+    return {
       debugStatus,
       breakpoints: mergeBreakpoints(
         queuedBreakpointsRef.current,
@@ -107,6 +108,10 @@ export default function Home() {
       executionFile,
       executionLine,
     };
+  };
+
+  const handleShowDebugSync = () => {
+    const syncSnapshot = getDebugSync();
     console.log("DebugSync Snapshot:", syncSnapshot);
   };
 
@@ -1016,6 +1021,7 @@ export default function Home() {
             <ResizablePanel defaultSize={40}>
               <ChatInterface
                 files={files}
+                getDebugSync={getDebugSync}
                 onSetBreakpoint={handleBreakpointChange}
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}
