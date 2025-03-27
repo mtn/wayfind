@@ -166,6 +166,15 @@ export function ChatInterface({
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 5,
+    onFinish(message) {
+      console.log("onFinish called with message:", message);
+      // Look for any tool invocations in this message's parts
+      message.parts?.forEach((part, idx) => {
+        if (part.type === "tool-invocation") {
+          console.log(`Tool call ${idx}:`, part.toolInvocation);
+        }
+      });
+    },
     async onToolCall({ toolCall }) {
       if (toolCall.toolName === "setBreakpoint") {
         const { line } = toolCall.args as { line: number };
