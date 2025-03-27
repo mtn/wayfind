@@ -169,6 +169,13 @@ export function ChatInterface({
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 5,
+    experimental_prepareRequestBody({ messages, requestBody }) {
+      return {
+        ...requestBody,
+        messages,
+        debugState: getDebugSync(),
+      };
+    },
     async onToolCall({ toolCall }) {
       let actionResult;
       const debugSync = getDebugSync();

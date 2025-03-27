@@ -14,8 +14,25 @@ import {
 
 const router = Router();
 
-// This endpoint accepts a POST with a JSON body containing "messages"
-// and returns a streaming response from OpenAI.
+function getToolsForDebugStatus(debugStatus: string) {
+  const baseTools = { setBreakpoint };
+  switch (debugStatus) {
+    case "notstarted":
+    case "terminated":
+      return { ...baseTools, launchDebug };
+    case "paused":
+      return {
+        ...baseTools,
+        continueExecution,
+        evaluateExpression,
+      };
+    case "running":
+      return baseTools;
+    default:
+      return baseTools;
+  }
+}
+
 router.post("/", async (req: Request, res: Response) => {
   console.log("Hit the endpoint");
   if (req.method !== "POST") {
@@ -24,7 +41,7 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const { messages } = req.body;
+    const { messages, debugState } = req.body;
     if (!messages) {
       res.status(400).json({ error: "Missing messages in request body" });
       return;
@@ -34,31 +51,31 @@ router.post("/", async (req: Request, res: Response) => {
       console.log("Incoming messages:", JSON.stringify(messages, null, 2));
     }
 
-    // Call streamText from the AI SDK with tools and multi-step support.
+    const debugStatus = debugState?.debugStatus ?? "notstarted";
+    const tools = getToolsForDebugStatus(debugStatus);
+
     const systemPrompt = {
       role: "system",
       content: `You are a highly skilled debugging assistant.
             When you're asked questions about the code, you should always first consider using the debugging tools available to you
             to answer it efficiently and accurately. You have access to the following tools:
-            - setBreakpoint: Sets a breakpoint at a given line number.
-            - launchDebug: Launches the debugger.
-            - continueExecution: Continues execution until the next breakpoint.
-            - evaluateExpression: Evaluates an expression at the current execution point.
+            ${Object.keys(tools)
+              .map((tool) => `- ${tool}`)
+              .join("\n            ")}
+
+            Current debug status: ${debugStatus}
+
             Keep in mind that to read the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
             defined on, otherwise, it'll come back as undefined.
             For example, if the user asks you how the value of a variable changes as the program runs,
             you should use your tools to set breakpoint(s) at lines that let you read the value, launch the program, continue till
             it stops, evaluate the variable, and so on until it terminates.`,
     };
+
     const result = streamText({
       model: openai("gpt-4o-mini"),
       messages: [systemPrompt, ...messages],
-      tools: {
-        setBreakpoint,
-        launchDebug,
-        continueExecution,
-        evaluateExpression,
-      },
+      tools,
       maxSteps: 100,
     });
 
