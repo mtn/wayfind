@@ -26,6 +26,8 @@ interface ChatInterfaceProps {
   onContinue: () => void;
   // Callback to evaluate an expression. Should return a promise resolving to a string.
   onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
+  // Get the debug sync data to feed to the model.
+  getDebugSync: () => any;
   // Optional callback to lazily expand a directory based on its relative path.
   onLazyExpandDirectory?: (directoryPath: string) => Promise<void>;
   // Optional callback to prefill the chat input.
@@ -97,6 +99,7 @@ export function ChatInterface({
   onLaunch,
   onContinue,
   onEvaluate,
+  getDebugSync,
   onLazyExpandDirectory,
   onPrefillInput,
 }: ChatInterfaceProps) {
@@ -168,6 +171,13 @@ export function ChatInterface({
     maxSteps: 5,
     onFinish(message) {
       console.log("onFinish called with message:", message);
+
+      // Log out the debug sync state
+      const debugSync = getDebugSync();
+      if (debugSync) {
+        console.log("Current debug sync state:", debugSync);
+      }
+
       // Look for any tool invocations in this message's parts
       message.parts?.forEach((part, idx) => {
         if (part.type === "tool-invocation") {
