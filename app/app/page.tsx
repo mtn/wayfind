@@ -17,7 +17,6 @@ import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { cpSync } from "node:fs";
 
 // TODO try and make these types non-optional
 export interface IBreakpoint {
@@ -87,6 +86,13 @@ export default function Home() {
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
+  const toolCallLogRef = useRef<
+    Array<{
+      toolName: string;
+      timestamp: number;
+    }>
+  >([]);
+
   const [debugLog, setDebugLog] = useState<ReactNode[]>([]);
   const addLog = (msg: ReactNode) => setDebugLog((prev) => [...prev, msg]);
 
@@ -105,9 +111,20 @@ export default function Home() {
         activeBreakpointsRef.current,
       ),
       debugLog,
+      toolCallLog: toolCallLogRef.current,
       executionFile,
       executionLine,
     };
+  };
+
+  const logToolCall = (toolName: string) => {
+    toolCallLogRef.current = [
+      ...toolCallLogRef.current,
+      {
+        toolName,
+        timestamp: Date.now(),
+      },
+    ];
   };
 
   const handleShowDebugSync = () => {
@@ -1022,6 +1039,7 @@ export default function Home() {
               <ChatInterface
                 files={files}
                 getDebugSync={getDebugSync}
+                logToolCall={logToolCall}
                 onSetBreakpoint={handleBreakpointChange}
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}

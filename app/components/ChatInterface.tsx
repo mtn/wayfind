@@ -28,6 +28,8 @@ interface ChatInterfaceProps {
   onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
   // Get the debug sync data to feed to the model.
   getDebugSync: () => any;
+  // Callback to add a tool call to the tool call log
+  logToolCall: (toolName: string) => void;
   // Optional callback to lazily expand a directory based on its relative path.
   onLazyExpandDirectory?: (directoryPath: string) => Promise<void>;
   // Optional callback to prefill the chat input.
@@ -100,6 +102,7 @@ export function ChatInterface({
   onContinue,
   onEvaluate,
   getDebugSync,
+  logToolCall,
   onLazyExpandDirectory,
   onPrefillInput,
 }: ChatInterfaceProps) {
@@ -169,33 +172,73 @@ export function ChatInterface({
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 5,
-    async onToolCall({ toolCall }) {
-      let actionResult;
-      const debugSync = getDebugSync();
-
-      if (toolCall.toolName === "setBreakpoint") {
-        const { line } = toolCall.args as { line: number };
-        onSetBreakpoint(line);
-        actionResult = "Breakpoint set";
-      } else if (toolCall.toolName === "launchDebug") {
-        onLaunch();
-        actionResult = "Debug session launched";
-      } else if (toolCall.toolName === "continueExecution") {
-        onContinue();
-        actionResult = "Continued execution";
-      } else if (toolCall.toolName === "evaluateExpression") {
-        const { expression } = toolCall.args as { expression: string };
-        const result = await onEvaluate(expression);
-        actionResult = result ? `Evaluated: ${result.result}` : "No result";
-      }
-
+    experimental_prepareRequestBody({ messages, requestBody }) {
+      const debugState = getDebugSync();
+      console.log("Sending along debug state", debugState);
       return {
-        message: actionResult,
-        debugState: debugSync,
+        ...requestBody,
+        messages,
+        debugState,
       };
     },
-    onFinish(message) {
-      console.log("onFinish called with message:", message);
+    onResponse(response) {
+      console.log("Response from server:", response);
+    },
+    async onToolCall({ toolCall }) {
+      console.log("Tool call starting:", {
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        args: toolCall.args,
+      });
+
+      let actionResult;
+      const debugSync = getDebugSync();
+      console.log("Current debug state:", debugSync);
+
+      logToolCall(toolCall.toolName);
+      console.log("Logged tool call:", toolCall.toolName);
+
+      try {
+        if (toolCall.toolName === "setBreakpoint") {
+          const { line } = toolCall.args as { line: number };
+          console.log("Setting breakpoint at line:", line);
+          onSetBreakpoint(line);
+          actionResult = "Breakpoint set";
+          console.log("Breakpoint set successfully");
+        } else if (toolCall.toolName === "launchDebug") {
+          console.log("Launching debug session");
+          onLaunch();
+          actionResult = "Debug session launched";
+          console.log("Debug session launched successfully");
+        } else if (toolCall.toolName === "continueExecution") {
+          console.log("Continuing execution");
+          onContinue();
+          actionResult = "Continued execution";
+          console.log("Execution continued successfully");
+        } else if (toolCall.toolName === "evaluateExpression") {
+          const { expression } = toolCall.args as { expression: string };
+          console.log("Evaluating expression:", expression);
+          const result = await onEvaluate(expression);
+          actionResult = result ? `Evaluated: ${result.result}` : "No result";
+          console.log("Expression evaluation result:", actionResult);
+        }
+
+        console.log("Tool call completed successfully:", {
+          toolName: toolCall.toolName,
+          actionResult,
+        });
+
+        return {
+          message: actionResult,
+          debugState: debugSync,
+        };
+      } catch (error) {
+        console.error("Error in tool call execution:", {
+          toolName: toolCall.toolName,
+          error,
+        });
+        throw error;
+      }
     },
   });
 
