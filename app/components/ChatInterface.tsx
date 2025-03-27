@@ -173,10 +173,12 @@ export function ChatInterface({
     api: "http://localhost:3001/api/chat",
     maxSteps: 5,
     experimental_prepareRequestBody({ messages, requestBody }) {
+      const debugState = getDebugSync();
+      console.log("Sending along debug state", debugState);
       return {
         ...requestBody,
         messages,
-        debugState: getDebugSync(),
+        debugState,
       };
     },
     onResponse(response) {

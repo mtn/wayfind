@@ -17,7 +17,6 @@ import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { cpSync } from "node:fs";
 
 // TODO try and make these types non-optional
 export interface IBreakpoint {
@@ -87,7 +86,7 @@ export default function Home() {
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
-  const [toolCallLog, setToolCallLog] = useState<
+  const toolCallLogRef = useRef<
     Array<{
       toolName: string;
       timestamp: number;
@@ -112,20 +111,20 @@ export default function Home() {
         activeBreakpointsRef.current,
       ),
       debugLog,
-      toolCallLog: toolCallLog,
+      toolCallLog: toolCallLogRef.current,
       executionFile,
       executionLine,
     };
   };
 
   const logToolCall = (toolName: string) => {
-    setToolCallLog((prev) => [
-      ...prev,
+    toolCallLogRef.current = [
+      ...toolCallLogRef.current,
       {
         toolName,
         timestamp: Date.now(),
       },
-    ]);
+    ];
   };
 
   const handleShowDebugSync = () => {

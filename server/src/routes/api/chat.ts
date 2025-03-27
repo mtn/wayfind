@@ -71,8 +71,8 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const debugStatus = debugState?.debugStatus ?? "notstarted";
-    const recentToolCalls = debugState?.toolCalls ?? [];
-    const wasLaunchDebugRecentlyCalled = recentToolCalls.some(
+    const toolCallLog = debugState?.toolCallLog ?? [];
+    const wasLaunchDebugRecentlyCalled = toolCallLog.some(
       (call: ToolCall) =>
         call.toolName === "launchDebug" && Date.now() - call.timestamp < 5000,
     ); // within last 5 seconds
