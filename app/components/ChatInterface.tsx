@@ -28,6 +28,8 @@ interface ChatInterfaceProps {
   onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
   // Get the debug sync data to feed to the model.
   getDebugSync: () => any;
+  // Callback to add a tool call to the tool call log
+  logToolCall: (toolName: string) => void;
   // Optional callback to lazily expand a directory based on its relative path.
   onLazyExpandDirectory?: (directoryPath: string) => Promise<void>;
   // Optional callback to prefill the chat input.
@@ -100,6 +102,7 @@ export function ChatInterface({
   onContinue,
   onEvaluate,
   getDebugSync,
+  logToolCall,
   onLazyExpandDirectory,
   onPrefillInput,
 }: ChatInterfaceProps) {
@@ -179,6 +182,7 @@ export function ChatInterface({
     async onToolCall({ toolCall }) {
       let actionResult;
       const debugSync = getDebugSync();
+      logToolCall(toolCall.toolName);
 
       if (toolCall.toolName === "setBreakpoint") {
         const { line } = toolCall.args as { line: number };

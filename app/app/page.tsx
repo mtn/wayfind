@@ -87,6 +87,13 @@ export default function Home() {
   const [executionLine, setExecutionLine] = useState<number | null>(null);
   const [executionFile, setExecutionFile] = useState<string | null>(null);
 
+  const [toolCallLog, setToolCallLog] = useState<
+    Array<{
+      toolName: string;
+      timestamp: number;
+    }>
+  >([]);
+
   const [debugLog, setDebugLog] = useState<ReactNode[]>([]);
   const addLog = (msg: ReactNode) => setDebugLog((prev) => [...prev, msg]);
 
@@ -105,9 +112,20 @@ export default function Home() {
         activeBreakpointsRef.current,
       ),
       debugLog,
+      toolCallLog: toolCallLog,
       executionFile,
       executionLine,
     };
+  };
+
+  const logToolCall = (toolName: string) => {
+    setToolCallLog((prev) => [
+      ...prev,
+      {
+        toolName,
+        timestamp: Date.now(),
+      },
+    ]);
   };
 
   const handleShowDebugSync = () => {
@@ -1022,6 +1040,7 @@ export default function Home() {
               <ChatInterface
                 files={files}
                 getDebugSync={getDebugSync}
+                onToolCall={logToolCall}
                 onSetBreakpoint={handleBreakpointChange}
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}

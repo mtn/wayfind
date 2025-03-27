@@ -14,7 +14,26 @@ import {
 
 const router = Router();
 
-function getToolsForDebugStatus(debugStatus: string) {
+interface ToolCall {
+  toolName: string;
+  timestamp: number;
+}
+
+type DebugTools = {
+  setBreakpoint: typeof setBreakpoint;
+  launchDebug?: typeof launchDebug;
+  continueExecution?: typeof continueExecution;
+  evaluateExpression?: typeof evaluateExpression;
+};
+
+const toolDescriptions: Record<string, string> = {
+  setBreakpoint: "Sets a breakpoint at a given line number",
+  launchDebug: "Launches the debugger",
+  continueExecution: "Continues execution until the next breakpoint",
+  evaluateExpression: "Evaluates an expression at the current execution point",
+};
+
+function getToolsForDebugStatus(debugStatus: string): DebugTools {
   const baseTools = { setBreakpoint };
   switch (debugStatus) {
     case "notstarted":
@@ -52,7 +71,17 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const debugStatus = debugState?.debugStatus ?? "notstarted";
+    const recentToolCalls = debugState?.toolCalls ?? [];
+    const wasLaunchDebugRecentlyCalled = recentToolCalls.some(
+      (call: ToolCall) =>
+        call.toolName === "launchDebug" && Date.now() - call.timestamp < 5000,
+    ); // within last 5 seconds
+
     const tools = getToolsForDebugStatus(debugStatus);
+
+    if (wasLaunchDebugRecentlyCalled && "launchDebug" in tools) {
+      delete tools.launchDebug;
+    }
 
     const systemPrompt = {
       role: "system",
@@ -60,7 +89,7 @@ router.post("/", async (req: Request, res: Response) => {
             When you're asked questions about the code, you should always first consider using the debugging tools available to you
             to answer it efficiently and accurately. You have access to the following tools:
             ${Object.keys(tools)
-              .map((tool) => `- ${tool}`)
+              .map((tool) => `- ${tool}: ${toolDescriptions[tool]}`)
               .join("\n            ")}
 
             Current debug status: ${debugStatus}
@@ -115,7 +144,7 @@ router.post("/", async (req: Request, res: Response) => {
       }
       read();
     } else {
-      const text = await result;
+      const text = result;
       res.status(200).send(text);
     }
   } catch (error: any) {
