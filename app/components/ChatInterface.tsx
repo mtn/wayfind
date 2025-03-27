@@ -180,11 +180,6 @@ export function ChatInterface({
       } else if (toolCall.toolName === "launchDebug") {
         onLaunch();
         actionResult = "Debug session launched";
-        // Return modified debugState with "initializing" status
-        return {
-          message: actionResult,
-          debugState: { ...debugSync, debugStatus: "initializing" },
-        };
       } else if (toolCall.toolName === "continueExecution") {
         onContinue();
         actionResult = "Continued execution";
