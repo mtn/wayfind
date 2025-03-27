@@ -169,23 +169,14 @@ export function ChatInterface({
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 5,
-    onFinish(message) {
-      console.log("onFinish called with message:", message);
-
-      // Log out the debug sync state
-      const debugSync = getDebugSync();
-      if (debugSync) {
-        console.log("Current debug sync state:", debugSync);
-      }
-
-      // Look for any tool invocations in this message's parts
-      message.parts?.forEach((part, idx) => {
-        if (part.type === "tool-invocation") {
-          console.log(`Tool call ${idx}:`, part.toolInvocation);
-        }
-      });
+    onResponse(response) {
+      console.log("onResponse called with:", response);
     },
     async onToolCall({ toolCall }) {
+      console.log("onToolCall executing:", toolCall);
+      const debugSync = getDebugSync();
+      console.log("Debug sync at tool call:", debugSync);
+
       if (toolCall.toolName === "setBreakpoint") {
         const { line } = toolCall.args as { line: number };
         onSetBreakpoint(line);
@@ -201,6 +192,9 @@ export function ChatInterface({
         const result = await onEvaluate(expression);
         return { message: `Evaluation result: ${result}` };
       }
+    },
+    onFinish(message) {
+      console.log("onFinish called with message:", message);
     },
   });
 
