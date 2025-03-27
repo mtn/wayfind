@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
 import { useChat } from "ai/react";
 import { Button } from "@/components/ui/button";
 import { FileEntry } from "@/lib/fileSystem";
 import ReactMarkdown from "react-markdown";
 import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
+import { IBreakpoint } from "@/app/page";
 
 import type { EvaluationResult } from "@/components/DebugToolbar";
 
@@ -13,6 +14,18 @@ interface Attachment {
   name: string;
   contentType: string;
   url: string;
+}
+
+interface DebugSyncData {
+  debugStatus: string;
+  breakpoints: IBreakpoint[];
+  debugLog: ReactNode[];
+  toolCallLog: Array<{
+    toolName: string;
+    timestamp: number;
+  }>;
+  executionFile: string | null;
+  executionLine: number | null;
 }
 
 interface ChatInterfaceProps {
@@ -27,7 +40,7 @@ interface ChatInterfaceProps {
   // Callback to evaluate an expression. Should return a promise resolving to a string.
   onEvaluate: (expression: string) => Promise<EvaluationResult | null>;
   // Get the debug sync data to feed to the model.
-  getDebugSync: () => any;
+  getDebugSync: () => DebugSyncData;
   // Callback to add a tool call to the tool call log
   logToolCall: (toolName: string) => void;
   // Optional callback to lazily expand a directory based on its relative path.
