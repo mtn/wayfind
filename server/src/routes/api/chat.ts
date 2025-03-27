@@ -93,19 +93,23 @@ router.post("/", async (req: Request, res: Response) => {
               .join("\n            ")}
 
             Current debug status: ${debugStatus}
+            Current datetime: ${new Date().toISOString()}
 
             Keep in mind that to read the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
             defined on, otherwise, it'll come back as undefined.
             For example, if the user asks you how the value of a variable changes as the program runs,
             you should use your tools to set breakpoint(s) at lines that let you read the value, launch the program, continue till
-            it stops, evaluate the variable, and so on until it terminates.`,
+            it stops, evaluate the variable, and so on until it terminates.
+
+            If you can't complete the task in the available number of steps, that's alright, just start it and thenyou'll be given more
+            steps to finish..`,
     };
 
     const result = streamText({
       model: openai("gpt-4o-mini"),
       messages: [systemPrompt, ...messages],
       tools,
-      maxSteps: 100,
+      maxSteps: 5,
     });
 
     // Stream the result.

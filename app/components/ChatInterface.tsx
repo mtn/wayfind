@@ -180,9 +180,10 @@ export function ChatInterface({
       };
     },
     async onToolCall({ toolCall }) {
+      console.log("Making tool call", toolCall);
       let actionResult;
       const debugSync = getDebugSync();
-      logToolCall(toolCall.toolName);
+      // logToolCall(toolCall.toolName);
 
       if (toolCall.toolName === "setBreakpoint") {
         const { line } = toolCall.args as { line: number };
