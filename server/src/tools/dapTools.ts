@@ -12,7 +12,7 @@ export const setBreakpoint = tool({
 
 export const launchDebug = tool({
   description:
-    "Launch a new debug session. Call this when debugStatus is 'notstarted' or 'terminated', but after you call it, you must wait for debugStatus to change to 'terminated' before calling it again. If you have set breakpoints, launching will start the program and it will run up until any breakpoints are hit (or terminate if none are). The response includes the new debugStatus.",
+    "Launch a new debug session. Call this once to launch the debug session (if the debugStatus is 'notstarted' or 'terminated'), then wait for the program to start before calling it again. If you have set breakpoints, launching will start the program and it will run up until any breakpoints are hit (or terminate if none are). The response includes the new debugStatus.",
   parameters: z.object({}), // no parameters
 });
 
