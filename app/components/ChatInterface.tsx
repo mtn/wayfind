@@ -169,29 +169,30 @@ export function ChatInterface({
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 5,
-    onResponse(response) {
-      console.log("onResponse called with:", response);
-    },
     async onToolCall({ toolCall }) {
-      console.log("onToolCall executing:", toolCall);
+      let actionResult;
       const debugSync = getDebugSync();
-      console.log("Debug sync at tool call:", debugSync);
 
       if (toolCall.toolName === "setBreakpoint") {
         const { line } = toolCall.args as { line: number };
         onSetBreakpoint(line);
-        return { message: "Breakpoint set." };
+        actionResult = "Breakpoint set";
       } else if (toolCall.toolName === "launchDebug") {
         onLaunch();
-        return { message: "Debug session launched." };
+        actionResult = "Debug session launched";
       } else if (toolCall.toolName === "continueExecution") {
         onContinue();
-        return { message: "Continued execution." };
+        actionResult = "Continued execution";
       } else if (toolCall.toolName === "evaluateExpression") {
         const { expression } = toolCall.args as { expression: string };
         const result = await onEvaluate(expression);
-        return { message: `Evaluation result: ${result}` };
+        actionResult = result ? `Evaluated: ${result.result}` : "No result";
       }
+
+      return {
+        message: actionResult,
+        debugState: debugSync,
+      };
     },
     onFinish(message) {
       console.log("onFinish called with message:", message);
