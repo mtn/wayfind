@@ -1040,7 +1040,7 @@ export default function Home() {
               <ChatInterface
                 files={files}
                 getDebugSync={getDebugSync}
-                onToolCall={logToolCall}
+                logToolCall={logToolCall}
                 onSetBreakpoint={handleBreakpointChange}
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}

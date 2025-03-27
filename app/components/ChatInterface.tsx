@@ -179,35 +179,64 @@ export function ChatInterface({
         debugState: getDebugSync(),
       };
     },
+    onResponse(response) {
+      console.log("Response from server:", response);
+    },
     async onToolCall({ toolCall }) {
-      console.log("Making tool call", toolCall);
+      console.log("Tool call starting:", {
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        args: toolCall.args,
+      });
+
       let actionResult;
       const debugSync = getDebugSync();
-      // logToolCall(toolCall.toolName);
+      console.log("Current debug state:", debugSync);
 
-      if (toolCall.toolName === "setBreakpoint") {
-        const { line } = toolCall.args as { line: number };
-        onSetBreakpoint(line);
-        actionResult = "Breakpoint set";
-      } else if (toolCall.toolName === "launchDebug") {
-        onLaunch();
-        actionResult = "Debug session launched";
-      } else if (toolCall.toolName === "continueExecution") {
-        onContinue();
-        actionResult = "Continued execution";
-      } else if (toolCall.toolName === "evaluateExpression") {
-        const { expression } = toolCall.args as { expression: string };
-        const result = await onEvaluate(expression);
-        actionResult = result ? `Evaluated: ${result.result}` : "No result";
+      logToolCall(toolCall.toolName);
+      console.log("Logged tool call:", toolCall.toolName);
+
+      try {
+        if (toolCall.toolName === "setBreakpoint") {
+          const { line } = toolCall.args as { line: number };
+          console.log("Setting breakpoint at line:", line);
+          onSetBreakpoint(line);
+          actionResult = "Breakpoint set";
+          console.log("Breakpoint set successfully");
+        } else if (toolCall.toolName === "launchDebug") {
+          console.log("Launching debug session");
+          onLaunch();
+          actionResult = "Debug session launched";
+          console.log("Debug session launched successfully");
+        } else if (toolCall.toolName === "continueExecution") {
+          console.log("Continuing execution");
+          onContinue();
+          actionResult = "Continued execution";
+          console.log("Execution continued successfully");
+        } else if (toolCall.toolName === "evaluateExpression") {
+          const { expression } = toolCall.args as { expression: string };
+          console.log("Evaluating expression:", expression);
+          const result = await onEvaluate(expression);
+          actionResult = result ? `Evaluated: ${result.result}` : "No result";
+          console.log("Expression evaluation result:", actionResult);
+        }
+
+        console.log("Tool call completed successfully:", {
+          toolName: toolCall.toolName,
+          actionResult,
+        });
+
+        return {
+          message: actionResult,
+          debugState: debugSync,
+        };
+      } catch (error) {
+        console.error("Error in tool call execution:", {
+          toolName: toolCall.toolName,
+          error,
+        });
+        throw error;
       }
-
-      return {
-        message: actionResult,
-        debugState: debugSync,
-      };
-    },
-    onFinish(message) {
-      console.log("onFinish called with message:", message);
     },
   });
 

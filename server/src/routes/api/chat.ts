@@ -116,7 +116,11 @@ router.post("/", async (req: Request, res: Response) => {
     if (typeof (result as any).pipe === "function") {
       if (debug && typeof (result as any).on === "function") {
         (result as any).on("data", (chunk: Buffer) => {
-          console.log("Stream chunk:", chunk.toString());
+          const chunkStr = chunk.toString();
+          console.log("Stream chunk:", chunkStr);
+          if (chunkStr.includes('"toolName"')) {
+            console.log("Tool call chunk detected:", chunkStr);
+          }
         });
       }
       res.writeHead(200, {
@@ -142,7 +146,12 @@ router.post("/", async (req: Request, res: Response) => {
           return;
         }
         const decoded = decoder.decode(value);
-        if (debug) console.log("Stream chunk:", decoded);
+        if (debug) {
+          console.log("Stream chunk:", decoded);
+          if (decoded.includes('"toolName"')) {
+            console.log("Tool call chunk detected:", decoded);
+          }
+        }
         res.write(decoded);
         read();
       }
