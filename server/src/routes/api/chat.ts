@@ -93,7 +93,6 @@ router.post("/", async (req: Request, res: Response) => {
               .join("\n            ")}
 
             Current debug status: ${debugStatus}
-            Current datetime: ${new Date().toISOString()}
 
             Keep in mind that to read the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
             defined on, otherwise, it'll come back as undefined.
