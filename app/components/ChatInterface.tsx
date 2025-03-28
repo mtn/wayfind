@@ -214,26 +214,18 @@ export function ChatInterface({
       try {
         if (toolCall.toolName === "setBreakpoint") {
           const { line } = toolCall.args as { line: number };
-          console.log("Setting breakpoint at line:", line);
           onSetBreakpoint(line);
           actionResult = "Breakpoint set";
-          console.log("Breakpoint set successfully");
         } else if (toolCall.toolName === "launchDebug") {
-          console.log("Launching debug session");
           onLaunch();
           actionResult = "Debug session launched";
-          console.log("Debug session launched successfully");
         } else if (toolCall.toolName === "continueExecution") {
-          console.log("Continuing execution");
           onContinue();
           actionResult = "Continued execution";
-          console.log("Execution continued successfully");
         } else if (toolCall.toolName === "evaluateExpression") {
           const { expression } = toolCall.args as { expression: string };
-          console.log("Evaluating expression:", expression);
           const result = await onEvaluate(expression);
           actionResult = result ? `Evaluated: ${result.result}` : "No result";
-          console.log("Expression evaluation result:", actionResult);
         }
 
         console.log("Tool call completed successfully:", {
