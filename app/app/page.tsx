@@ -974,7 +974,7 @@ export default function Home() {
                 {/* Tab Content – for the Status tab, display only the log messages */}
                 <div className="flex-1 overflow-auto p-2">
                   {selectedTab === "status" && (
-                    <div className="h-full overflow-auto border rounded-md bg-background">
+                    <div className="h-full border rounded-md bg-background">
                       <div className="p-2 border-b font-bold">Debug Log</div>
                       <div
                         ref={statusAreaRef}
