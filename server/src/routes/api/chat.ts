@@ -27,10 +27,10 @@ type DebugTools = {
 };
 
 const toolDescriptions: Record<string, string> = {
-  setBreakpoint: "Sets a breakpoint at a given line number",
-  launchDebug: "Launches the debugger",
-  continueExecution: "Continues execution until the next breakpoint",
-  evaluateExpression: "Evaluates an expression at the current execution point",
+  setBreakpoint: setBreakpoint.description ?? "",
+  launchDebug: launchDebug.description ?? "",
+  continueExecution: continueExecution.description ?? "",
+  evaluateExpression: evaluateExpression.description ?? "",
 };
 
 function getToolsForDebugStatus(debugStatus: string): DebugTools {

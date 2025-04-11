@@ -3,7 +3,7 @@ import { z } from "zod";
 
 export const setBreakpoint = tool({
   description:
-    "Set a breakpoint at a given line number in a.py. Each tool response includes the current debugStatus. This tool can be called regardless of debug status.",
+    "Set a breakpoint at a given line number in a.py. Each tool response includes the current debugStatus. This tool can be called regardless of debug status, but it should only be called one time per line.",
   parameters: z.object({
     line: z.number().describe("The line where the breakpoint should be set"),
     filePath: z.literal("a.py"), // hardcoded filePath
