@@ -26,6 +26,13 @@ type DebugTools = {
   evaluateExpression?: typeof evaluateExpression;
 };
 
+interface DebugLogEntry {
+  direction: "request" | "response";
+  timestamp: number;
+  payload: any;
+}
+const debugStore: DebugLogEntry[] = [];
+
 const toolDescriptions: Record<string, string> = {
   setBreakpoint: setBreakpoint.description ?? "",
   launchDebug: launchDebug.description ?? "",
@@ -53,6 +60,13 @@ function getToolsForDebugStatus(debugStatus: string): DebugTools {
 }
 
 router.post("/", async (req: Request, res: Response) => {
+  // log the raw request
+  debugStore.push({
+    direction: "request",
+    timestamp: Date.now(),
+    payload: req.body,
+  });
+
   console.log("Hit the endpoint");
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -116,6 +130,11 @@ router.post("/", async (req: Request, res: Response) => {
       if (debug && typeof (result as any).on === "function") {
         (result as any).on("data", (chunk: Buffer) => {
           const chunkStr = chunk.toString();
+          debugStore.push({
+            direction: "response",
+            timestamp: Date.now(),
+            payload: chunkStr,
+          });
           console.log("Stream chunk:", chunkStr);
           if (chunkStr.includes('"toolName"')) {
             console.log("Tool call chunk detected:", chunkStr);
@@ -145,6 +164,11 @@ router.post("/", async (req: Request, res: Response) => {
           return;
         }
         const decoded = decoder.decode(value);
+        debugStore.push({
+          direction: "response",
+          timestamp: Date.now(),
+          payload: decoded,
+        });
         if (debug) {
           console.log("Stream chunk:", decoded);
           if (decoded.includes('"toolName"')) {
@@ -163,6 +187,37 @@ router.post("/", async (req: Request, res: Response) => {
     console.error("Error processing chat request:", error);
     res.status(500).json({ error: error.message || "Internal Server Error" });
   }
+});
+
+// return raw JSON:
+router.get("/logs", (_req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(JSON.stringify(debugStore, null, 2));
+});
+
+// a tiny HTML viewer
+router.get("/view-logs", (_req, res) => {
+  res.setHeader("Content-Type", "text/html");
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head><title>LLM Debug Logs</title></head>
+<body>
+  <h1>Chat ↔️ LLM Logs</h1>
+  <pre id="out" style="white-space: pre-wrap;"></pre>
+  <script>
+    async function load() {
+      const r = await fetch('/api/chat/logs')
+      const logs = await r.json()
+      document.getElementById('out').textContent = JSON.stringify(logs, null, 2)
+    }
+    load()
+    // optional refresh every 5s
+    setInterval(load, 5000)
+  </script>
+</body>
+</html>
+`);
 });
 
 export default router;
