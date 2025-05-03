@@ -184,7 +184,7 @@ export function ChatInterface({
   // Instead, intercept tool calls via onToolCall.
   const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
     api: "http://localhost:3001/api/chat",
-    maxSteps: 5,
+    maxSteps: 1,
     experimental_prepareRequestBody({ messages, requestBody }) {
       const debugState = getDebugSync();
       console.log("Sending along debug state", debugState);

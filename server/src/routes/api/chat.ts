@@ -122,7 +122,7 @@ router.post("/", async (req: Request, res: Response) => {
       model: openai("gpt-4o-mini"),
       messages: [systemPrompt, ...messages],
       tools,
-      maxSteps: 5,
+      maxSteps: 1,
     });
 
     // Stream the result.
