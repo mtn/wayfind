@@ -200,7 +200,7 @@ export function ChatInterface({
     async onToolCall({ toolCall }) {
       let actionResult;
       const debugSync = getDebugSync();
-      
+
       logToolCall(toolCall.toolName);
 
       try {
@@ -326,22 +326,51 @@ export function ChatInterface({
   useEffect(() => {
     let unlisten: () => void;
     (async () => {
-      unlisten = await listen<{ status: string; seq?: number }>("debug-status", (event) => {
-        const { status, seq } = event.payload;
-        
-        // Only notify if status has changed since last notification
-        if (status !== lastStatusRef.current) {
-          lastStatusRef.current = status;
-          
-          // Prepare message for LLM
-          const statusMsg = `Debug session status changed to: ${status}`;
-          
-          // Send status update to the LLM using current handleSubmit
-          handleSubmitRef.current({ preventDefault: () => {} } as any, {
-            body: { content: statusMsg },
-          });
-        }
-      });
+      unlisten = await listen<{ status: string; seq?: number }>(
+        "debug-status",
+        (event) => {
+          const { status, seq } = event.payload;
+
+          // Only notify if status has changed since last notification
+          if (status !== lastStatusRef.current) {
+            lastStatusRef.current = status;
+
+            // Prepare message for LLM
+            const statusMsg = `Debug session status changed to: ${status}`;
+            
+            // Set the input to the message (important for AI SDK state)
+            setInput(statusMsg);
+            
+            // Create a form element to better mimic a form submission
+            const formElement = document.createElement('form');
+            const inputElement = document.createElement('input');
+            inputElement.name = 'content';
+            inputElement.value = statusMsg;
+            formElement.appendChild(inputElement);
+            
+            const syntheticEvent = {
+              preventDefault: () => {},
+              stopPropagation: () => {},
+              target: formElement,
+              currentTarget: formElement,
+              nativeEvent: new Event('submit', { bubbles: true }),
+              bubbles: true,
+              cancelable: true
+            } as unknown as React.FormEvent<HTMLFormElement>;
+            
+            // Submit with the proper event
+            handleSubmitRef.current(syntheticEvent, {
+              body: { content: statusMsg },
+            });
+            
+            // Clear the input after submission
+            setInput("");
+            if (editorRef.current) {
+              editorRef.current.innerText = "";
+            }
+          }
+        },
+      );
     })();
     return () => {
       if (unlisten) unlisten();
@@ -358,10 +387,36 @@ export function ChatInterface({
           const { file, line } = event.payload;
           const stopMsg = `Breakpoint on line ${line} of ${file} triggered.`;
           
-          // send it as a user turn so the LLM knows - use current handleSubmit
-          handleSubmitRef.current({ preventDefault: () => {} } as any, {
+          // Set the input to the message (important for AI SDK state)
+          setInput(stopMsg);
+          
+          // Create a form element to better mimic a form submission
+          const formElement = document.createElement('form');
+          const inputElement = document.createElement('input');
+          inputElement.name = 'content';
+          inputElement.value = stopMsg;
+          formElement.appendChild(inputElement);
+          
+          const syntheticEvent = {
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            target: formElement, 
+            currentTarget: formElement,
+            nativeEvent: new Event('submit', { bubbles: true }),
+            bubbles: true,
+            cancelable: true
+          } as unknown as React.FormEvent<HTMLFormElement>;
+          
+          // Send it to the LLM with proper form event
+          handleSubmitRef.current(syntheticEvent, {
             body: { content: stopMsg },
           });
+          
+          // Clear the input after submission
+          setInput("");
+          if (editorRef.current) {
+            editorRef.current.innerText = "";
+          }
         },
       );
     })();
