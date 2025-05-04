@@ -120,7 +120,7 @@ export function ChatInterface({
   onLazyExpandDirectory,
   onPrefillInput,
 }: ChatInterfaceProps) {
-  const [input, setInputState] = useState("");
+  const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -183,59 +183,58 @@ export function ChatInterface({
 
   // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
   // Instead, intercept tool calls via onToolCall.
-  const { messages, handleSubmit, handleInputChange, isLoading, setInput } =
-    useChat({
-      api: "http://localhost:3001/api/chat",
-      maxSteps: 1,
-      experimental_prepareRequestBody({ messages, requestBody }) {
-        const debugState = getDebugSync();
-        return {
-          ...requestBody,
-          messages,
-          debugState,
-        };
-      },
-      onResponse(response) {
-        // Response received from server
-      },
-      async onToolCall({ toolCall }) {
-        let actionResult;
-        const debugSync = getDebugSync();
+  const { messages, handleSubmit, handleInputChange, isLoading } = useChat({
+    api: "http://localhost:3001/api/chat",
+    maxSteps: 1,
+    experimental_prepareRequestBody({ messages, requestBody }) {
+      const debugState = getDebugSync();
+      return {
+        ...requestBody,
+        messages,
+        debugState,
+      };
+    },
+    onResponse(response) {
+      // Response received from server
+    },
+    async onToolCall({ toolCall }) {
+      let actionResult;
+      const debugSync = getDebugSync();
 
-        logToolCall(toolCall.toolName);
+      logToolCall(toolCall.toolName);
 
-        try {
-          if (toolCall.toolName === "setBreakpoint") {
-            const { line } = toolCall.args as { line: number };
-            onSetBreakpoint(line);
-            actionResult = "Breakpoint set";
-          } else if (toolCall.toolName === "launchDebug") {
-            onLaunch();
-            actionResult = "Debug session launched";
-          } else if (toolCall.toolName === "continueExecution") {
-            onContinue();
-            actionResult = "Continued execution";
-          } else if (toolCall.toolName === "evaluateExpression") {
-            const { expression } = toolCall.args as { expression: string };
-            const result = await onEvaluate(expression);
-            actionResult = result ? `Evaluated: ${result.result}` : "No result";
-          }
-
-          // Tool call completed successfully
-
-          return {
-            message: actionResult,
-            debugState: debugSync,
-          };
-        } catch (error) {
-          console.error("Error in tool call execution:", {
-            toolName: toolCall.toolName,
-            error,
-          });
-          throw error;
+      try {
+        if (toolCall.toolName === "setBreakpoint") {
+          const { line } = toolCall.args as { line: number };
+          onSetBreakpoint(line);
+          actionResult = "Breakpoint set";
+        } else if (toolCall.toolName === "launchDebug") {
+          onLaunch();
+          actionResult = "Debug session launched";
+        } else if (toolCall.toolName === "continueExecution") {
+          onContinue();
+          actionResult = "Continued execution";
+        } else if (toolCall.toolName === "evaluateExpression") {
+          const { expression } = toolCall.args as { expression: string };
+          const result = await onEvaluate(expression);
+          actionResult = result ? `Evaluated: ${result.result}` : "No result";
         }
-      },
-    });
+
+        // Tool call completed successfully
+
+        return {
+          message: actionResult,
+          debugState: debugSync,
+        };
+      } catch (error) {
+        console.error("Error in tool call execution:", {
+          toolName: toolCall.toolName,
+          error,
+        });
+        throw error;
+      }
+    },
+  });
 
   // TODO for larger projects we can't just append everything into the context
   // Create attachments from files (for additional context).
@@ -271,7 +270,6 @@ export function ChatInterface({
       body: { content: input },
       experimental_attachments: experimentalAttachments,
     });
-    setInputState("");
     setInput("");
     if (editorRef.current) {
       editorRef.current.innerText = "";
@@ -291,7 +289,6 @@ export function ChatInterface({
     if (onPrefillInput) {
       onPrefillInput((text: string) => {
         // Set the input state that will be submitted
-        setInputState(text);
         setInput(text);
 
         // Update the contentEditable div
@@ -314,7 +311,6 @@ export function ChatInterface({
     handleInputChange,
     highlightFileCommand,
     updateSlashSuggestions,
-    setInput,
   ]);
 
   // Track previously notified debug status to avoid duplicate messages
@@ -333,7 +329,7 @@ export function ChatInterface({
       unlisten = await listen<{ status: string; seq?: number }>(
         "debug-status",
         (event) => {
-          const { status } = event.payload;
+          const { status, seq } = event.payload;
 
           // Only notify if status has changed since last notification
           if (status !== lastStatusRef.current) {
@@ -341,21 +337,37 @@ export function ChatInterface({
 
             // Prepare message for LLM
             const statusMsg = `Debug session status changed to: ${status}`;
-
-            // Programmatically send the status update as a new user message
-            setInputState(statusMsg);
+            
+            // Set the input to the message (important for AI SDK state)
             setInput(statusMsg);
-            if (editorRef.current) {
-              editorRef.current.innerText = statusMsg;
-            }
-            handleInputChange({
-              target: { value: statusMsg },
-            } as React.ChangeEvent<HTMLInputElement>);
-            submitMessage();
-            // clear
-            setInputState("");
+            
+            // Create a form element to better mimic a form submission
+            const formElement = document.createElement('form');
+            const inputElement = document.createElement('input');
+            inputElement.name = 'content';
+            inputElement.value = statusMsg;
+            formElement.appendChild(inputElement);
+            
+            const syntheticEvent = {
+              preventDefault: () => {},
+              stopPropagation: () => {},
+              target: formElement,
+              currentTarget: formElement,
+              nativeEvent: new Event('submit', { bubbles: true }),
+              bubbles: true,
+              cancelable: true
+            } as unknown as React.FormEvent<HTMLFormElement>;
+            
+            // Submit with the proper event
+            handleSubmitRef.current(syntheticEvent, {
+              body: { content: statusMsg },
+            });
+            
+            // Clear the input after submission
             setInput("");
-            if (editorRef.current) editorRef.current.innerText = "";
+            if (editorRef.current) {
+              editorRef.current.innerText = "";
+            }
           }
         },
       );
@@ -363,7 +375,7 @@ export function ChatInterface({
     return () => {
       if (unlisten) unlisten();
     };
-  }, [handleInputChange, setInput, submitMessage]); // Added dependencies
+  }, []); // Empty dependency array = set up only once
 
   // Listen for debug location events (when execution stops at a line)
   useEffect(() => {
@@ -374,20 +386,33 @@ export function ChatInterface({
         (event) => {
           const { file, line } = event.payload;
           const stopMsg = `Breakpoint on line ${line} of ${file} triggered.`;
-
-          // Programmatically send the breakpoint notification as a new user message
-          setInputState(stopMsg);
+          
+          // Set the input to the message (important for AI SDK state)
           setInput(stopMsg);
-          if (editorRef.current) {
-            editorRef.current.innerText = stopMsg;
-          }
-          handleInputChange({
-            target: { value: stopMsg },
-          } as React.ChangeEvent<HTMLInputElement>);
-          submitMessage();
-
+          
+          // Create a form element to better mimic a form submission
+          const formElement = document.createElement('form');
+          const inputElement = document.createElement('input');
+          inputElement.name = 'content';
+          inputElement.value = stopMsg;
+          formElement.appendChild(inputElement);
+          
+          const syntheticEvent = {
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            target: formElement, 
+            currentTarget: formElement,
+            nativeEvent: new Event('submit', { bubbles: true }),
+            bubbles: true,
+            cancelable: true
+          } as unknown as React.FormEvent<HTMLFormElement>;
+          
+          // Send it to the LLM with proper form event
+          handleSubmitRef.current(syntheticEvent, {
+            body: { content: stopMsg },
+          });
+          
           // Clear the input after submission
-          setInputState("");
           setInput("");
           if (editorRef.current) {
             editorRef.current.innerText = "";
@@ -398,7 +423,7 @@ export function ChatInterface({
     return () => {
       if (unlisten) unlisten();
     };
-  }, [handleInputChange, setInput, submitMessage]); // Added dependencies
+  }, []); // Empty dependency array = set up only once
 
   return (
     <div className="flex flex-col h-full border-t relative">
@@ -477,7 +502,6 @@ export function ChatInterface({
               key={idx}
               className="cursor-pointer hover:bg-gray-200 p-0.5"
               onClick={() => {
-                setInputState(s + " ");
                 setInput(s + " ");
                 setSuggestions([]);
               }}
@@ -506,7 +530,6 @@ export function ChatInterface({
                 const parts = currentQuery.split("/");
                 parts[parts.length - 1] = file.name;
                 const newQuery = parts.join("/") + " ";
-                setInputState("/file " + newQuery);
                 setInput("/file " + newQuery);
                 setFileSuggestions([]);
               }}
@@ -531,7 +554,6 @@ export function ChatInterface({
             contentEditable
             onInput={(e) => {
               const newText = e.currentTarget.textContent || "";
-              setInputState(newText);
               setInput(newText);
               handleInputChange({
                 target: { value: newText },
