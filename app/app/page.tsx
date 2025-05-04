@@ -729,9 +729,7 @@ export default function Home() {
     lastStatusSeqRef.current = null;
 
     try {
-      console.log("TWO");
       const scriptPath = fs.getFullPath(selectedFile.path);
-      console.log("TWO");
       addLog(`Using path: ${scriptPath}`);
 
       await invoke("launch_debug_session", {
@@ -774,9 +772,7 @@ export default function Home() {
         }
 
         // Get the full filesystem path
-        console.log("THREE");
         const fullFilePath = fs.getFullPath(fileEntry.path);
-        console.log("THREE");
         addLog(
           `File entry found for ${file}: ${JSON.stringify(fileEntry)} with full path: ${fullFilePath}`,
         );
