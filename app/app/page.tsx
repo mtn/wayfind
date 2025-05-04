@@ -418,6 +418,13 @@ export default function Home() {
     };
   }, [files, selectedFile, handleFileSelect]);
 
+  const fsRef = useRef(fs);
+
+  // Keep the ref in sync with the state
+  useEffect(() => {
+    fsRef.current = fs;
+  }, [fs]);
+
   const handleBreakpointChange = (lineNumber: number) => {
     console.log(`handleBreakpointChange called with lineNumber: ${lineNumber}`);
     const currentFilePath = selectedFileRef.current?.path;
@@ -479,7 +486,10 @@ export default function Home() {
 
         // Get full file path for the current file
         if (!selectedFileRef.current) return newBreakpoints;
-        const fullFilePath = fs.getFullPath(selectedFileRef.current.path);
+
+        const fullFilePath = fsRef.current.getFullPath(
+          selectedFileRef.current.path,
+        );
         console.log(`Full file path for request: ${fullFilePath}`);
 
         const breakpointsToSend = newBreakpoints.filter(
@@ -719,7 +729,9 @@ export default function Home() {
     lastStatusSeqRef.current = null;
 
     try {
+      console.log("TWO");
       const scriptPath = fs.getFullPath(selectedFile.path);
+      console.log("TWO");
       addLog(`Using path: ${scriptPath}`);
 
       await invoke("launch_debug_session", {
@@ -762,7 +774,9 @@ export default function Home() {
         }
 
         // Get the full filesystem path
+        console.log("THREE");
         const fullFilePath = fs.getFullPath(fileEntry.path);
+        console.log("THREE");
         addLog(
           `File entry found for ${file}: ${JSON.stringify(fileEntry)} with full path: ${fullFilePath}`,
         );
