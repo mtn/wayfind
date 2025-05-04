@@ -7,6 +7,7 @@ import { FileEntry } from "@/lib/fileSystem";
 import ReactMarkdown from "react-markdown";
 import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
 import { IBreakpoint } from "@/app/page";
+import { listen } from "@tauri-apps/api/event";
 
 import type { EvaluationResult } from "@/components/DebugToolbar";
 
@@ -187,7 +188,6 @@ export function ChatInterface({
     maxSteps: 1,
     experimental_prepareRequestBody({ messages, requestBody }) {
       const debugState = getDebugSync();
-      console.log("Sending along debug state", debugState);
       return {
         ...requestBody,
         messages,
@@ -195,21 +195,13 @@ export function ChatInterface({
       };
     },
     onResponse(response) {
-      console.log("Response from server:", response);
+      // Response received from server
     },
     async onToolCall({ toolCall }) {
-      console.log("Tool call starting:", {
-        toolCallId: toolCall.toolCallId,
-        toolName: toolCall.toolName,
-        args: toolCall.args,
-      });
-
       let actionResult;
       const debugSync = getDebugSync();
-      console.log("Current debug state:", debugSync);
-
+      
       logToolCall(toolCall.toolName);
-      console.log("Logged tool call:", toolCall.toolName);
 
       try {
         if (toolCall.toolName === "setBreakpoint") {
@@ -228,10 +220,7 @@ export function ChatInterface({
           actionResult = result ? `Evaluated: ${result.result}` : "No result";
         }
 
-        console.log("Tool call completed successfully:", {
-          toolName: toolCall.toolName,
-          actionResult,
-        });
+        // Tool call completed successfully
 
         return {
           message: actionResult,
@@ -323,6 +312,63 @@ export function ChatInterface({
     highlightFileCommand,
     updateSlashSuggestions,
   ]);
+
+  // Track previously notified debug status to avoid duplicate messages
+  const lastStatusRef = useRef<string | null>(null);
+
+  // Store current handleSubmit in ref to ensure we always use latest version
+  const handleSubmitRef = useRef(handleSubmit);
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  }, [handleSubmit]);
+
+  // Listen for all debug status changes and notify the LLM
+  useEffect(() => {
+    let unlisten: () => void;
+    (async () => {
+      unlisten = await listen<{ status: string; seq?: number }>("debug-status", (event) => {
+        const { status, seq } = event.payload;
+        
+        // Only notify if status has changed since last notification
+        if (status !== lastStatusRef.current) {
+          lastStatusRef.current = status;
+          
+          // Prepare message for LLM
+          const statusMsg = `Debug session status changed to: ${status}`;
+          
+          // Send status update to the LLM using current handleSubmit
+          handleSubmitRef.current({ preventDefault: () => {} } as any, {
+            body: { content: statusMsg },
+          });
+        }
+      });
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []); // Empty dependency array = set up only once
+
+  // Listen for debug location events (when execution stops at a line)
+  useEffect(() => {
+    let unlisten: () => void;
+    (async () => {
+      unlisten = await listen<{ file: string; line: number }>(
+        "debug-location",
+        (event) => {
+          const { file, line } = event.payload;
+          const stopMsg = `Breakpoint on line ${line} of ${file} triggered.`;
+          
+          // send it as a user turn so the LLM knows - use current handleSubmit
+          handleSubmitRef.current({ preventDefault: () => {} } as any, {
+            body: { content: stopMsg },
+          });
+        },
+      );
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []); // Empty dependency array = set up only once
 
   return (
     <div className="flex flex-col h-full border-t relative">
