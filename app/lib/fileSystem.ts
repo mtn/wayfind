@@ -121,9 +121,7 @@ export class InMemoryFileSystem {
 
   getFullPath(relativePath: string): string {
     if (!this.workspacePath) {
-      // throw new Error("No workspace path set");
-      const err = new Error("No workspace path set");
-      console.error(err);
+      throw new Error("No workspace path set");
     }
     let cleanPath = relativePath;
     if (cleanPath.startsWith("./")) {
