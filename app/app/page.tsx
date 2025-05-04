@@ -418,6 +418,13 @@ export default function Home() {
     };
   }, [files, selectedFile, handleFileSelect]);
 
+  const fsRef = useRef(fs);
+
+  // Keep the ref in sync with the state
+  useEffect(() => {
+    fsRef.current = fs;
+  }, [fs]);
+
   const handleBreakpointChange = (lineNumber: number) => {
     console.log(`handleBreakpointChange called with lineNumber: ${lineNumber}`);
     const currentFilePath = selectedFileRef.current?.path;
@@ -479,7 +486,10 @@ export default function Home() {
 
         // Get full file path for the current file
         if (!selectedFileRef.current) return newBreakpoints;
-        const fullFilePath = fs.getFullPath(selectedFileRef.current.path);
+
+        const fullFilePath = fsRef.current.getFullPath(
+          selectedFileRef.current.path,
+        );
         console.log(`Full file path for request: ${fullFilePath}`);
 
         const breakpointsToSend = newBreakpoints.filter(
