@@ -27,9 +27,10 @@ type DebugTools = {
 };
 
 interface DebugLogEntry {
-  direction: "request" | "response";
+  direction: "request" | "response" | "response-chunk";
   timestamp: number;
   payload: any;
+  conversationId?: string;
 }
 const debugStore: DebugLogEntry[] = [];
 
@@ -128,20 +129,40 @@ router.post("/", async (req: Request, res: Response) => {
 
     // Stream the result.
     if (typeof (result as any).pipe === "function") {
-      if (debug && typeof (result as any).on === "function") {
+      const conversationId = Date.now().toString();
+      const responseBuffer: string[] = [];
+
+      if (typeof (result as any).on === "function") {
         (result as any).on("data", (chunk: Buffer) => {
           const chunkStr = chunk.toString();
+          responseBuffer.push(chunkStr);
+
+          // Store individual chunks for detailed debugging if needed
+          if (debug) {
+            debugStore.push({
+              direction: "response-chunk",
+              timestamp: Date.now(),
+              payload: chunkStr,
+              conversationId,
+            });
+            console.log("Stream chunk:", chunkStr);
+            if (chunkStr.includes('"toolName"')) {
+              console.log("Tool call chunk detected:", chunkStr);
+            }
+          }
+        });
+
+        // Store the complete response when streaming ends
+        (result as any).on("end", () => {
           debugStore.push({
             direction: "response",
             timestamp: Date.now(),
-            payload: chunkStr,
+            payload: responseBuffer.join(""),
+            conversationId,
           });
-          console.log("Stream chunk:", chunkStr);
-          if (chunkStr.includes('"toolName"')) {
-            console.log("Tool call chunk detected:", chunkStr);
-          }
         });
       }
+
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -152,30 +173,48 @@ router.post("/", async (req: Request, res: Response) => {
       const response = (result as any).toDataStreamResponse();
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
+      const conversationId = Date.now().toString();
+      const responseBuffer: string[] = [];
+
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       });
+
       async function read() {
         if (!reader) return;
         const { done, value } = await reader.read();
+
         if (done) {
+          // Store the complete response when streaming ends
+          debugStore.push({
+            direction: "response",
+            timestamp: Date.now(),
+            payload: responseBuffer.join(""),
+            conversationId,
+          });
           res.end();
           return;
         }
+
         const decoded = decoder.decode(value);
-        debugStore.push({
-          direction: "response",
-          timestamp: Date.now(),
-          payload: decoded,
-        });
+        responseBuffer.push(decoded);
+
+        // Store individual chunks for detailed debugging
         if (debug) {
+          debugStore.push({
+            direction: "response-chunk",
+            timestamp: Date.now(),
+            payload: decoded,
+            conversationId,
+          });
           console.log("Stream chunk:", decoded);
           if (decoded.includes('"toolName"')) {
             console.log("Tool call chunk detected:", decoded);
           }
         }
+
         res.write(decoded);
         read();
       }
@@ -233,6 +272,11 @@ const logsViewerTemplate = `
     .response-entry {
       background-color: #f9f9f9;
       margin-left: 20px;
+    }
+    .response-chunk-entry {
+      background-color: #f5f5f5;
+      margin-left: 30px;
+      border-left: 3px solid #ddd;
     }
     .log-info {
       display: flex;
@@ -356,12 +400,12 @@ const logsViewerTemplate = `
 <body>
   <h1>Chat ↔️ LLM Logs</h1>
   <div class="container">
-    <!-- Search box -->  
+    <!-- Search box -->
     <div class="search-box">
       <input type="text" id="search-input" placeholder="Search logs for keywords..." />
       <button id="search-btn">Search</button>
     </div>
-    
+
     <!-- Search results container, initially hidden -->
     <div id="search-results" class="search-results">
       <h3>Search Results</h3>
@@ -369,7 +413,7 @@ const logsViewerTemplate = `
         <!-- Results will be added here -->
       </ul>
     </div>
-    
+
     <div class="navigation">
       <button id="first-btn" disabled>First</button>
       <button id="prev-btn" disabled>Previous</button>
@@ -386,17 +430,17 @@ const logsViewerTemplate = `
     let rawLogs = [];
     let conversationGroups = [];
     let currentGroupIndex = 0;
-    
+
     // Format timestamp to readable date
     function formatTimestamp(timestamp) {
       return new Date(timestamp).toLocaleString();
     }
-    
+
     // Group logs into request-response conversations
     function groupLogs(logs) {
       const groups = [];
       let currentGroup = null;
-      
+
       for (const log of logs) {
         if (log.direction === 'request') {
           // Start a new group when we see a request
@@ -405,30 +449,42 @@ const logsViewerTemplate = `
           }
           currentGroup = {
             request: log,
-            responses: []
+            responses: [],
+            chunks: []
           };
         } else if (log.direction === 'response' && currentGroup) {
-          // Add response to current group
+          // Add complete response to current group
           currentGroup.responses.push(log);
+        } else if (log.direction === 'response-chunk' && currentGroup) {
+          // Store chunks for debugging if needed
+          currentGroup.chunks.push(log);
         }
       }
-      
+
       // Add the last group if it exists
       if (currentGroup) {
         groups.push(currentGroup);
       }
-      
+
       return groups;
     }
-    
+
     // Create HTML for a single log entry
     function createLogEntryHTML(log, isRequest) {
-      const className = isRequest ? 'log-entry request-entry' : 'log-entry response-entry';
+      let className;
+      if (isRequest) {
+        className = 'log-entry request-entry';
+      } else if (log.direction === 'response-chunk') {
+        className = 'log-entry response-chunk-entry';
+      } else {
+        className = 'log-entry response-entry';
+      }
+
       const directionClass = isRequest ? 'request' : 'response';
       const formattedPayload = JSON.stringify(log.payload, null, 2)
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-      
+
       return \`
         <div class="\${className}">
           <div class="log-info">
@@ -439,123 +495,156 @@ const logsViewerTemplate = `
         </div>
       \`;
     }
-    
+
     // Update UI to show current conversation group
     function showCurrentGroup() {
       const container = document.getElementById('conversation-container');
-      
+
       if (conversationGroups.length === 0) {
         container.innerHTML = '<div class="conversation-group"><div class="log-entry">No logs available</div></div>';
         return;
       }
-      
+
       const group = conversationGroups[currentGroupIndex];
       let html = '<div class="conversation-group">';
-      
+
       // Add request
       html += createLogEntryHTML(group.request, true);
-      
-      // Add responses
-      for (const response of group.responses) {
-        html += createLogEntryHTML(response, false);
+
+      // Add complete responses
+      if (group.responses && group.responses.length > 0) {
+        for (const response of group.responses) {
+          html += createLogEntryHTML(response, false);
+        }
       }
-      
+      // For backward compatibility - if no complete responses, show chunks
+      else if (group.chunks && group.chunks.length > 0 && (!group.responses || group.responses.length === 0)) {
+        // Option to show each chunk individually or concatenate them
+        const showIndividualChunks = false; // Set to true to see individual chunks
+
+        if (showIndividualChunks) {
+          for (const chunk of group.chunks) {
+            html += createLogEntryHTML(chunk, false);
+          }
+        } else {
+          // Create a single entry with all chunks concatenated
+          const concatenatedEntry = {
+            direction: 'response',
+            timestamp: group.chunks[0].timestamp,
+            payload: group.chunks.map(chunk => chunk.payload).join('')
+          };
+          html += createLogEntryHTML(concatenatedEntry, false);
+        }
+      }
+
       html += '</div>';
       container.innerHTML = html;
-      
+
       // Update pagination info
       document.getElementById('current-index').textContent = currentGroupIndex + 1;
       document.getElementById('total-entries').textContent = conversationGroups.length;
-      
+
       // Update button states
       document.getElementById('first-btn').disabled = currentGroupIndex === 0;
       document.getElementById('prev-btn').disabled = currentGroupIndex === 0;
       document.getElementById('next-btn').disabled = currentGroupIndex === conversationGroups.length - 1;
       document.getElementById('last-btn').disabled = currentGroupIndex === conversationGroups.length - 1;
     }
-    
+
     // Fetch logs and update UI
     async function fetchLogs() {
       try {
         const response = await fetch('/api/chat/logs');
         rawLogs = await response.json();
-        
+
         // Sort logs by timestamp (oldest first)
         rawLogs.sort((a, b) => a.timestamp - b.timestamp);
-        
+
         // Group logs into conversations
         conversationGroups = groupLogs(rawLogs);
-        
+
         // Update UI
         showCurrentGroup();
       } catch (error) {
         console.error('Error fetching logs:', error);
       }
     }
-    
+
     // Initialize and set up event listeners
     function initialize() {
       // Fetch initial logs
       fetchLogs();
-      
+
       // Set up navigation buttons
       document.getElementById('first-btn').addEventListener('click', () => {
         currentGroupIndex = 0;
         showCurrentGroup();
       });
-      
+
       document.getElementById('prev-btn').addEventListener('click', () => {
         if (currentGroupIndex > 0) {
           currentGroupIndex--;
           showCurrentGroup();
         }
       });
-      
+
       document.getElementById('next-btn').addEventListener('click', () => {
         if (currentGroupIndex < conversationGroups.length - 1) {
           currentGroupIndex++;
           showCurrentGroup();
         }
       });
-      
+
       document.getElementById('last-btn').addEventListener('click', () => {
         currentGroupIndex = conversationGroups.length - 1;
         showCurrentGroup();
       });
-      
+
       // Refresh logs periodically
       setInterval(fetchLogs, 5000);
     }
-    
+
     // Start the app
     initialize();
-    
+
     // Search functionality
     function searchLogs(query) {
       if (!query || query.trim() === '') return [];
-      
+
       query = query.toLowerCase().trim();
       const results = [];
-      
+
       // Search through all conversations
       conversationGroups.forEach((group, index) => {
         let matchesInRequest = 0;
         let matchesInResponses = 0;
-        
+
         // Check request payload
         const requestStr = JSON.stringify(group.request.payload).toLowerCase();
         if (requestStr.includes(query)) {
           matchesInRequest = (requestStr.match(new RegExp(query, 'gi')) || []).length;
         }
-        
-        // Check all responses
+
+        // Check complete responses first
         group.responses.forEach(response => {
           const responseStr = JSON.stringify(response.payload).toLowerCase();
           if (responseStr.includes(query)) {
             matchesInResponses += (responseStr.match(new RegExp(query, 'gi')) || []).length;
           }
         });
-        
+
+        // If no matches in complete responses, try concatenating chunks
+        // This is needed for backwards compatibility with old log entries
+        if (matchesInResponses === 0 && group.chunks && group.chunks.length > 0) {
+          const concatenatedChunks = group.chunks
+            .map(chunk => JSON.stringify(chunk.payload))
+            .join("").toLowerCase();
+
+          if (concatenatedChunks.includes(query)) {
+            matchesInResponses += (concatenatedChunks.match(new RegExp(query, 'gi')) || []).length;
+          }
+        }
+
         // If there are matches, add to results
         if (matchesInRequest > 0 || matchesInResponses > 0) {
           const timestamp = formatTimestamp(group.request.timestamp);
@@ -568,45 +657,45 @@ const logsViewerTemplate = `
           });
         }
       });
-      
+
       return results;
     }
-    
+
     function displaySearchResults(results) {
       const resultsContainer = document.getElementById('search-results');
       const resultsList = document.getElementById('result-list');
-      
+
       // Clear previous results
       resultsList.innerHTML = '';
-      
+
       if (results.length === 0) {
         resultsList.innerHTML = '<li>No matches found</li>';
         resultsContainer.style.display = 'block';
         return;
       }
-      
+
       // Sort results by total matches in descending order
       results.sort((a, b) => b.totalMatches - a.totalMatches);
-      
+
       // Create result items
       results.forEach(result => {
         const li = document.createElement('li');
-        const requestMatches = result.matchesInRequest > 0 ? 
+        const requestMatches = result.matchesInRequest > 0 ?
           '<span class="match-info">' + result.matchesInRequest + ' in request</span>' : '';
-        const responseMatches = result.matchesInResponses > 0 ? 
+        const responseMatches = result.matchesInResponses > 0 ?
           '<span class="match-info">' + result.matchesInResponses + ' in responses</span>' : '';
-        
-        li.innerHTML = 
+
+        li.innerHTML =
           '<a class="result-link" data-index="' + result.index + '">' +
             '<span>Conversation #' + (result.index + 1) + ' (' + result.timestamp + ')</span>' +
             '<span>' +
               requestMatches + (requestMatches && responseMatches ? ' | ' : '') + responseMatches +
             '</span>' +
           '</a>';
-        
+
         resultsList.appendChild(li);
       });
-      
+
       // Add click events to links
       document.querySelectorAll('.result-link').forEach(link => {
         link.addEventListener('click', function() {
@@ -616,18 +705,18 @@ const logsViewerTemplate = `
           resultsContainer.style.display = 'none'; // Hide results after clicking
         });
       });
-      
+
       // Show results container
       resultsContainer.style.display = 'block';
     }
-    
+
     // Set up search button
     document.getElementById('search-btn').addEventListener('click', function() {
       const query = document.getElementById('search-input').value;
       const results = searchLogs(query);
       displaySearchResults(results);
     });
-    
+
     // Enable search on Enter key
     document.getElementById('search-input').addEventListener('keyup', function(event) {
       if (event.key === 'Enter') {
