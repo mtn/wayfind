@@ -105,7 +105,7 @@ export default function Home() {
 
   const getDebugSync = () => {
     return {
-      debugStatus,
+      debugStatus: debugStatusRef.current,
       breakpoints: mergeBreakpoints(
         queuedBreakpointsRef.current,
         activeBreakpointsRef.current,

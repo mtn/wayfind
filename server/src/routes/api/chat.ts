@@ -92,6 +92,7 @@ router.post("/", async (req: Request, res: Response) => {
     ); // within last 5 seconds
 
     const tools = getToolsForDebugStatus(debugStatus);
+    console.log("TOOLS AVAILABLE", Object.keys(tools));
 
     if (wasLaunchDebugRecentlyCalled && "launchDebug" in tools) {
       delete tools.launchDebug;
