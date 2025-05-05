@@ -115,7 +115,7 @@ router.post("/", async (req: Request, res: Response) => {
             it stops, evaluate the variable, and so on until it terminates.
 
             If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
-            steps to finish..`,
+            steps to finish.`,
     };
 
     const result = streamText({
