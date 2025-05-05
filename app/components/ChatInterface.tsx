@@ -333,7 +333,7 @@ export function ChatInterface({
       unlisten = await listen<{ status: string; seq?: number }>(
         "debug-status",
         (event) => {
-          const { status, seq } = event.payload;
+          const { status } = event.payload;
 
           // Only notify if status has changed since last notification
           if (status !== lastStatusRef.current) {
