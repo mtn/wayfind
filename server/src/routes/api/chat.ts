@@ -114,7 +114,7 @@ router.post("/", async (req: Request, res: Response) => {
             you should use your tools to set breakpoint(s) at lines that let you read the value, launch the program, continue till
             it stops, evaluate the variable, and so on until it terminates.
 
-            If you can't complete the task in the available number of steps, that's alright, just start it and thenyou'll be given more
+            If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
             steps to finish..`,
     };
 
