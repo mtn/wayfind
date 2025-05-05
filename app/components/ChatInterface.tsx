@@ -361,6 +361,7 @@ export function ChatInterface({
     return () => {
       if (unlisten) unlisten();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Listen for debug location events (when execution stops at a line)
@@ -390,6 +391,7 @@ export function ChatInterface({
     return () => {
       if (unlisten) unlisten();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
