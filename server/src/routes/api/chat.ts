@@ -191,34 +191,282 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 // return raw JSON:
-router.get("/logs", (_req, res) => {
+router.get("/logs", (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "application/json");
   res.send(JSON.stringify(debugStore, null, 2));
 });
 
-// a tiny HTML viewer
-router.get("/view-logs", (_req, res) => {
-  res.setHeader("Content-Type", "text/html");
-  res.send(`
+// HTML template for the logs viewer
+const logsViewerTemplate = `
 <!DOCTYPE html>
 <html>
-<head><title>LLM Debug Logs</title></head>
+<head>
+  <title>LLM Debug Logs</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .conversation-group {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .log-entry {
+      padding: 15px;
+      background-color: #f9f9f9;
+      border-bottom: 1px solid #eee;
+    }
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+    .request-entry {
+      background-color: #f0f7ff;
+    }
+    .response-entry {
+      background-color: #f9f9f9;
+      margin-left: 20px;
+    }
+    .log-info {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+      font-size: 14px;
+    }
+    .log-direction {
+      font-weight: bold;
+    }
+    .request {
+      color: #0066cc;
+    }
+    .response {
+      color: #009933;
+    }
+    .navigation {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0;
+      align-items: center;
+    }
+    button {
+      padding: 8px 16px;
+      background: #f0f0f0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #e0e0e0;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-x: auto;
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      margin: 0;
+    }
+    .pagination-info {
+      text-align: center;
+      margin: 0 auto;
+      font-size: 14px;
+    }
+    .timestamp {
+      color: #666;
+      font-size: 12px;
+    }
+    h2 {
+      margin-top: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  </style>
+</head>
 <body>
   <h1>Chat ↔️ LLM Logs</h1>
-  <pre id="out" style="white-space: pre-wrap;"></pre>
+  <div class="container">
+    <div class="navigation">
+      <button id="first-btn" disabled>First</button>
+      <button id="prev-btn" disabled>Previous</button>
+      <div class="pagination-info">Conversation <span id="current-index">0</span> of <span id="total-entries">0</span></div>
+      <button id="next-btn" disabled>Next</button>
+      <button id="last-btn" disabled>Last</button>
+    </div>
+    <div id="conversation-container">
+      <!-- Conversation groups will be inserted here -->
+    </div>
+  </div>
+
   <script>
-    async function load() {
-      const r = await fetch('/api/chat/logs')
-      const logs = await r.json()
-      document.getElementById('out').textContent = JSON.stringify(logs, null, 2)
+    let rawLogs = [];
+    let conversationGroups = [];
+    let currentGroupIndex = 0;
+    
+    // Format timestamp to readable date
+    function formatTimestamp(timestamp) {
+      return new Date(timestamp).toLocaleString();
     }
-    load()
-    // optional refresh every 5s
-    setInterval(load, 5000)
+    
+    // Group logs into request-response conversations
+    function groupLogs(logs) {
+      const groups = [];
+      let currentGroup = null;
+      
+      for (const log of logs) {
+        if (log.direction === 'request') {
+          // Start a new group when we see a request
+          if (currentGroup) {
+            groups.push(currentGroup);
+          }
+          currentGroup = {
+            request: log,
+            responses: []
+          };
+        } else if (log.direction === 'response' && currentGroup) {
+          // Add response to current group
+          currentGroup.responses.push(log);
+        }
+      }
+      
+      // Add the last group if it exists
+      if (currentGroup) {
+        groups.push(currentGroup);
+      }
+      
+      return groups;
+    }
+    
+    // Create HTML for a single log entry
+    function createLogEntryHTML(log, isRequest) {
+      const className = isRequest ? 'log-entry request-entry' : 'log-entry response-entry';
+      const directionClass = isRequest ? 'request' : 'response';
+      const formattedPayload = JSON.stringify(log.payload, null, 2)
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      
+      return \`
+        <div class="\${className}">
+          <div class="log-info">
+            <span class="log-direction \${directionClass}">\${log.direction.toUpperCase()}</span>
+            <span class="timestamp">\${formatTimestamp(log.timestamp)}</span>
+          </div>
+          <pre>\${formattedPayload}</pre>
+        </div>
+      \`;
+    }
+    
+    // Update UI to show current conversation group
+    function showCurrentGroup() {
+      const container = document.getElementById('conversation-container');
+      
+      if (conversationGroups.length === 0) {
+        container.innerHTML = '<div class="conversation-group"><div class="log-entry">No logs available</div></div>';
+        return;
+      }
+      
+      const group = conversationGroups[currentGroupIndex];
+      let html = '<div class="conversation-group">';
+      
+      // Add request
+      html += createLogEntryHTML(group.request, true);
+      
+      // Add responses
+      for (const response of group.responses) {
+        html += createLogEntryHTML(response, false);
+      }
+      
+      html += '</div>';
+      container.innerHTML = html;
+      
+      // Update pagination info
+      document.getElementById('current-index').textContent = currentGroupIndex + 1;
+      document.getElementById('total-entries').textContent = conversationGroups.length;
+      
+      // Update button states
+      document.getElementById('first-btn').disabled = currentGroupIndex === 0;
+      document.getElementById('prev-btn').disabled = currentGroupIndex === 0;
+      document.getElementById('next-btn').disabled = currentGroupIndex === conversationGroups.length - 1;
+      document.getElementById('last-btn').disabled = currentGroupIndex === conversationGroups.length - 1;
+    }
+    
+    // Fetch logs and update UI
+    async function fetchLogs() {
+      try {
+        const response = await fetch('/api/chat/logs');
+        rawLogs = await response.json();
+        
+        // Sort logs by timestamp (oldest first)
+        rawLogs.sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Group logs into conversations
+        conversationGroups = groupLogs(rawLogs);
+        
+        // Update UI
+        showCurrentGroup();
+      } catch (error) {
+        console.error('Error fetching logs:', error);
+      }
+    }
+    
+    // Initialize and set up event listeners
+    function initialize() {
+      // Fetch initial logs
+      fetchLogs();
+      
+      // Set up navigation buttons
+      document.getElementById('first-btn').addEventListener('click', () => {
+        currentGroupIndex = 0;
+        showCurrentGroup();
+      });
+      
+      document.getElementById('prev-btn').addEventListener('click', () => {
+        if (currentGroupIndex > 0) {
+          currentGroupIndex--;
+          showCurrentGroup();
+        }
+      });
+      
+      document.getElementById('next-btn').addEventListener('click', () => {
+        if (currentGroupIndex < conversationGroups.length - 1) {
+          currentGroupIndex++;
+          showCurrentGroup();
+        }
+      });
+      
+      document.getElementById('last-btn').addEventListener('click', () => {
+        currentGroupIndex = conversationGroups.length - 1;
+        showCurrentGroup();
+      });
+      
+      // Refresh logs periodically
+      setInterval(fetchLogs, 5000);
+    }
+    
+    // Start the app
+    initialize();
   </script>
 </body>
 </html>
-`);
+`;
+
+// an HTML viewer for grouped request/response logs
+router.get("/view-logs", (_req: Request, res: Response) => {
+  res.setHeader("Content-Type", "text/html");
+  res.send(logsViewerTemplate);
 });
 
 export default router;
