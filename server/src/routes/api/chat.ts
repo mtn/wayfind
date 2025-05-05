@@ -12,6 +12,85 @@ import {
   evaluateExpression,
 } from "@/tools/dapTools";
 
+// Regex pattern to find text chunks in the format: digit:"text"
+const PART_RE = /(?:^|\n)\d+:"((?:[^"\\]|\\.)*)"/g;
+
+/**
+ * Normalizes the input buffer
+ * @param buf The input buffer string
+ * @returns Normalized string
+ */
+function normalise(buf: string): string {
+  buf = buf.trim();
+  // If it's a valid JSON string (starts/ends with quote) try to unescape it
+  if (buf.startsWith('"') && buf.endsWith('"')) {
+    try {
+      return JSON.parse(buf);
+    } catch (error) {
+      // If JSON parsing fails, continue to the next step
+    }
+  }
+  // Otherwise convert literal "\n", "\t", "\\" sequences
+  return buf.replace(/\\n/g, '\n')
+            .replace(/\\t/g, '\t')
+            .replace(/\\\\/g, '\\');
+}
+
+/**
+ * Decodes the stream-encoded text
+ * @param stream The stream-encoded text
+ * @returns Decoded text
+ */
+function decode(stream: string): string {
+  let match;
+  const textParts: string[] = [];
+  
+  // Find all matches of the pattern and extract the text parts
+  while ((match = PART_RE.exec(stream)) !== null) {
+    if (match[1]) {
+      // JSON-unescape each chunk (handles \" and \\n inside)
+      try {
+        const unescaped = JSON.parse(`"${match[1]}"`);
+        textParts.push(unescaped);
+      } catch (error) {
+        // If parsing fails, add the raw text
+        textParts.push(match[1]);
+      }
+    }
+  }
+  
+  // Join all text parts
+  return textParts.join('');
+}
+
+/**
+ * Extracts metadata from the stream
+ * @param stream The stream-encoded text
+ * @returns Object containing metadata
+ */
+function extractMetadata(stream: string): any {
+  const metadata: any = {};
+  
+  // Extract message ID
+  const messageIdMatch = stream.match(/f:\{"messageId":"([^"]+)"\}/);
+  if (messageIdMatch && messageIdMatch[1]) {
+    metadata.messageId = messageIdMatch[1];
+  }
+  
+  // Extract finish reason and usage info
+  const finishMatch = stream.match(/e:\{([^}]+)\}/);
+  if (finishMatch && finishMatch[1]) {
+    try {
+      const finishData = JSON.parse(`{${finishMatch[1]}}`);
+      metadata.finish = finishData;
+    } catch (error) {
+      // If parsing fails, ignore
+    }
+  }
+  
+  return metadata;
+}
+
 const router = Router();
 
 interface ToolCall {
@@ -139,13 +218,24 @@ router.post("/", async (req: Request, res: Response) => {
 
           // Store individual chunks for detailed debugging if needed
           if (debug) {
+            // Create an enhanced payload with both raw and decoded content
+            const enhancedPayload = {
+              raw: chunkStr,
+              decoded: chunkStr.includes('":"') ? decode(chunkStr) : chunkStr,
+              metadata: extractMetadata(chunkStr)
+            };
+            
             debugStore.push({
               direction: "response-chunk",
               timestamp: Date.now(),
-              payload: chunkStr,
+              payload: enhancedPayload,
               conversationId,
             });
-            console.log("Stream chunk:", chunkStr);
+            
+            console.log("Stream chunk raw:", chunkStr);
+            if (enhancedPayload.decoded) {
+              console.log("Stream chunk decoded:", enhancedPayload.decoded);
+            }
             if (chunkStr.includes('"toolName"')) {
               console.log("Tool call chunk detected:", chunkStr);
             }
@@ -154,10 +244,17 @@ router.post("/", async (req: Request, res: Response) => {
 
         // Store the complete response when streaming ends
         (result as any).on("end", () => {
+          const completeResponse = responseBuffer.join("");
+          const enhancedPayload = {
+            raw: completeResponse,
+            decoded: decode(normalise(completeResponse)),
+            metadata: extractMetadata(completeResponse)
+          };
+          
           debugStore.push({
             direction: "response",
             timestamp: Date.now(),
-            payload: responseBuffer.join(""),
+            payload: enhancedPayload,
             conversationId,
           });
         });
@@ -188,10 +285,17 @@ router.post("/", async (req: Request, res: Response) => {
 
         if (done) {
           // Store the complete response when streaming ends
+          const completeResponse = responseBuffer.join("");
+          const enhancedPayload = {
+            raw: completeResponse,
+            decoded: decode(normalise(completeResponse)),
+            metadata: extractMetadata(completeResponse)
+          };
+          
           debugStore.push({
             direction: "response",
             timestamp: Date.now(),
-            payload: responseBuffer.join(""),
+            payload: enhancedPayload,
             conversationId,
           });
           res.end();
@@ -203,13 +307,24 @@ router.post("/", async (req: Request, res: Response) => {
 
         // Store individual chunks for detailed debugging
         if (debug) {
+          // Create an enhanced payload with both raw and decoded content
+          const enhancedPayload = {
+            raw: decoded,
+            decoded: decoded.includes('":"') ? decode(decoded) : decoded,
+            metadata: extractMetadata(decoded)
+          };
+          
           debugStore.push({
             direction: "response-chunk",
             timestamp: Date.now(),
-            payload: decoded,
+            payload: enhancedPayload,
             conversationId,
           });
-          console.log("Stream chunk:", decoded);
+          
+          console.log("Stream chunk raw:", decoded);
+          if (enhancedPayload.decoded) {
+            console.log("Stream chunk decoded:", enhancedPayload.decoded);
+          }
           if (decoded.includes('"toolName"')) {
             console.log("Tool call chunk detected:", decoded);
           }
@@ -247,6 +362,27 @@ const logsViewerTemplate = `
       max-width: 1200px;
       margin: 0 auto;
       padding: 20px;
+    }
+    .decoded {
+      margin-bottom: 15px;
+      background-color: #f5fff5;
+      border: 1px solid #d0f0d0;
+      border-radius: 4px;
+      padding: 10px;
+    }
+    .metadata {
+      margin-bottom: 15px;
+      background-color: #fffff0;
+      border: 1px solid #f0e0c0;
+      border-radius: 4px;
+      padding: 10px;
+    }
+    .raw {
+      margin-bottom: 15px;
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
     }
     .container {
       display: flex;
@@ -481,9 +617,37 @@ const logsViewerTemplate = `
       }
 
       const directionClass = isRequest ? 'request' : 'response';
-      const formattedPayload = JSON.stringify(log.payload, null, 2)
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+      
+      // Handle both old format (direct payload) and new format (enhanced payload)
+      let payloadContent = '';
+      
+      // Check if payload has the enhanced structure
+      if (log.payload && (log.payload.raw !== undefined || log.payload.decoded !== undefined)) {
+        // Display metadata if available
+        if (log.payload.metadata && Object.keys(log.payload.metadata).length > 0) {
+          const metadataStr = JSON.stringify(log.payload.metadata, null, 2)
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+          payloadContent += \`<div class="metadata"><h4>Metadata</h4><pre>\${metadataStr}</pre></div>\`;
+        }
+        
+        // Display decoded content if available
+        if (log.payload.decoded && log.payload.decoded.trim()) {
+          payloadContent += \`<div class="decoded"><h4>Decoded Content</h4><pre>\${log.payload.decoded}</pre></div>\`;
+        }
+        
+        // Always include raw content
+        const rawStr = JSON.stringify(log.payload.raw, null, 2)
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        payloadContent += \`<div class="raw"><h4>Raw Content</h4><pre>\${rawStr}</pre></div>\`;
+      } else {
+        // Handle original format (backwards compatibility)
+        const formattedPayload = JSON.stringify(log.payload, null, 2)
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        payloadContent = \`<pre>\${formattedPayload}</pre>\`;
+      }
 
       return \`
         <div class="\${className}">
@@ -491,7 +655,7 @@ const logsViewerTemplate = `
             <span class="log-direction \${directionClass}">\${log.direction.toUpperCase()}</span>
             <span class="timestamp">\${formatTimestamp(log.timestamp)}</span>
           </div>
-          <pre>\${formattedPayload}</pre>
+          \${payloadContent}
         </div>
       \`;
     }
@@ -618,6 +782,7 @@ const logsViewerTemplate = `
       conversationGroups.forEach((group, index) => {
         let matchesInRequest = 0;
         let matchesInResponses = 0;
+        let matchesInDecoded = 0;
 
         // Check request payload
         const requestStr = JSON.stringify(group.request.payload).toLowerCase();
@@ -627,15 +792,24 @@ const logsViewerTemplate = `
 
         // Check complete responses first
         group.responses.forEach(response => {
+          // Check in raw payload
           const responseStr = JSON.stringify(response.payload).toLowerCase();
           if (responseStr.includes(query)) {
             matchesInResponses += (responseStr.match(new RegExp(query, 'gi')) || []).length;
+          }
+          
+          // Also check in decoded content if available (enhanced format)
+          if (response.payload && response.payload.decoded) {
+            const decodedStr = response.payload.decoded.toLowerCase();
+            if (decodedStr.includes(query)) {
+              matchesInDecoded += (decodedStr.match(new RegExp(query, 'gi')) || []).length;
+            }
           }
         });
 
         // If no matches in complete responses, try concatenating chunks
         // This is needed for backwards compatibility with old log entries
-        if (matchesInResponses === 0 && group.chunks && group.chunks.length > 0) {
+        if (matchesInResponses === 0 && matchesInDecoded === 0 && group.chunks && group.chunks.length > 0) {
           const concatenatedChunks = group.chunks
             .map(chunk => JSON.stringify(chunk.payload))
             .join("").toLowerCase();
@@ -643,17 +817,28 @@ const logsViewerTemplate = `
           if (concatenatedChunks.includes(query)) {
             matchesInResponses += (concatenatedChunks.match(new RegExp(query, 'gi')) || []).length;
           }
+          
+          // Check in decoded content for chunks (enhanced format)
+          const decodedChunks = group.chunks
+            .filter(chunk => chunk.payload && chunk.payload.decoded)
+            .map(chunk => chunk.payload.decoded)
+            .join("").toLowerCase();
+            
+          if (decodedChunks && decodedChunks.includes(query)) {
+            matchesInDecoded += (decodedChunks.match(new RegExp(query, 'gi')) || []).length;
+          }
         }
 
         // If there are matches, add to results
-        if (matchesInRequest > 0 || matchesInResponses > 0) {
+        if (matchesInRequest > 0 || matchesInResponses > 0 || matchesInDecoded > 0) {
           const timestamp = formatTimestamp(group.request.timestamp);
           results.push({
             index,
             timestamp,
             matchesInRequest,
             matchesInResponses,
-            totalMatches: matchesInRequest + matchesInResponses
+            matchesInDecoded,
+            totalMatches: matchesInRequest + matchesInResponses + matchesInDecoded
           });
         }
       });
@@ -683,13 +868,15 @@ const logsViewerTemplate = `
         const requestMatches = result.matchesInRequest > 0 ?
           '<span class="match-info">' + result.matchesInRequest + ' in request</span>' : '';
         const responseMatches = result.matchesInResponses > 0 ?
-          '<span class="match-info">' + result.matchesInResponses + ' in responses</span>' : '';
+          '<span class="match-info">' + result.matchesInResponses + ' in raw responses</span>' : '';
+        const decodedMatches = result.matchesInDecoded > 0 ?
+          '<span class="match-info">' + result.matchesInDecoded + ' in decoded text</span>' : '';
 
         li.innerHTML =
           '<a class="result-link" data-index="' + result.index + '">' +
             '<span>Conversation #' + (result.index + 1) + ' (' + result.timestamp + ')</span>' +
             '<span>' +
-              requestMatches + (requestMatches && responseMatches ? ' | ' : '') + responseMatches +
+              [requestMatches, responseMatches, decodedMatches].filter(Boolean).join(' | ') +
             '</span>' +
           '</a>';
 
