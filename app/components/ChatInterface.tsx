@@ -361,7 +361,7 @@ export function ChatInterface({
     return () => {
       if (unlisten) unlisten();
     };
-  }, []); // Empty dependency array = set up only once
+  }, []);
 
   // Listen for debug location events (when execution stops at a line)
   useEffect(() => {
@@ -390,7 +390,7 @@ export function ChatInterface({
     return () => {
       if (unlisten) unlisten();
     };
-  }, []); // Empty dependency array = set up only once
+  }, []);
 
   return (
     <div className="flex flex-col h-full border-t relative">
