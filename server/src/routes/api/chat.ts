@@ -294,11 +294,82 @@ const logsViewerTemplate = `
       justify-content: space-between;
       align-items: center;
     }
+    .search-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      align-items: center;
+    }
+    .search-box input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .search-results {
+      margin-top: 20px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 15px;
+      display: none;
+    }
+    .search-results h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+    }
+    .result-list {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+    }
+    .result-list li {
+      margin-bottom: 8px;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 8px;
+    }
+    .result-list li:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+    .result-link {
+      color: #0066cc;
+      text-decoration: none;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .result-link:hover {
+      text-decoration: underline;
+    }
+    .match-info {
+      color: #666;
+      font-size: 12px;
+    }
+    .highlight {
+      background-color: #ffff00;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <h1>Chat ↔️ LLM Logs</h1>
   <div class="container">
+    <!-- Search box -->  
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="Search logs for keywords..." />
+      <button id="search-btn">Search</button>
+    </div>
+    
+    <!-- Search results container, initially hidden -->
+    <div id="search-results" class="search-results">
+      <h3>Search Results</h3>
+      <ul id="result-list" class="result-list">
+        <!-- Results will be added here -->
+      </ul>
+    </div>
+    
     <div class="navigation">
       <button id="first-btn" disabled>First</button>
       <button id="prev-btn" disabled>Previous</button>
@@ -458,6 +529,111 @@ const logsViewerTemplate = `
     
     // Start the app
     initialize();
+    
+    // Search functionality
+    function searchLogs(query) {
+      if (!query || query.trim() === '') return [];
+      
+      query = query.toLowerCase().trim();
+      const results = [];
+      
+      // Search through all conversations
+      conversationGroups.forEach((group, index) => {
+        let matchesInRequest = 0;
+        let matchesInResponses = 0;
+        
+        // Check request payload
+        const requestStr = JSON.stringify(group.request.payload).toLowerCase();
+        if (requestStr.includes(query)) {
+          matchesInRequest = (requestStr.match(new RegExp(query, 'gi')) || []).length;
+        }
+        
+        // Check all responses
+        group.responses.forEach(response => {
+          const responseStr = JSON.stringify(response.payload).toLowerCase();
+          if (responseStr.includes(query)) {
+            matchesInResponses += (responseStr.match(new RegExp(query, 'gi')) || []).length;
+          }
+        });
+        
+        // If there are matches, add to results
+        if (matchesInRequest > 0 || matchesInResponses > 0) {
+          const timestamp = formatTimestamp(group.request.timestamp);
+          results.push({
+            index,
+            timestamp,
+            matchesInRequest,
+            matchesInResponses,
+            totalMatches: matchesInRequest + matchesInResponses
+          });
+        }
+      });
+      
+      return results;
+    }
+    
+    function displaySearchResults(results) {
+      const resultsContainer = document.getElementById('search-results');
+      const resultsList = document.getElementById('result-list');
+      
+      // Clear previous results
+      resultsList.innerHTML = '';
+      
+      if (results.length === 0) {
+        resultsList.innerHTML = '<li>No matches found</li>';
+        resultsContainer.style.display = 'block';
+        return;
+      }
+      
+      // Sort results by total matches in descending order
+      results.sort((a, b) => b.totalMatches - a.totalMatches);
+      
+      // Create result items
+      results.forEach(result => {
+        const li = document.createElement('li');
+        const requestMatches = result.matchesInRequest > 0 ? 
+          '<span class="match-info">' + result.matchesInRequest + ' in request</span>' : '';
+        const responseMatches = result.matchesInResponses > 0 ? 
+          '<span class="match-info">' + result.matchesInResponses + ' in responses</span>' : '';
+        
+        li.innerHTML = 
+          '<a class="result-link" data-index="' + result.index + '">' +
+            '<span>Conversation #' + (result.index + 1) + ' (' + result.timestamp + ')</span>' +
+            '<span>' +
+              requestMatches + (requestMatches && responseMatches ? ' | ' : '') + responseMatches +
+            '</span>' +
+          '</a>';
+        
+        resultsList.appendChild(li);
+      });
+      
+      // Add click events to links
+      document.querySelectorAll('.result-link').forEach(link => {
+        link.addEventListener('click', function() {
+          const index = parseInt(this.getAttribute('data-index'), 10);
+          currentGroupIndex = index;
+          showCurrentGroup();
+          resultsContainer.style.display = 'none'; // Hide results after clicking
+        });
+      });
+      
+      // Show results container
+      resultsContainer.style.display = 'block';
+    }
+    
+    // Set up search button
+    document.getElementById('search-btn').addEventListener('click', function() {
+      const query = document.getElementById('search-input').value;
+      const results = searchLogs(query);
+      displaySearchResults(results);
+    });
+    
+    // Enable search on Enter key
+    document.getElementById('search-input').addEventListener('keyup', function(event) {
+      if (event.key === 'Enter') {
+        document.getElementById('search-btn').click();
+      }
+    });
   </script>
 </body>
 </html>
