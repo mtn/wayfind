@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
-import { useChat } from "ai/react";
+import { useQueuedChat } from "@/lib/useQueuedChat";
 import { Button } from "@/components/ui/button";
 import { FileEntry } from "@/lib/fileSystem";
 import ReactMarkdown from "react-markdown";
@@ -181,70 +181,69 @@ export function ChatInterface({
     setCaretPosition(element, caretPos);
   }, [files]);
 
-  // Configure useChat with maxSteps. Do not pass a tools field (they come from the API).
+  // Configure useQueuedChat with maxSteps. Do not pass a tools field (they come from the API).
   // Instead, intercept tool calls via onToolCall.
-  const { messages, handleSubmit, handleInputChange, isLoading, append } =
-    useChat({
-      api: "http://localhost:3001/api/chat",
-      maxSteps: 1,
-      experimental_prepareRequestBody({ messages, requestBody }) {
-        const debugState = getDebugSync();
-        return {
-          ...requestBody,
-          messages,
-          debugState,
-        };
-      },
-      onResponse(response) {
-        console.log("Response from server:", response);
-      },
-      async onToolCall({ toolCall }) {
-        console.log("Tool call starting:", {
-          toolCallId: toolCall.toolCallId,
+  const { messages, isLoading, send, handleInputChange } = useQueuedChat({
+    api: "http://localhost:3001/api/chat",
+    maxSteps: 1,
+    experimental_prepareRequestBody({ messages, requestBody }) {
+      const debugState = getDebugSync();
+      return {
+        ...requestBody,
+        messages,
+        debugState,
+      };
+    },
+    onResponse(response) {
+      console.log("Response from server:", response);
+    },
+    async onToolCall({ toolCall }) {
+      console.log("Tool call starting:", {
+        toolCallId: toolCall.toolCallId,
+        toolName: toolCall.toolName,
+        args: toolCall.args,
+      });
+
+      let actionResult;
+      const debugSync = getDebugSync();
+
+      logToolCall(toolCall.toolName);
+
+      try {
+        if (toolCall.toolName === "setBreakpoint") {
+          const { line } = toolCall.args as { line: number };
+          onSetBreakpoint(line);
+          actionResult = "Breakpoint set";
+        } else if (toolCall.toolName === "launchDebug") {
+          onLaunch();
+          actionResult = "Debug session launched";
+        } else if (toolCall.toolName === "continueExecution") {
+          onContinue();
+          actionResult = "Continued execution";
+        } else if (toolCall.toolName === "evaluateExpression") {
+          const { expression } = toolCall.args as { expression: string };
+          const result = await onEvaluate(expression);
+          actionResult = result ? `Evaluated: ${result.result}` : "No result";
+        }
+
+        console.log("Tool call completed successfully:", {
           toolName: toolCall.toolName,
-          args: toolCall.args,
+          actionResult,
         });
 
-        let actionResult;
-        const debugSync = getDebugSync();
-
-        logToolCall(toolCall.toolName);
-
-        try {
-          if (toolCall.toolName === "setBreakpoint") {
-            const { line } = toolCall.args as { line: number };
-            onSetBreakpoint(line);
-            actionResult = "Breakpoint set";
-          } else if (toolCall.toolName === "launchDebug") {
-            onLaunch();
-            actionResult = "Debug session launched";
-          } else if (toolCall.toolName === "continueExecution") {
-            onContinue();
-            actionResult = "Continued execution";
-          } else if (toolCall.toolName === "evaluateExpression") {
-            const { expression } = toolCall.args as { expression: string };
-            const result = await onEvaluate(expression);
-            actionResult = result ? `Evaluated: ${result.result}` : "No result";
-          }
-
-          console.log("Tool call completed successfully:", {
-            toolName: toolCall.toolName,
-            actionResult,
-          });
-
-          return {
-            message: actionResult,
-            debugState: debugSync,
-          };
-        } catch (error) {
-          console.error("Error in tool call execution:", {
-            toolName: toolCall.toolName,
-            error,
-          });
-          throw error;
-        }
-      },
-    });
+        return {
+          message: actionResult,
+          debugState: debugSync,
+        };
+      } catch (error) {
+        console.error("Error in tool call execution:", {
+          toolName: toolCall.toolName,
+          error,
+        });
+        throw error;
+      }
+    },
+  });
 
   // TODO for larger projects we can't just append everything into the context
   // Create attachments from files (for additional context).
@@ -276,7 +275,7 @@ export function ChatInterface({
         });
       }
     });
-    handleSubmit(e, {
+    send(input, {
       body: { content: input },
       experimental_attachments: experimentalAttachments,
     });
@@ -342,11 +341,11 @@ export function ChatInterface({
             // Prepare message for LLM
             const statusMsg = `Debug session status changed to: ${status}`;
 
-            // Use append to directly add a message to the chat
-            // This is simpler and more efficient than creating synthetic events
-            append({
+            // Use send to queue the message
+            send({
               role: "user",
               content: statusMsg,
+              id: crypto.randomUUID(),
             });
 
             // Clear the input field
@@ -374,10 +373,11 @@ export function ChatInterface({
           const { file, line } = event.payload;
           const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
-          // Use append to directly add a message to the chat
-          append({
+          // Use send to queue the message
+          send({
             role: "user",
             content: stopMsg,
+            id: crypto.randomUUID(),
           });
 
           // Clear the input field
