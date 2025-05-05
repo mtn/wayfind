@@ -205,7 +205,6 @@ export function ChatInterface({
       });
 
       let actionResult;
-      const debugSync = getDebugSync();
 
       logToolCall(toolCall.toolName);
 
@@ -233,7 +232,6 @@ export function ChatInterface({
 
         return {
           message: actionResult,
-          debugState: debugSync,
         };
       } catch (error) {
         console.error("Error in tool call execution:", {
