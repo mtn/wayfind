@@ -372,7 +372,7 @@ export function ChatInterface({
         "debug-location",
         (event) => {
           const { file, line } = event.payload;
-          const stopMsg = `Breakpoint on line ${line} of ${file} triggered.`;
+          const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
           // Use append to directly add a message to the chat
           append({
