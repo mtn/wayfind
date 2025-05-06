@@ -580,7 +580,7 @@ export default function Home() {
         setDebugEngine("python");
 
         const testPrompt =
-          "/file a.py set a breakpoint on line 13, then launch the debug session and trace the values next_val takes on as the program runs. you should continue execution and evaluate next_val 10 times. then report to me what values next_val took on.";
+          "/file a.py set a breakpoint on line 14, then launch the debug session and trace the values next_val takes on as the program runs. you should continue execution and evaluate next_val until the program is terminated. then report to me what values next_val took on.";
 
         if (prefillChatInputRef.current) {
           prefillChatInputRef.current(testPrompt);
