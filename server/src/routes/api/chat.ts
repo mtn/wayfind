@@ -229,14 +229,6 @@ router.post("/", async (req: Request, res: Response) => {
               payload: enhancedPayload,
               conversationId,
             });
-
-            console.log("Stream chunk raw:", chunkStr);
-            if (enhancedPayload.decoded) {
-              console.log("Stream chunk decoded:", enhancedPayload.decoded);
-            }
-            if (chunkStr.includes('"toolName"')) {
-              console.log("Tool call chunk detected:", chunkStr);
-            }
           }
         });
 
@@ -318,14 +310,6 @@ router.post("/", async (req: Request, res: Response) => {
             payload: enhancedPayload,
             conversationId,
           });
-
-          console.log("Stream chunk raw:", decoded);
-          if (enhancedPayload.decoded) {
-            console.log("Stream chunk decoded:", enhancedPayload.decoded);
-          }
-          if (decoded.includes('"toolName"')) {
-            console.log("Tool call chunk detected:", decoded);
-          }
         }
 
         res.write(decoded);
