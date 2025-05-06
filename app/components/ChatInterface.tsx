@@ -333,7 +333,8 @@ export function ChatInterface({
           const { status } = event.payload;
 
           // Only notify if status has changed since last notification
-          if (status !== lastStatusRef.current) {
+          // AND it's not the "initializing" status
+          if (status !== lastStatusRef.current && status !== "initializing") {
             lastStatusRef.current = status;
 
             // Prepare message for LLM
@@ -351,6 +352,9 @@ export function ChatInterface({
             if (editorRef.current) {
               editorRef.current.innerText = "";
             }
+          } else {
+            // Still update the lastStatusRef even if we don't send a message
+            lastStatusRef.current = status;
           }
         },
       );
