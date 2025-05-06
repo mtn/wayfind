@@ -192,6 +192,8 @@ router.post("/", async (req: Request, res: Response) => {
             For example, if the user asks you how the value of a variable changes as the program runs,
             you should use your tools to set breakpoint(s) at lines that let you read the value, launch the program, continue till
             it stops, evaluate the variable, and so on until it terminates.
+            After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
+            (if it makes sense to do so).
 
             If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
             steps to finish.`,
@@ -202,6 +204,11 @@ router.post("/", async (req: Request, res: Response) => {
       messages: [systemPrompt, ...messages],
       tools,
       maxSteps: 1,
+      providerOptions: {
+        anthropic: {
+          thinking: { type: "enabled", budgetTokens: 2048 },
+        },
+      },
     });
 
     // Stream the result.
