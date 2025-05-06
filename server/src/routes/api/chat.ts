@@ -31,9 +31,7 @@ function normalise(buf: string): string {
     }
   }
   // Otherwise convert literal "\n", "\t", "\\" sequences
-  return buf.replace(/\\n/g, '\n')
-            .replace(/\\t/g, '\t')
-            .replace(/\\\\/g, '\\');
+  return buf.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\\\/g, "\\");
 }
 
 /**
@@ -44,7 +42,7 @@ function normalise(buf: string): string {
 function decode(stream: string): string {
   let match;
   const textParts: string[] = [];
-  
+
   // Find all matches of the pattern and extract the text parts
   while ((match = PART_RE.exec(stream)) !== null) {
     if (match[1]) {
@@ -58,9 +56,9 @@ function decode(stream: string): string {
       }
     }
   }
-  
+
   // Join all text parts
-  return textParts.join('');
+  return textParts.join("");
 }
 
 /**
@@ -70,13 +68,13 @@ function decode(stream: string): string {
  */
 function extractMetadata(stream: string): any {
   const metadata: any = {};
-  
+
   // Extract message ID
   const messageIdMatch = stream.match(/f:\{"messageId":"([^"]+)"\}/);
   if (messageIdMatch && messageIdMatch[1]) {
     metadata.messageId = messageIdMatch[1];
   }
-  
+
   // Extract finish reason and usage info
   const finishMatch = stream.match(/e:\{([^}]+)\}/);
   if (finishMatch && finishMatch[1]) {
@@ -87,7 +85,7 @@ function extractMetadata(stream: string): any {
       // If parsing fails, ignore
     }
   }
-  
+
   return metadata;
 }
 
@@ -222,16 +220,16 @@ router.post("/", async (req: Request, res: Response) => {
             const enhancedPayload = {
               raw: chunkStr,
               decoded: chunkStr.includes('":"') ? decode(chunkStr) : chunkStr,
-              metadata: extractMetadata(chunkStr)
+              metadata: extractMetadata(chunkStr),
             };
-            
+
             debugStore.push({
               direction: "response-chunk",
               timestamp: Date.now(),
               payload: enhancedPayload,
               conversationId,
             });
-            
+
             console.log("Stream chunk raw:", chunkStr);
             if (enhancedPayload.decoded) {
               console.log("Stream chunk decoded:", enhancedPayload.decoded);
@@ -248,9 +246,9 @@ router.post("/", async (req: Request, res: Response) => {
           const enhancedPayload = {
             raw: completeResponse,
             decoded: decode(normalise(completeResponse)),
-            metadata: extractMetadata(completeResponse)
+            metadata: extractMetadata(completeResponse),
           };
-          
+
           debugStore.push({
             direction: "response",
             timestamp: Date.now(),
@@ -289,9 +287,9 @@ router.post("/", async (req: Request, res: Response) => {
           const enhancedPayload = {
             raw: completeResponse,
             decoded: decode(normalise(completeResponse)),
-            metadata: extractMetadata(completeResponse)
+            metadata: extractMetadata(completeResponse),
           };
-          
+
           debugStore.push({
             direction: "response",
             timestamp: Date.now(),
@@ -311,16 +309,16 @@ router.post("/", async (req: Request, res: Response) => {
           const enhancedPayload = {
             raw: decoded,
             decoded: decoded.includes('":"') ? decode(decoded) : decoded,
-            metadata: extractMetadata(decoded)
+            metadata: extractMetadata(decoded),
           };
-          
+
           debugStore.push({
             direction: "response-chunk",
             timestamp: Date.now(),
             payload: enhancedPayload,
             conversationId,
           });
-          
+
           console.log("Stream chunk raw:", decoded);
           if (enhancedPayload.decoded) {
             console.log("Stream chunk decoded:", enhancedPayload.decoded);
@@ -617,10 +615,10 @@ const logsViewerTemplate = `
       }
 
       const directionClass = isRequest ? 'request' : 'response';
-      
+
       // Handle both old format (direct payload) and new format (enhanced payload)
       let payloadContent = '';
-      
+
       // Check if payload has the enhanced structure
       if (log.payload && (log.payload.raw !== undefined || log.payload.decoded !== undefined)) {
         // Display metadata if available
@@ -630,12 +628,12 @@ const logsViewerTemplate = `
             .replace(/>/g, '&gt;');
           payloadContent += \`<div class="metadata"><h4>Metadata</h4><pre>\${metadataStr}</pre></div>\`;
         }
-        
+
         // Display decoded content if available
         if (log.payload.decoded && log.payload.decoded.trim()) {
           payloadContent += \`<div class="decoded"><h4>Decoded Content</h4><pre>\${log.payload.decoded}</pre></div>\`;
         }
-        
+
         // Always include raw content
         const rawStr = JSON.stringify(log.payload.raw, null, 2)
           .replace(/</g, '&lt;')
@@ -797,7 +795,7 @@ const logsViewerTemplate = `
           if (responseStr.includes(query)) {
             matchesInResponses += (responseStr.match(new RegExp(query, 'gi')) || []).length;
           }
-          
+
           // Also check in decoded content if available (enhanced format)
           if (response.payload && response.payload.decoded) {
             const decodedStr = response.payload.decoded.toLowerCase();
@@ -817,13 +815,13 @@ const logsViewerTemplate = `
           if (concatenatedChunks.includes(query)) {
             matchesInResponses += (concatenatedChunks.match(new RegExp(query, 'gi')) || []).length;
           }
-          
+
           // Check in decoded content for chunks (enhanced format)
           const decodedChunks = group.chunks
             .filter(chunk => chunk.payload && chunk.payload.decoded)
             .map(chunk => chunk.payload.decoded)
             .join("").toLowerCase();
-            
+
           if (decodedChunks && decodedChunks.includes(query)) {
             matchesInDecoded += (decodedChunks.match(new RegExp(query, 'gi')) || []).length;
           }
