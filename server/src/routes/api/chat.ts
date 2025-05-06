@@ -3,7 +3,7 @@ dotenv.config({ path: ".env.local" });
 const debug = process.env.DEBUG_CHAT === "true";
 
 import { Router, Request, Response } from "express";
-import { openai } from "@ai-sdk/openai";
+import { anthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
 import {
   setBreakpoint,
@@ -198,7 +198,7 @@ router.post("/", async (req: Request, res: Response) => {
     };
 
     const result = streamText({
-      model: openai("o4-mini"),
+      model: anthropic("claude-3-7-sonnet-20250219"),
       messages: [systemPrompt, ...messages],
       tools,
       maxSteps: 1,
