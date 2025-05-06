@@ -198,7 +198,7 @@ router.post("/", async (req: Request, res: Response) => {
     };
 
     const result = streamText({
-      model: openai("gpt-4o-mini"),
+      model: openai("o4-mini"),
       messages: [systemPrompt, ...messages],
       tools,
       maxSteps: 1,
