@@ -181,9 +181,12 @@ export function ChatInterface({
     setCaretPosition(element, caretPos);
   }, [files]);
 
-  // Configure useQueuedChat with maxSteps. Do not pass a tools field (they come from the API).
-  // Instead, intercept tool calls via onToolCall.
-  const { messages, isLoading, send, handleInputChange } = useQueuedChat({
+  const {
+    messages,
+    isLoading: chatIsLoading,
+    send,
+    handleInputChange,
+  } = useQueuedChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 1,
     experimental_prepareRequestBody({ messages, requestBody }) {
@@ -205,14 +208,25 @@ export function ChatInterface({
       });
 
       let actionResult;
-
       logToolCall(toolCall.toolName);
 
       try {
+        // Handle different tool calls
         if (toolCall.toolName === "setBreakpoint") {
+          // First, set the breakpoint
           const { line } = toolCall.args as { line: number };
           onSetBreakpoint(line);
           actionResult = "Breakpoint set";
+
+          // After handling this specific tool, schedule a follow-up message
+          // This is done after returning from this function to avoid interrupting the flow
+          setTimeout(() => {
+            send({
+              role: "user",
+              content: "Breakpoint was set successfully.",
+              id: crypto.randomUUID(),
+            });
+          }, 0);
         } else if (toolCall.toolName === "launchDebug") {
           onLaunch();
           actionResult = "Debug session launched";
@@ -243,7 +257,6 @@ export function ChatInterface({
     },
   });
 
-  // TODO for larger projects we can't just append everything into the context
   // Create attachments from files (for additional context).
   const attachments: Attachment[] = [];
   files.forEach((f) => {
@@ -445,7 +458,7 @@ export function ChatInterface({
             )}
           </div>
         ))}
-        {isLoading && (
+        {chatIsLoading && (
           <div className="flex justify-start p-3">
             <div className="flex gap-1">
               <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
@@ -535,7 +548,17 @@ export function ChatInterface({
             onPaste={(e) => {
               e.preventDefault();
               const text = e.clipboardData.getData("text/plain");
-              document.execCommand("insertText", false, text);
+              if (editorRef.current) {
+                const selection = window.getSelection();
+                if (selection && selection.rangeCount > 0) {
+                  const range = selection.getRangeAt(0);
+                  range.deleteContents();
+                  range.insertNode(document.createTextNode(text));
+                  selection.collapseToEnd();
+                } else {
+                  editorRef.current.textContent += text;
+                }
+              }
               requestAnimationFrame(() => {
                 highlightFileCommand();
               });
@@ -543,7 +566,19 @@ export function ChatInterface({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.metaKey) {
                 e.preventDefault();
-                document.execCommand("insertLineBreak");
+                if (editorRef.current) {
+                  const selection = window.getSelection();
+                  if (selection && selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    const br = document.createElement("br");
+                    range.deleteContents();
+                    range.insertNode(br);
+                    range.setStartAfter(br);
+                    range.setEndAfter(br);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                  }
+                }
               } else if (e.metaKey && e.key === "Enter") {
                 e.preventDefault();
                 submitMessage();
