@@ -200,20 +200,34 @@ export function ChatInterface({
     },
     onResponse(response) {
       console.log("Response from server:", response);
-      
+
+      // Define the type for custom responses with events
+      interface CustomResponse {
+        events?: {
+          type?: string;
+          data?: {
+            type?: string;
+          };
+        }[];
+      }
+
       // Check the raw response for reasoning events
-      if (response?.events) {
-        const events = response.events as any[];
-        const hasReasoning = events.some((event: any) =>
-          event.type === 'reasoning' ||
-          (event.data && event.data.type === 'reasoning')
+      const customResponse = response as CustomResponse;
+      if (customResponse?.events) {
+        const events = customResponse.events;
+        const hasReasoning = events.some(
+          (event) =>
+            event.type === "reasoning" ||
+            (event.data && event.data.type === "reasoning"),
         );
         if (hasReasoning) {
-          console.log("Reasoning detected in server response:",
-            events.filter((event: any) =>
-              event.type === 'reasoning' ||
-              (event.data && event.data.type === 'reasoning')
-            )
+          console.log(
+            "Reasoning detected in server response:",
+            events.filter(
+              (event) =>
+                event.type === "reasoning" ||
+                (event.data && event.data.type === "reasoning"),
+            ),
           );
         }
       }
@@ -453,23 +467,44 @@ export function ChatInterface({
                 {/* Render assistant message content */}
                 {message.parts ? (
                   message.parts.map((part, idx) => {
-                    if ((part as any).type === "text") {
-                      return <ReactMarkdown key={idx}>{(part as any).text}</ReactMarkdown>;
-                    } else if ((part as any).type === "tool-invocation") {
+                    type ToolInvocation = {
+                      toolName: string;
+                      args: Record<string, unknown>;
+                      state: string;
+                      result?: unknown;
+                    };
+
+                    type MessagePart =
+                      | { type: "text"; text: string }
+                      | {
+                          type: "tool-invocation";
+                          toolInvocation: ToolInvocation;
+                        };
+
+                    const typedPart = part as MessagePart;
+
+                    if (typedPart.type === "text") {
+                      return (
+                        <ReactMarkdown key={idx}>
+                          {typedPart.text}
+                        </ReactMarkdown>
+                      );
+                    } else if (typedPart.type === "tool-invocation") {
                       return (
                         <div
                           key={idx}
                           className="text-xs text-gray-600 border rounded p-1 mb-2"
                         >
-                          <strong>Tool Call:</strong> {(part as any).toolInvocation.toolName}{" "}
-                          with args {JSON.stringify((part as any).toolInvocation.args)}
+                          <strong>Tool Call:</strong>{" "}
+                          {typedPart.toolInvocation.toolName} with args{" "}
+                          {JSON.stringify(typedPart.toolInvocation.args)}
                           <br />
-                          <em>Status: {(part as any).toolInvocation.state}</em>
-                          {(part as any).toolInvocation.state === "result" && (
+                          <em>Status: {typedPart.toolInvocation.state}</em>
+                          {typedPart.toolInvocation.state === "result" && (
                             <>
                               <br />
                               <strong>Result:</strong>{" "}
-                              {JSON.stringify((part as any).toolInvocation.result)}
+                              {JSON.stringify(typedPart.toolInvocation.result)}
                             </>
                           )}
                         </div>
@@ -482,42 +517,50 @@ export function ChatInterface({
                     {extractUserPrompt(message.content)}
                   </ReactMarkdown>
                 )}
-                
+
                 {/* Show thinking indicator only for the last assistant message during loading */}
-                {messageIndex === messages.length - 1 && chatIsLoading && isThinking && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                    <span className="text-sm text-blue-700 font-medium">Thinking...</span>
-                  </div>
-                )}
+                {messageIndex === messages.length - 1 &&
+                  chatIsLoading &&
+                  isThinking && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                      <span className="text-sm text-blue-700 font-medium">
+                        Thinking...
+                      </span>
+                    </div>
+                  )}
               </>
             )}
           </div>
         ))}
-        
+
         {/* If we're loading but there's no assistant message yet, show a standalone indicator */}
-        {chatIsLoading && messages.length > 0 && messages[messages.length - 1].role === "user" && (
-          <div className="p-3 rounded-lg text-sm whitespace-pre-wrap bg-muted mr-auto max-w-[80%]">
-            {isThinking ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                <span className="text-sm text-blue-700 font-medium">Thinking...</span>
-              </div>
-            ) : (
-              <div className="flex gap-1">
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-                <div
-                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                  style={{ animationDelay: "0.2s" }}
-                />
-                <div
-                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                  style={{ animationDelay: "0.4s" }}
-                />
-              </div>
-            )}
-          </div>
-        )}
+        {chatIsLoading &&
+          messages.length > 0 &&
+          messages[messages.length - 1].role === "user" && (
+            <div className="p-3 rounded-lg text-sm whitespace-pre-wrap bg-muted mr-auto max-w-[80%]">
+              {isThinking ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                  <span className="text-sm text-blue-700 font-medium">
+                    Thinking...
+                  </span>
+                </div>
+              ) : (
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                  <div
+                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.2s" }}
+                  />
+                  <div
+                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.4s" }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
       </div>
 
       {/* Suggestions Dropdown for Commands */}

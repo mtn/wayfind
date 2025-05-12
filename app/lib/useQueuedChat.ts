@@ -79,16 +79,20 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
       let hasNonReasoningText = false;
       let hasReasoningParts = false;
 
+      type MessagePart = { type: "reasoning" } | { type: "text"; text: string };
+
       for (const part of parts) {
+        const typedPart = part as MessagePart;
+
         // Track reasoning parts
-        if ((part as any).type === "reasoning") {
+        if (typedPart.type === "reasoning") {
           console.log("Detected reasoning part:", part);
           hasReasoningParts = true;
         }
 
         // Track non-reasoning text parts
-        if ((part as any).type === "text" && typeof (part as any).text === "string") {
-          const textContent = (part as any).text;
+        if (typedPart.type === "text" && typeof typedPart.text === "string") {
+          const textContent = typedPart.text;
 
           // Only count non-empty text as real generation
           if (textContent.trim().length > 0) {
@@ -105,16 +109,19 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
 
       // Log state transitions for debugging
       if (isThinking !== nextThinkingState) {
-        console.log(`Thinking state transition: ${isThinking} -> ${nextThinkingState}`, {
-          hasReasoningParts,
-          hasNonReasoningText,
-          numTextParts: seenTextParts.current.size
-        });
+        console.log(
+          `Thinking state transition: ${isThinking} -> ${nextThinkingState}`,
+          {
+            hasReasoningParts,
+            hasNonReasoningText,
+            numTextParts: seenTextParts.current.size,
+          },
+        );
       }
 
       setIsThinking(nextThinkingState);
     }
-  }, [chat.messages, chat.isLoading]);
+  }, [chat.messages, chat.isLoading, isThinking]);
 
   return { ...chat, send, isThinking }; // expose isThinking state
 }
