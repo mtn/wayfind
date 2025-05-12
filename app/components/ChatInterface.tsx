@@ -200,7 +200,7 @@ export function ChatInterface({
     },
     onResponse(response) {
       console.log("Response from server:", response);
-
+      
       // Check the raw response for reasoning events
       if (response?.events) {
         const events = response.events as any[];
@@ -431,7 +431,8 @@ export function ChatInterface({
     <div className="flex flex-col h-full border-t relative">
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message) => (
+        {/* Render all messages in their original order */}
+        {messages.map((message, messageIndex) => (
           <div
             key={message.id}
             className={`
@@ -443,72 +444,78 @@ export function ChatInterface({
               }
             `}
           >
-            {message.parts ? (
-              message.parts.map((part, idx) => {
-                // Log all part types for debugging
-                if (idx === 0) {
-                  console.log("Message parts types:", message.parts.map(p => (p as any).type));
-                }
-
-                if ((part as any).type === "text") {
-                  return <ReactMarkdown key={idx}>{(part as any).text}</ReactMarkdown>;
-                } else if ((part as any).type === "reasoning") {
-                  // Just log reasoning parts for now, we don't render them
-                  console.log("Found reasoning part:", part);
-                  return null;
-                } else if ((part as any).type === "tool-invocation") {
-                  return (
-                    <div
-                      key={idx}
-                      className="text-xs text-gray-600 border rounded p-1"
-                    >
-                      <strong>Tool Call:</strong> {(part as any).toolInvocation.toolName}{" "}
-                      with args {JSON.stringify((part as any).toolInvocation.args)}
-                      <br />
-                      <em>Status: {(part as any).toolInvocation.state}</em>
-                      {(part as any).toolInvocation.state === "result" && (
-                        <>
-                          <br />
-                          <strong>Result:</strong>{" "}
-                          {JSON.stringify((part as any).toolInvocation.result)}
-                        </>
-                      )}
-                    </div>
-                  );
-                }
-                return null;
-              })
-            ) : (
+            {message.role === "user" ? (
               <ReactMarkdown>
                 {extractUserPrompt(message.content)}
               </ReactMarkdown>
+            ) : (
+              <>
+                {/* Render assistant message content */}
+                {message.parts ? (
+                  message.parts.map((part, idx) => {
+                    if ((part as any).type === "text") {
+                      return <ReactMarkdown key={idx}>{(part as any).text}</ReactMarkdown>;
+                    } else if ((part as any).type === "tool-invocation") {
+                      return (
+                        <div
+                          key={idx}
+                          className="text-xs text-gray-600 border rounded p-1 mb-2"
+                        >
+                          <strong>Tool Call:</strong> {(part as any).toolInvocation.toolName}{" "}
+                          with args {JSON.stringify((part as any).toolInvocation.args)}
+                          <br />
+                          <em>Status: {(part as any).toolInvocation.state}</em>
+                          {(part as any).toolInvocation.state === "result" && (
+                            <>
+                              <br />
+                              <strong>Result:</strong>{" "}
+                              {JSON.stringify((part as any).toolInvocation.result)}
+                            </>
+                          )}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })
+                ) : (
+                  <ReactMarkdown>
+                    {extractUserPrompt(message.content)}
+                  </ReactMarkdown>
+                )}
+                
+                {/* Show thinking indicator only for the last assistant message during loading */}
+                {messageIndex === messages.length - 1 && chatIsLoading && isThinking && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                    <span className="text-sm text-blue-700 font-medium">Thinking...</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         ))}
-        {chatIsLoading && (
-          <div className="flex justify-start p-3">
-            <div className="flex gap-1">
-              {isThinking ? (
-                <div className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
-                  <div className="w-5 h-5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                  <span className="text-sm text-blue-700 font-medium">Claude is thinking...</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-                    <div
-                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                      style={{ animationDelay: "0.2s" }}
-                    />
-                    <div
-                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                      style={{ animationDelay: "0.4s" }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+        
+        {/* If we're loading but there's no assistant message yet, show a standalone indicator */}
+        {chatIsLoading && messages.length > 0 && messages[messages.length - 1].role === "user" && (
+          <div className="p-3 rounded-lg text-sm whitespace-pre-wrap bg-muted mr-auto max-w-[80%]">
+            {isThinking ? (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                <span className="text-sm text-blue-700 font-medium">Thinking...</span>
+              </div>
+            ) : (
+              <div className="flex gap-1">
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                <div
+                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0.2s" }}
+                />
+                <div
+                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0.4s" }}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
