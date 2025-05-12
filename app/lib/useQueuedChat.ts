@@ -1,5 +1,5 @@
 import { Message, useChat, UseChatHelpers } from "ai/react";
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 
 // Define a type for queue items to include both message and options
 type QueueItem = {
@@ -11,6 +11,7 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
   const chat = useChat(opts); // normal useChat
   const q = useRef<QueueItem[]>([]); // FIFO queue of message+options pairs
   const flushing = useRef(false); // "is streaming" flag
+  const [isThinking, setIsThinking] = useState(false);
 
   /** flush the queue if idle */
   const flush = useCallback(async () => {
@@ -41,6 +42,7 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
   useEffect(() => {
     if (!chat.isLoading && flushing.current) {
       flushing.current = false;
+      setIsThinking(false);
       flush();
     }
   }, [chat.isLoading, flush]);
@@ -49,9 +51,70 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
   useEffect(() => {
     if (chat.error && flushing.current) {
       flushing.current = false;
+      setIsThinking(false);
       flush();
     }
   }, [chat.error, flush]);
 
-  return { ...chat, send }; // expose new API
+  // Track all parts we've seen to detect transition from thinking to generating
+  const seenTextParts = useRef<Set<string>>(new Set());
+
+  // Reset the seen parts when loading state changes to false
+  useEffect(() => {
+    if (!chat.isLoading) {
+      seenTextParts.current = new Set();
+    }
+  }, [chat.isLoading]);
+
+  // Watch for reasoning parts and detect when text generation begins
+  useEffect(() => {
+    if (!chat.isLoading) return;
+
+    // Check last message's parts
+    const lastMessage = chat.messages[chat.messages.length - 1];
+    if (lastMessage?.parts) {
+      const parts = lastMessage.parts;
+
+      // Check if we have any text parts (non-reasoning)
+      let hasNonReasoningText = false;
+      let hasReasoningParts = false;
+
+      for (const part of parts) {
+        // Track reasoning parts
+        if ((part as any).type === "reasoning") {
+          console.log("Detected reasoning part:", part);
+          hasReasoningParts = true;
+        }
+
+        // Track non-reasoning text parts
+        if ((part as any).type === "text" && typeof (part as any).text === "string") {
+          const textContent = (part as any).text;
+
+          // Only count non-empty text as real generation
+          if (textContent.trim().length > 0) {
+            // Use the content as an ID to track unique text parts
+            seenTextParts.current.add(textContent);
+            hasNonReasoningText = true;
+          }
+        }
+      }
+
+      // We're thinking if we have reasoning parts but no text parts yet
+      // Once we start seeing text parts, we're no longer in thinking mode
+      const nextThinkingState = hasReasoningParts && !hasNonReasoningText;
+
+      // Log state transitions for debugging
+      if (isThinking !== nextThinkingState) {
+        console.log(`Thinking state transition: ${isThinking} -> ${nextThinkingState}`, {
+          hasReasoningParts,
+          hasNonReasoningText,
+          numTextParts: seenTextParts.current.size
+        });
+      }
+
+      setIsThinking(nextThinkingState);
+    }
+  }, [chat.messages, chat.isLoading]);
+
+  return { ...chat, send, isThinking }; // expose isThinking state
 }

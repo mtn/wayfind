@@ -209,6 +209,17 @@ router.post("/", async (req: Request, res: Response) => {
           thinking: { type: "enabled", budgetTokens: 2048 },
         },
       },
+      onChunk: (chunk) => {
+        if (debug) {
+          if (chunk.chunk.type === 'reasoning') {
+            console.log('Received reasoning chunk:', chunk);
+          } else if (chunk.chunk.type === 'text-delta') {
+            console.log('Received text-delta chunk:', chunk.chunk.textDelta);
+          } else {
+            console.log('Received other chunk type:', chunk.chunk.type);
+          }
+        }
+      },
     });
 
     // Stream the result.
@@ -264,7 +275,7 @@ router.post("/", async (req: Request, res: Response) => {
       });
       (result as any).pipe(res);
     } else if (typeof (result as any).toDataStreamResponse === "function") {
-      const response = (result as any).toDataStreamResponse();
+      const response = (result as any).toDataStreamResponse({ sendReasoning: true });
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       const conversationId = Date.now().toString();

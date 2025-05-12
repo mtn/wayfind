@@ -184,6 +184,7 @@ export function ChatInterface({
   const {
     messages,
     isLoading: chatIsLoading,
+    isThinking,
     send,
     handleInputChange,
   } = useQueuedChat({
@@ -199,6 +200,23 @@ export function ChatInterface({
     },
     onResponse(response) {
       console.log("Response from server:", response);
+
+      // Check the raw response for reasoning events
+      if (response?.events) {
+        const events = response.events as any[];
+        const hasReasoning = events.some((event: any) =>
+          event.type === 'reasoning' ||
+          (event.data && event.data.type === 'reasoning')
+        );
+        if (hasReasoning) {
+          console.log("Reasoning detected in server response:",
+            events.filter((event: any) =>
+              event.type === 'reasoning' ||
+              (event.data && event.data.type === 'reasoning')
+            )
+          );
+        }
+      }
     },
     async onToolCall({ toolCall }) {
       console.log("Tool call starting:", {
@@ -427,23 +445,32 @@ export function ChatInterface({
           >
             {message.parts ? (
               message.parts.map((part, idx) => {
-                if (part.type === "text") {
-                  return <ReactMarkdown key={idx}>{part.text}</ReactMarkdown>;
-                } else if (part.type === "tool-invocation") {
+                // Log all part types for debugging
+                if (idx === 0) {
+                  console.log("Message parts types:", message.parts.map(p => (p as any).type));
+                }
+
+                if ((part as any).type === "text") {
+                  return <ReactMarkdown key={idx}>{(part as any).text}</ReactMarkdown>;
+                } else if ((part as any).type === "reasoning") {
+                  // Just log reasoning parts for now, we don't render them
+                  console.log("Found reasoning part:", part);
+                  return null;
+                } else if ((part as any).type === "tool-invocation") {
                   return (
                     <div
                       key={idx}
                       className="text-xs text-gray-600 border rounded p-1"
                     >
-                      <strong>Tool Call:</strong> {part.toolInvocation.toolName}{" "}
-                      with args {JSON.stringify(part.toolInvocation.args)}
+                      <strong>Tool Call:</strong> {(part as any).toolInvocation.toolName}{" "}
+                      with args {JSON.stringify((part as any).toolInvocation.args)}
                       <br />
-                      <em>Status: {part.toolInvocation.state}</em>
-                      {part.toolInvocation.state === "result" && (
+                      <em>Status: {(part as any).toolInvocation.state}</em>
+                      {(part as any).toolInvocation.state === "result" && (
                         <>
                           <br />
                           <strong>Result:</strong>{" "}
-                          {JSON.stringify(part.toolInvocation.result)}
+                          {JSON.stringify((part as any).toolInvocation.result)}
                         </>
                       )}
                     </div>
@@ -461,15 +488,26 @@ export function ChatInterface({
         {chatIsLoading && (
           <div className="flex justify-start p-3">
             <div className="flex gap-1">
-              <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-              <div
-                className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                style={{ animationDelay: "0.2s" }}
-              />
-              <div
-                className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                style={{ animationDelay: "0.4s" }}
-              />
+              {isThinking ? (
+                <div className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
+                  <div className="w-5 h-5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                  <span className="text-sm text-blue-700 font-medium">Claude is thinking...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: "0.2s" }}
+                    />
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: "0.4s" }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
