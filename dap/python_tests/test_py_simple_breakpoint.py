@@ -17,7 +17,6 @@ import os
 import sys
 import json
 import asyncio
-import subprocess
 import time
 import re
 
@@ -26,11 +25,13 @@ next_seq = 1
 responses = {}
 events = {}
 
+
 def next_sequence():
     global next_seq
     seq = next_seq
     next_seq += 1
     return seq
+
 
 async def send_dap_message(writer, message):
     """Send message as per DAP header format."""
@@ -38,7 +39,9 @@ async def send_dap_message(writer, message):
     header = f"Content-Length: {len(data)}\r\n\r\n"
     writer.write(header.encode('utf-8') + data.encode('utf-8'))
     await writer.drain()
-    print(f"--> Sent (seq {message.get('seq')}, cmd: {message.get('command')}): {data}\n")
+    print(
+        f"--> Sent (seq {message.get('seq')}, cmd: {message.get('command')}): {data}\n")
+
 
 async def read_dap_message(reader):
     """Read a DAP message from the reader. Blocks until complete."""
@@ -63,6 +66,7 @@ async def read_dap_message(reader):
     print(f"<-- Received: {json.dumps(message)}\n")
     return message
 
+
 async def dap_receiver(reader):
     """Async function that continuously reads and processes DAP messages."""
     while True:
@@ -82,6 +86,7 @@ async def dap_receiver(reader):
         else:
             print("Unknown message type", msg)
 
+
 async def wait_for_event(event_name, timeout=10):
     end_time = time.time() + timeout
     while time.time() < end_time:
@@ -90,6 +95,7 @@ async def wait_for_event(event_name, timeout=10):
         await asyncio.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for event {event_name}")
 
+
 async def wait_for_response(seq, timeout=10):
     end_time = time.time() + timeout
     while time.time() < end_time:
@@ -97,6 +103,7 @@ async def wait_for_response(seq, timeout=10):
             return responses.pop(seq)
         await asyncio.sleep(0.1)
     raise TimeoutError(f"Timeout waiting for response to seq {seq}")
+
 
 async def stream_output(proc, buffer):
     """Asynchronously read lines from proc.stdout and append them to buffer."""
@@ -112,6 +119,7 @@ async def stream_output(proc, buffer):
             break
         buffer.append(line.decode().rstrip())
 
+
 async def read_subprocess_output(proc, buffer):
     """Read subprocess output asynchronously."""
     while True:
@@ -120,19 +128,21 @@ async def read_subprocess_output(proc, buffer):
             break
         buffer.append(line.decode().rstrip())
 
+
 async def main_async():
     # Buffer to capture the output of the target script
     output_buffer = []
 
-    target_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "test_data", "python", "a.py"))
+    target_script = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), "..", "test_data", "python", "a.py"))
     debugpy_port = 5678
 
     # Step 1: Launch target script with debugpy.
     launcher_cmd = [
-         sys.executable, "-m", "debugpy",
-         "--listen", f"127.0.0.1:{debugpy_port}",
-         "--wait-for-client",
-         target_script
+        sys.executable, "-m", "debugpy",
+        "--listen", f"127.0.0.1:{debugpy_port}",
+        "--wait-for-client",
+        target_script
     ]
     print("Launching target script with debugpy:", " ".join(launcher_cmd))
     proc = await asyncio.create_subprocess_exec(
@@ -141,7 +151,8 @@ async def main_async():
         stderr=asyncio.subprocess.STDOUT
     )
     # Start reading subprocess output asynchronously
-    output_task = asyncio.create_task(read_subprocess_output(proc, output_buffer))
+    output_task = asyncio.create_task(
+        read_subprocess_output(proc, output_buffer))
     await asyncio.sleep(1)
 
     # Step 2: Connect to debugpy.
@@ -149,7 +160,7 @@ async def main_async():
     print("Connected to debugpy.")
 
     # Start the receiver task
-    recv_task = asyncio.create_task(dap_receiver(reader))
+    _ = asyncio.create_task(dap_receiver(reader))
 
     # Step 3: Send initialize.
     init_seq = next_sequence()
@@ -314,8 +325,10 @@ async def main_async():
     for line in output_buffer:
         print(line)
 
+
 def main():
     asyncio.run(main_async())
+
 
 if __name__ == "__main__":
     try:
