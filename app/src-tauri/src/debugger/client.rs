@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::io::{BufReader, ErrorKind, Read, Write};
 use std::net::TcpStream;
@@ -9,8 +10,6 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::sync::mpsc;
-use std::sync::mpsc as std_mpsc;
-use serde_json::json;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")] // This tells serde to use lowercase strings.
@@ -38,57 +37,6 @@ pub struct BreakpointInput {
     pub line: u32,
 }
 
-// Function to emit status updates with sequence numbers
-// Now includes file path and line number for paused status
-pub fn emit_status_update(
-    app_handle: &AppHandle,
-    status_seq: &AtomicU64,
-    status: &str,
-    thread_id: Option<i64>,
-) -> Result<(), String> {
-    let seq = status_seq.fetch_add(1, Ordering::SeqCst);
-
-    let mut payload = serde_json::json!({
-        "status": status,
-        "seq": seq
-    });
-
-    println!("Emitting status update: status={}, seq={}", status, seq);
-
-    if let Some(tid) = thread_id {
-        if let serde_json::Value::Object(ref mut map) = payload {
-            map.insert("threadId".to_string(), serde_json::json!(tid));
-            
-            // For paused status, fetch stack trace to get file and line info
-            if status == "paused" {
-                if let Ok(stack_resp) = get_stack_trace_sync(app_handle, tid) {
-                    if let Some(stack_body) = stack_resp.body {
-                        if let Some(frames) = stack_body.get("stackFrames").and_then(|sf| sf.as_array()) {
-                            if let Some(frame) = frames.first() {
-                                // Extract source file and line
-                                let source = frame.get("source");
-                                let line = frame.get("line").and_then(|l| l.as_i64());
-                                if let (Some(source), Some(line)) = (source, line) {
-                                    let file_path = source.get("path").and_then(|p| p.as_str());
-                                    if let Some(file_path) = file_path {
-                                        map.insert("file".to_string(), serde_json::json!(file_path));
-                                        map.insert("line".to_string(), serde_json::json!(line));
-                                        println!("Including debug location in status: file={}, line={}", file_path, line);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    app_handle
-        .emit("debug-status", payload)
-        .map_err(|e| format!("Failed to emit status update: {}", e))
-}
-
 pub struct DAPClient {
     // The writer is used to send messages.
     writer: Option<Arc<Mutex<TcpStream>>>,
@@ -112,146 +60,22 @@ pub struct DAPClient {
     pub debug_state: Option<Arc<crate::debug_state::DebugSessionState>>,
 }
 
-// Synchronous version of stack_trace for use in the emit_status_update function
-fn get_stack_trace_sync(app_handle: &AppHandle, thread_id: i64) -> Result<DAPMessage, String> {
-    // Create a new TcpStream for this request
-    let host = "127.0.0.1";
-    let port = 5678; // Default port for Python debugpy
-    
-    // Try connecting to different known ports - Python or Rust 
-    let stream = match TcpStream::connect((host, port)) {
-        Ok(s) => s,
-        Err(_) => {
-            match TcpStream::connect((host, 9123)) { // Try Rust LLDB-DAP port
-                Ok(s) => s,
-                Err(e) => return Err(format!("Failed to connect to debugger: {}", e)),
-            }
-        }
-    };
-    
-    let writer = Arc::new(Mutex::new(stream.try_clone()
-        .map_err(|e| format!("Failed to clone TcpStream: {}", e))?));
-        
-    // Create a stackTrace message
-    let seq = 10000; // Use a high sequence number to avoid conflicts
-    let message = DAPMessage {
-        seq,
-        message_type: MessageType::Request,
-        command: Some("stackTrace".to_string()),
-        request_seq: None,
-        success: None,
-        arguments: Some(json!({
-            "threadId": thread_id,
-            "startFrame": 0,
-            "levels": 1
-        })),
-        body: None,
-        event: None,
-    };
-    
-    // Serialize and send the message
-    let json = serde_json::to_string(&message)
-        .map_err(|e| format!("Failed to serialize stackTrace request: {}", e))?;
-    let header = format!("Content-Length: {}\r\n\r\n", json.len());
-    
-    {
-        let mut guard = writer.lock().unwrap();
-        guard.write_all(header.as_bytes())
-            .map_err(|e| format!("Failed to write header: {}", e))?;
-        guard.write_all(json.as_bytes())
-            .map_err(|e| format!("Failed to write message: {}", e))?;
-        guard.flush()
-            .map_err(|e| format!("Failed to flush: {}", e))?;
-    }
-    
-    // Set up a channel to receive the response
-    let (tx, rx) = std_mpsc::channel();
-    
-    // Read the response on a separate thread to avoid blocking
-    let reader = Arc::new(Mutex::new(BufReader::new(stream)));
-    let reader_clone = Arc::clone(&reader);
-    
-    thread::spawn(move || {
-        // Read header
-        let header = {
-            let mut reader = reader_clone.lock().unwrap();
-            let mut header_bytes = Vec::new();
-            
-            // Read one byte at a time until the header terminator is found
-            loop {
-                let mut buf = [0u8; 1];
-                match reader.read_exact(&mut buf) {
-                    Ok(()) => {
-                        header_bytes.push(buf[0]);
-                        if header_bytes.ends_with(b"\r\n\r\n") {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Err(format!("Error reading header: {}", e)));
-                        return;
-                    }
-                }
-            }
-            String::from_utf8_lossy(&header_bytes).to_string()
-        };
-        
-        // Parse Content-Length from header
-        let content_length = header
-            .lines()
-            .find(|line| line.to_lowercase().starts_with("content-length:"))
-            .and_then(|line| line[15..].trim().parse::<usize>().ok());
-            
-        if let Some(len) = content_length {
-            // Read the body
-            let mut body_bytes = vec![0; len];
-            {
-                let mut reader = reader_clone.lock().unwrap();
-                if let Err(e) = reader.read_exact(&mut body_bytes) {
-                    let _ = tx.send(Err(format!("Error reading body: {}", e)));
-                    return;
-                }
-            }
-            
-            let message_str = match String::from_utf8(body_bytes) {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = tx.send(Err(format!("Invalid UTF-8 body: {}", e)));
-                    return;
-                }
-            };
-            
-            match serde_json::from_str::<DAPMessage>(&message_str) {
-                Ok(msg) => {
-                    let _ = tx.send(Ok(msg));
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(format!("Error parsing message: {}", e)));
-                }
-            }
-        } else {
-            let _ = tx.send(Err("No Content-Length found in header".to_string()));
-        }
-    });
-    
-    // Wait for the response with a timeout
-    let start = Instant::now();
-    let timeout = Duration::from_secs(2);
-    
-    while start.elapsed() < timeout {
-        match rx.try_recv() {
-            Ok(Ok(msg)) => return Ok(msg),
-            Ok(Err(e)) => return Err(e),
-            Err(std_mpsc::TryRecvError::Empty) => {
-                thread::sleep(Duration::from_millis(50));
-            }
-            Err(std_mpsc::TryRecvError::Disconnected) => {
-                return Err("Channel disconnected".to_string());
-            }
+// Implement Clone for DAPClient
+impl Clone for DAPClient {
+    fn clone(&self) -> Self {
+        Self {
+            writer: self.writer.clone(),
+            reader: self.reader.clone(),
+            next_seq: Arc::clone(&self.next_seq),
+            responses: Arc::clone(&self.responses),
+            events: Arc::clone(&self.events),
+            receiver_handle: None, // Can't clone thread handles
+            event_sender: self.event_sender.clone(),
+            app_handle: self.app_handle.clone(),
+            status_seq: Arc::clone(&self.status_seq),
+            debug_state: self.debug_state.clone(),
         }
     }
-    
-    Err("Timeout waiting for stackTrace response".to_string())
 }
 
 impl DAPClient {
@@ -285,6 +109,86 @@ impl DAPClient {
         self.writer = Some(Arc::new(Mutex::new(stream.try_clone()?)));
         self.reader = Some(Arc::new(Mutex::new(BufReader::new(stream))));
         Ok(())
+    }
+
+    // Function to emit status updates with sequence numbers
+    // Now includes file path and line number for paused status
+    pub fn emit_status_update(&self, status: &str, thread_id: Option<i64>) -> Result<(), String> {
+        let seq = self.status_seq.fetch_add(1, Ordering::SeqCst);
+
+        let mut payload = serde_json::json!({
+            "status": status,
+            "seq": seq
+        });
+
+        println!("Emitting status update: status={}, seq={}", status, seq);
+
+        if let Some(tid) = thread_id {
+            if let serde_json::Value::Object(ref mut map) = payload {
+                map.insert("threadId".to_string(), serde_json::json!(tid));
+
+                // For paused status, fetch stack trace to get file and line info
+                if status == "paused" && self.writer.is_some() && self.reader.is_some() {
+                    // Send a stack trace request using the existing connection
+                    let stack_trace_req = DAPMessage {
+                        seq: -1,
+                        message_type: MessageType::Request,
+                        command: Some("stackTrace".to_string()),
+                        request_seq: None,
+                        success: None,
+                        arguments: Some(json!({
+                            "threadId": tid,
+                            "startFrame": 0,
+                            "levels": 1
+                        })),
+                        body: None,
+                        event: None,
+                    };
+
+                    if let Ok(seq) = self.send_message(stack_trace_req) {
+                        // Wait for response using a blocking approach
+                        let start = Instant::now();
+                        let timeout = Duration::from_secs(2);
+
+                        while start.elapsed() < timeout {
+                            if let Some(stack_resp) = self.responses.lock().unwrap().remove(&seq) {
+                                if let Some(stack_body) = stack_resp.body {
+                                    if let Some(frames) =
+                                        stack_body.get("stackFrames").and_then(|sf| sf.as_array())
+                                    {
+                                        if let Some(frame) = frames.first() {
+                                            let source = frame.get("source");
+                                            let line = frame.get("line").and_then(|l| l.as_i64());
+                                            if let (Some(source), Some(line)) = (source, line) {
+                                                let file_path =
+                                                    source.get("path").and_then(|p| p.as_str());
+                                                if let Some(file_path) = file_path {
+                                                    map.insert(
+                                                        "file".to_string(),
+                                                        serde_json::json!(file_path),
+                                                    );
+                                                    map.insert(
+                                                        "line".to_string(),
+                                                        serde_json::json!(line),
+                                                    );
+                                                    println!("Including debug location in status: file={}, line={}", file_path, line);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                            thread::sleep(Duration::from_millis(50));
+                        }
+                    }
+                }
+            }
+        }
+
+        self.app_handle
+            .emit("debug-status", payload)
+            .map_err(|e| format!("Failed to emit status update: {}", e))
     }
 
     // Get a reference to the status sequence counter
@@ -338,6 +242,7 @@ impl DAPClient {
             None => Arc::clone(&self.status_seq),
         };
         let debug_state_arc = self.debug_state.clone();
+        let client_arc = Arc::new(self.clone());
 
         self.receiver_handle = Some(thread::spawn(move || loop {
             // Read header until we find the "\r\n\r\n" sequence.
@@ -403,12 +308,7 @@ impl DAPClient {
                         if let Some(ref evt) = msg.event {
                             if evt == "terminated" {
                                 println!("Processing 'terminated' event");
-                                let _ = emit_status_update(
-                                    &app_handle,
-                                    &status_seq,
-                                    "terminated",
-                                    None,
-                                );
+                                let _ = client_arc.emit_status_update("terminated", None);
                             } else if evt == "stopped" {
                                 // Handle the stopped event - extract thread ID and emit
                                 if let Some(ref body) = msg.body {
@@ -418,20 +318,11 @@ impl DAPClient {
                                     if let Some(thread_id) =
                                         body.get("threadId").and_then(|v| v.as_i64())
                                     {
-                                        let _ = emit_status_update(
-                                            &app_handle,
-                                            &status_seq,
-                                            "paused",
-                                            Some(thread_id),
-                                        );
+                                        let _ = client_arc
+                                            .emit_status_update("paused", Some(thread_id));
                                     } else {
                                         // No thread ID, just emit paused status
-                                        let _ = emit_status_update(
-                                            &app_handle,
-                                            &status_seq,
-                                            "paused",
-                                            None,
-                                        );
+                                        let _ = client_arc.emit_status_update("paused", None);
                                     }
                                 }
                             } else if evt == "output" {
