@@ -201,7 +201,14 @@ async fn launch_debug_session(
             }
 
             // Emit an initializing status (to be updated by canonical events later)
-            emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
+            emit_status_update(
+                &app_handle,
+                &debug_state.status_seq,
+                "initializing",
+                None,
+                None,
+                None,
+            )?;
             println!("Debug session launched successfully");
             Ok("Debug session launched successfully".into())
         }
@@ -356,7 +363,14 @@ async fn launch_debug_session(
             }
 
             // Emit an initializing status
-            emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
+            emit_status_update(
+                &app_handle,
+                &debug_state.status_seq,
+                "initializing",
+                None,
+                None,
+                None,
+            )?;
             println!("Rust debug session launched successfully");
             Ok("Rust debug session launched successfully".into())
         }
@@ -400,48 +414,6 @@ async fn configuration_done(
     // Use the canonical state update for configurationDone
     debug_state.handle_configuration_done();
     Ok("configurationDone sent; target program is now running.".into())
-}
-
-#[tauri::command]
-async fn get_paused_location(
-    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
-    thread_id: i64,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let client_lock = debug_state.client.lock().await;
-    let dap_client = client_lock.as_ref().ok_or("No active debug session")?;
-    match dap_client.stack_trace(thread_id).await {
-        Ok(stack_resp) => {
-            if let Some(stack_body) = stack_resp.body {
-                if let Some(frames) = stack_body.get("stackFrames").and_then(|sf| sf.as_array()) {
-                    if let Some(frame) = frames.first() {
-                        // Extract source file and line
-                        let source = frame.get("source");
-                        let line = frame.get("line").and_then(|l| l.as_i64());
-                        if let (Some(source), Some(line)) = (source, line) {
-                            let file_path = source.get("path").and_then(|p| p.as_str());
-                            if let Some(file_path) = file_path {
-                                // Emit the debug location event with file and line info
-                                let _ = app_handle.emit(
-                                    "debug-location",
-                                    serde_json::json!({
-                                        "file": file_path,
-                                        "line": line
-                                    }),
-                                );
-                                println!(
-                                    "Emitted debug-location event: file={}, line={}",
-                                    file_path, line
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(())
-        }
-        Err(e) => Err(format!("Error getting stack trace: {}", e)),
-    }
 }
 
 #[tauri::command]
@@ -682,7 +654,14 @@ async fn terminate_program(
 
             // We manually emit a "terminated" status update since lldb-DAP exits without emitting one
             // It's emitted first rather than waiting for client.terminate() to complete
-            emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
+            emit_status_update(
+                &app_handle,
+                &debug_state.status_seq,
+                "terminated",
+                None,
+                None,
+                None,
+            )?;
             let _ = client.terminate().await;
         } else {
             match client.terminate().await {
@@ -692,12 +671,26 @@ async fn terminate_program(
                 Err(e) => {
                     let error_str = e.to_string();
                     println!("Error sending terminate request: {}", error_str);
-                    emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
+                    emit_status_update(
+                        &app_handle,
+                        &debug_state.status_seq,
+                        "terminated",
+                        None,
+                        None,
+                        None,
+                    )?;
                 }
             }
         }
     } else {
-        emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
+        emit_status_update(
+            &app_handle,
+            &debug_state.status_seq,
+            "terminated",
+            None,
+            None,
+            None,
+        )?;
     }
 
     let mut proc_lock = debug_state.process.lock().await;
@@ -720,7 +713,6 @@ fn main() {
             launch_debug_session,
             set_breakpoints,
             configuration_done,
-            get_paused_location,
             continue_debug,
             step_in,
             step_over,

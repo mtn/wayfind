@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use tauri::async_runtime;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tokio::sync::mpsc;
@@ -37,12 +38,14 @@ pub struct BreakpointInput {
 }
 
 // Function to emit status updates with sequence numbers
-// This is defined here and can be used by client.rs and main.rs
+// Now includes file path and line number for paused status
 pub fn emit_status_update(
     app_handle: &AppHandle,
     status_seq: &AtomicU64,
     status: &str,
     thread_id: Option<i64>,
+    file_path: Option<&str>,
+    line: Option<i64>,
 ) -> Result<(), String> {
     let seq = status_seq.fetch_add(1, Ordering::SeqCst);
 
@@ -53,9 +56,23 @@ pub fn emit_status_update(
 
     println!("Emitting status update: status={}, seq={}", status, seq);
 
-    if let Some(tid) = thread_id {
-        if let serde_json::Value::Object(ref mut map) = payload {
+    if let serde_json::Value::Object(ref mut map) = payload {
+        // Add thread ID if available
+        if let Some(tid) = thread_id {
             map.insert("threadId".to_string(), serde_json::json!(tid));
+        }
+
+        // Add file path and line if available
+        if let Some(path) = file_path {
+            map.insert("file".to_string(), serde_json::json!(path));
+
+            if let Some(ln) = line {
+                map.insert("line".to_string(), serde_json::json!(ln));
+                println!(
+                    "Including debug location in status: file={}, line={}",
+                    path, ln
+                );
+            }
         }
     }
 
@@ -241,28 +258,100 @@ impl DAPClient {
                                     &status_seq,
                                     "terminated",
                                     None,
+                                    None,
+                                    None,
                                 );
                             } else if evt == "stopped" {
                                 // Handle the stopped event - extract thread ID and emit
                                 if let Some(ref body) = msg.body {
                                     println!("Processing 'stopped' event: {:?}", body);
 
-                                    // Emit the stopped status with the thread ID
+                                    // Get thread ID if available
                                     if let Some(thread_id) =
                                         body.get("threadId").and_then(|v| v.as_i64())
                                     {
-                                        let _ = emit_status_update(
-                                            &app_handle,
-                                            &status_seq,
-                                            "paused",
-                                            Some(thread_id),
-                                        );
+                                        // Then get more detailed location information if we have a debug state
+                                        if let Some(debug_state) = &debug_state_arc {
+                                            // Clone references needed for the async task
+                                            let app_handle_clone = app_handle.clone();
+                                            let status_seq_clone = Arc::clone(&status_seq);
+                                            let debug_state_clone = debug_state.clone();
+                                            let thread_id_clone = thread_id;
+
+                                            // Use tauri's async runtime instead of tokio directly
+                                            async_runtime::spawn(async move {
+                                                let mut location_found = false;
+
+                                                let client_guard =
+                                                    debug_state_clone.client.lock().await;
+                                                if let Some(client) = client_guard.as_ref() {
+                                                    if let Ok(stack_resp) =
+                                                        client.stack_trace(thread_id_clone).await
+                                                    {
+                                                        if let Some(stack_body) = stack_resp.body {
+                                                            if let Some(frames) = stack_body
+                                                                .get("stackFrames")
+                                                                .and_then(|sf| sf.as_array())
+                                                            {
+                                                                if let Some(frame) = frames.first()
+                                                                {
+                                                                    // Extract source file and line
+                                                                    let source =
+                                                                        frame.get("source");
+                                                                    let line = frame
+                                                                        .get("line")
+                                                                        .and_then(|l| l.as_i64());
+                                                                    if let (
+                                                                        Some(source),
+                                                                        Some(line),
+                                                                    ) = (source, line)
+                                                                    {
+                                                                        let file_path = source
+                                                                            .get("path")
+                                                                            .and_then(|p| {
+                                                                                p.as_str()
+                                                                            });
+                                                                        if let Some(file_path) =
+                                                                            file_path
+                                                                        {
+                                                                            // Emit updated status with location info
+                                                                            let _ = emit_status_update(
+                                                                                &app_handle_clone,
+                                                                                &status_seq_clone,
+                                                                                "paused",
+                                                                                Some(thread_id_clone),
+                                                                                Some(file_path),
+                                                                                Some(line),
+                                                                            );
+                                                                            location_found = true;
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                if !location_found {
+                                                    let _ = emit_status_update(
+                                                        &app_handle_clone,
+                                                        &status_seq_clone,
+                                                        "paused",
+                                                        Some(thread_id),
+                                                        None,
+                                                        None,
+                                                    );
+                                                }
+                                            });
+                                        }
                                     } else {
                                         // No thread ID, just emit paused status
                                         let _ = emit_status_update(
                                             &app_handle,
                                             &status_seq,
                                             "paused",
+                                            None,
+                                            None,
                                             None,
                                         );
                                     }
