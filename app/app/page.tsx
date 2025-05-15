@@ -373,13 +373,29 @@ export default function Home() {
             // When paused, force watch expressions to update
             forceWatchEvaluation();
 
-            console.log("FOO getting paused location");
-            if (payload.threadId) {
-              invoke("get_paused_location", {
-                threadId: payload.threadId,
-              }).catch((err) =>
-                console.error("Failed to get paused location:", err),
-              );
+            // Extract file and line from the payload directly
+            const file = payload.file as string | undefined;
+            const line = payload.line as number | undefined;
+            
+            if (file && line) {
+              console.log(`Received debug location in status: file=${file}, line=${line}`);
+              
+              // Update execution position
+              setExecutionFile(file);
+              setExecutionLine(line);
+              
+              // Extract just the filename from the path
+              const fileName = file.split("/").pop();
+              
+              // If the stopped file is different from the current file, try to open it
+              if (fileName && fileName !== selectedFile?.name) {
+                const fileEntry = files.find((f) => f.name === fileName);
+                if (fileEntry) {
+                  handleFileSelect(fileEntry);
+                } else {
+                  console.warn(`File ${fileName} not found in the workspace`);
+                }
+              }
             }
           }
         } else {
@@ -401,61 +417,8 @@ export default function Home() {
     };
   }, []);
 
-  // Listen for debug location events
-  // Add a ref to track whether we've already set up the debug location listener
-  const hasLocationListenerRef = useRef(false);
-
-  // Listen for debug location events
-  useEffect(() => {
-    // If we've already set up the listener, don't set it up again
-    if (hasLocationListenerRef.current) {
-      console.log(
-        "FOO page.tsx debug-location listener already exists, skipping",
-      );
-      return;
-    }
-
-    // Mark that we've set up the listener
-    hasLocationListenerRef.current = true;
-
-    let unlistenLocation: () => void;
-    (async () => {
-      unlistenLocation = await listen("debug-location", (event) => {
-        const payload = event.payload as {
-          file: string;
-          line: number;
-        };
-        console.log("FOO page.tsx Received debug-location event:", payload);
-
-        // Update execution position
-        setExecutionFile(payload.file);
-        setExecutionLine(payload.line);
-
-        // Extract just the filename from the path
-        const fileName = payload.file.split("/").pop();
-
-        // If the stopped file is different from the current file, try to open it
-        if (fileName && fileName !== selectedFile?.name) {
-          const fileEntry = files.find((f) => f.name === fileName);
-          if (fileEntry) {
-            handleFileSelect(fileEntry);
-          } else {
-            console.warn(`File ${fileName} not found in the workspace`);
-          }
-        }
-      });
-      console.log("FOO page.tsx subscribed to debug-location");
-    })();
-
-    return () => {
-      if (unlistenLocation) {
-        console.log("FOO page.tsx unsubscribing from debug-location");
-        unlistenLocation();
-        // Reset the ref when unmounting so it can be set up again if needed
-        hasLocationListenerRef.current = false;
-      }
-    };
-  }, [files, selectedFile, handleFileSelect]);
+  // Debug location handling has been moved to the debug-status listener
+  // No separate debug-location listener is needed anymore
 
   const fsRef = useRef(fs);
 

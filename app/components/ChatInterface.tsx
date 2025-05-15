@@ -380,19 +380,40 @@ export function ChatInterface({
 
     let unlisten: () => void;
     (async () => {
-      unlisten = await listen<{ status: string; seq?: number }>(
+      unlisten = await listen<{ status: string; seq?: number; file?: string; line?: number }>(
         "debug-status",
         (event) => {
-          const { status } = event.payload;
+          const { status, file, line } = event.payload;
 
+          // Handle paused status with location information
+          if (status === "paused" && file && line) {
+            // This is a breakpoint being hit
+            const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
+            
+            // Use send to queue the message
+            send({
+              role: "user",
+              content: stopMsg,
+              id: crypto.randomUUID(),
+            });
+            
+            // Clear the input field
+            setInput("");
+            if (editorRef.current) {
+              editorRef.current.innerText = "";
+            }
+            
+            // Update the lastStatusRef
+            lastStatusRef.current = status;
+            return;
+          }
+          
+          // Handle other status changes
           // Only notify if status has changed since last notification
           // AND it's not the "initializing" status
-          // AND it's not the "paused" status (because if it's paused, we're
-          // about to reach a breakpoint, which sends its own notification)
           if (
             status !== lastStatusRef.current &&
-            status !== "initializing" &&
-            status !== "paused"
+            status !== "initializing"
           ) {
             lastStatusRef.current = status;
 
@@ -424,37 +445,8 @@ export function ChatInterface({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Listen for debug location events (when execution stops at a line)
-  useEffect(() => {
-    let unlisten: () => void;
-    (async () => {
-      unlisten = await listen<{ file: string; line: number }>(
-        "debug-location",
-        (event) => {
-          const { file, line } = event.payload;
-          console.log("FOO Received a debug-location message");
-          const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
-
-          // Use send to queue the message
-          send({
-            role: "user",
-            content: stopMsg,
-            id: crypto.randomUUID(),
-          });
-
-          // Clear the input field
-          setInput("");
-          if (editorRef.current) {
-            editorRef.current.innerText = "";
-          }
-        },
-      );
-    })();
-    return () => {
-      if (unlisten) unlisten();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Debug location handling has been moved to the debug-status listener
+  // No separate debug-location listener is needed anymore
 
   return (
     <div className="flex flex-col h-full border-t relative">
