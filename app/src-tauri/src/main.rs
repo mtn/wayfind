@@ -4,7 +4,7 @@ mod debug_state;
 mod debugger;
 
 use debug_state::DebugSessionState;
-use debugger::client::{BreakpointInput, DAPClient, DAPMessage, MessageType};
+use debugger::client::{emit_status_update, BreakpointInput, DAPClient, DAPMessage, MessageType};
 use debugger::util::parse_lldb_result;
 use serde_json::Value;
 use shellexpand;
@@ -201,10 +201,7 @@ async fn launch_debug_session(
             }
 
             // Emit an initializing status (to be updated by canonical events later)
-            let client_lock = debug_state.client.lock().await;
-            if let Some(client) = client_lock.as_ref() {
-                client.emit_status_update("initializing", None)?;
-            }
+            emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
             println!("Debug session launched successfully");
             Ok("Debug session launched successfully".into())
         }
@@ -359,10 +356,7 @@ async fn launch_debug_session(
             }
 
             // Emit an initializing status
-            let client_lock = debug_state.client.lock().await;
-            if let Some(client) = client_lock.as_ref() {
-                client.emit_status_update("initializing", None)?;
-            }
+            emit_status_update(&app_handle, &debug_state.status_seq, "initializing", None)?;
             println!("Rust debug session launched successfully");
             Ok("Rust debug session launched successfully".into())
         }
@@ -407,6 +401,7 @@ async fn configuration_done(
     debug_state.handle_configuration_done();
     Ok("configurationDone sent; target program is now running.".into())
 }
+
 
 #[tauri::command]
 async fn continue_debug(
@@ -646,7 +641,7 @@ async fn terminate_program(
 
             // We manually emit a "terminated" status update since lldb-DAP exits without emitting one
             // It's emitted first rather than waiting for client.terminate() to complete
-            client.emit_status_update("terminated", None)?;
+            emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
             let _ = client.terminate().await;
         } else {
             match client.terminate().await {
@@ -656,15 +651,12 @@ async fn terminate_program(
                 Err(e) => {
                     let error_str = e.to_string();
                     println!("Error sending terminate request: {}", error_str);
-                    client.emit_status_update("terminated", None)?;
+                    emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
                 }
             }
         }
     } else {
-        let client_lock = debug_state.client.lock().await;
-        if let Some(client) = client_lock.as_ref() {
-            client.emit_status_update("terminated", None)?;
-        }
+        emit_status_update(&app_handle, &debug_state.status_seq, "terminated", None)?;
     }
 
     let mut proc_lock = debug_state.process.lock().await;
