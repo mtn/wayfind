@@ -315,6 +315,9 @@ export default function Home() {
   useEffect(() => {
     // If we've already set up the listener, don't set it up again
     if (hasStatusListenerRef.current) {
+      console.log(
+        "FOO page.tsx debug-status listener already exists, skipping",
+      );
       return;
     }
 
@@ -324,6 +327,7 @@ export default function Home() {
     let unlistenStatus: () => void;
     (async () => {
       unlistenStatus = await listen("debug-status", (event) => {
+        console.log("FOO handling debug status event:", event);
         console.log("Debug status event received:", event);
         const payload = event.payload as {
           status: string;
@@ -372,19 +376,17 @@ export default function Home() {
             // Extract file and line from the payload directly
             const file = payload.file as string | undefined;
             const line = payload.line as number | undefined;
-
+            
             if (file && line) {
-              console.log(
-                `Received debug location in status: file=${file}, line=${line}`,
-              );
-
+              console.log(`Received debug location in status: file=${file}, line=${line}`);
+              
               // Update execution position
               setExecutionFile(file);
               setExecutionLine(line);
-
+              
               // Extract just the filename from the path
               const fileName = file.split("/").pop();
-
+              
               // If the stopped file is different from the current file, try to open it
               if (fileName && fileName !== selectedFile?.name) {
                 const fileEntry = files.find((f) => f.name === fileName);
@@ -402,10 +404,12 @@ export default function Home() {
           );
         }
       });
+      console.log("FOO page.tsx subscribed to debug-status");
     })();
 
     return () => {
       if (unlistenStatus) {
+        console.log("FOO page.tsx unsubscribing from debug-status");
         unlistenStatus();
         // Reset the ref when unmounting so it can be set up again if needed
         hasStatusListenerRef.current = false;

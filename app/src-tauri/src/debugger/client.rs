@@ -61,15 +61,23 @@ pub fn emit_status_update(
             
             // For paused status, fetch stack trace to get file and line info
             if status == "paused" {
-                // Try to get stack trace and include location info
-                match get_stack_frame_location(app_handle, tid) {
-                    Ok((file_path, line)) => {
-                        println!("Including debug location in status: file={}, line={}", file_path, line);
-                        map.insert("file".to_string(), serde_json::json!(file_path));
-                        map.insert("line".to_string(), serde_json::json!(line));
-                    }
-                    Err(err) => {
-                        println!("Failed to get debug location: {}", err);
+                if let Ok(stack_resp) = get_stack_trace_sync(app_handle, tid) {
+                    if let Some(stack_body) = stack_resp.body {
+                        if let Some(frames) = stack_body.get("stackFrames").and_then(|sf| sf.as_array()) {
+                            if let Some(frame) = frames.first() {
+                                // Extract source file and line
+                                let source = frame.get("source");
+                                let line = frame.get("line").and_then(|l| l.as_i64());
+                                if let (Some(source), Some(line)) = (source, line) {
+                                    let file_path = source.get("path").and_then(|p| p.as_str());
+                                    if let Some(file_path) = file_path {
+                                        map.insert("file".to_string(), serde_json::json!(file_path));
+                                        map.insert("line".to_string(), serde_json::json!(line));
+                                        println!("Including debug location in status: file={}, line={}", file_path, line);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -102,31 +110,6 @@ pub struct DAPClient {
     pub status_seq: Arc<AtomicU64>,
     // NEW: Optional reference to the debug state.
     pub debug_state: Option<Arc<crate::debug_state::DebugSessionState>>,
-}
-
-// Helper function to get just the file path and line number from a stopped thread
-fn get_stack_frame_location(app_handle: &AppHandle, thread_id: i64) -> Result<(String, i64), String> {
-    // Get the stack trace
-    let stack_resp = get_stack_trace_sync(app_handle, thread_id)?;
-    
-    // Extract the location info
-    if let Some(stack_body) = stack_resp.body {
-        if let Some(frames) = stack_body.get("stackFrames").and_then(|sf| sf.as_array()) {
-            if let Some(frame) = frames.first() {
-                // Extract source file and line
-                let source = frame.get("source");
-                let line = frame.get("line").and_then(|l| l.as_i64());
-                if let (Some(source), Some(line)) = (source, line) {
-                    let file_path = source.get("path").and_then(|p| p.as_str());
-                    if let Some(file_path) = file_path {
-                        return Ok((file_path.to_string(), line));
-                    }
-                }
-            }
-        }
-    }
-    
-    Err("Could not extract location information from stack trace".to_string())
 }
 
 // Synchronous version of stack_trace for use in the emit_status_update function
