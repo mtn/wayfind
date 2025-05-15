@@ -37,7 +37,6 @@ pub struct BreakpointInput {
 }
 
 // Function to emit status updates with sequence numbers
-// This is defined here and can be used by client.rs and main.rs
 pub fn emit_status_update(
     app_handle: &AppHandle,
     status_seq: &AtomicU64,

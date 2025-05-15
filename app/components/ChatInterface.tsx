@@ -369,7 +369,15 @@ export function ChatInterface({
   const lastStatusRef = useRef<string | null>(null);
 
   // Listen for all debug status changes and notify the LLM
+  // Track if we've already set up the debug status listener
+  const hasStatusListenerRef = useRef(false);
+
+  // Listen for all debug status changes and notify the LLM
   useEffect(() => {
+    // Only set up listener once
+    if (hasStatusListenerRef.current) return;
+    hasStatusListenerRef.current = true;
+
     let unlisten: () => void;
     (async () => {
       unlisten = await listen<{ status: string; seq?: number }>(
@@ -424,6 +432,7 @@ export function ChatInterface({
         "debug-location",
         (event) => {
           const { file, line } = event.payload;
+          console.log("FOO Received a debug-location message");
           const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
           // Use send to queue the message
