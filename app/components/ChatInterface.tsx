@@ -269,6 +269,14 @@ export function ChatInterface({
           const { expression } = toolCall.args as { expression: string };
           const result = await onEvaluate(expression);
           actionResult = result ? `Evaluated: ${result.result}` : "No result";
+
+          setTimeout(() => {
+            send({
+              role: "user",
+              content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
+              id: crypto.randomUUID(),
+            });
+          }, 0);
         }
 
         console.log("Tool call completed successfully:", {
@@ -389,25 +397,25 @@ export function ChatInterface({
           if (status === "paused" && file && line) {
             // This is a breakpoint being hit
             const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
-            
+
             // Use send to queue the message
             send({
               role: "user",
               content: stopMsg,
               id: crypto.randomUUID(),
             });
-            
+
             // Clear the input field
             setInput("");
             if (editorRef.current) {
               editorRef.current.innerText = "";
             }
-            
+
             // Update the lastStatusRef
             lastStatusRef.current = status;
             return;
           }
-          
+
           // Handle other status changes
           // Only notify if status has changed since last notification
           // AND it's not the "initializing" status
