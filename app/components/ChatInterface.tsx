@@ -379,7 +379,13 @@ export function ChatInterface({
 
           // Only notify if status has changed since last notification
           // AND it's not the "initializing" status
-          if (status !== lastStatusRef.current && status !== "initializing") {
+          // AND it's not the "paused" status (because if it's paused, we're
+          // about to reach a breakpoint, which sends its own notification)
+          if (
+            status !== lastStatusRef.current &&
+            status !== "initializing" &&
+            status !== "paused"
+          ) {
             lastStatusRef.current = status;
 
             // Prepare message for LLM
