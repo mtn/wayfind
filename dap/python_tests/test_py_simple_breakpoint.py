@@ -213,7 +213,7 @@ async def main_async():
                 "name": os.path.basename(target_script)
             },
             "breakpoints": [
-                {"line": 13}  # Adjust if needed.
+                {"line": 14}
             ],
             "sourceModified": False
         }
