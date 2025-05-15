@@ -270,16 +270,6 @@ impl DAPClient {
                                     if let Some(thread_id) =
                                         body.get("threadId").and_then(|v| v.as_i64())
                                     {
-                                        // First emit basic paused status with thread ID
-                                        let _ = emit_status_update(
-                                            &app_handle,
-                                            &status_seq,
-                                            "paused",
-                                            Some(thread_id),
-                                            None,
-                                            None,
-                                        );
-
                                         // Then get more detailed location information if we have a debug state
                                         if let Some(debug_state) = &debug_state_arc {
                                             // Clone references needed for the async task
@@ -290,6 +280,8 @@ impl DAPClient {
 
                                             // Use tauri's async runtime instead of tokio directly
                                             async_runtime::spawn(async move {
+                                                let mut location_found = false;
+
                                                 let client_guard =
                                                     debug_state_clone.client.lock().await;
                                                 if let Some(client) = client_guard.as_ref() {
@@ -331,12 +323,24 @@ impl DAPClient {
                                                                                 Some(file_path),
                                                                                 Some(line),
                                                                             );
+                                                                            location_found = true;
                                                                         }
                                                                     }
                                                                 }
                                                             }
                                                         }
                                                     }
+                                                }
+
+                                                if !location_found {
+                                                    let _ = emit_status_update(
+                                                        &app_handle_clone,
+                                                        &status_seq_clone,
+                                                        "paused",
+                                                        Some(thread_id),
+                                                        None,
+                                                        None,
+                                                    );
                                                 }
                                             });
                                         }
