@@ -12,7 +12,7 @@ export const setBreakpointByLine = tool({
 
 export const setBreakpointBySearch = tool({
   description:
-    "Set a breakpoint by searching for text in a file. This lets you set breakpoints without knowing the exact line number.",
+    "Set a breakpoint by searching for text in a file. This lets you set breakpoints without knowing the exact line number. The lineOffset parameter allows you to set the breakpoint relative to the matched line: use positive values (e.g., 1, 2) to set breakpoints after the match, negative values (e.g., -1, -2) to set breakpoints before the match, or 0 (default) for the exact matching line. This is particularly useful for debugging variables - set lineOffset: 1 to break after a variable is initialized, allowing you to inspect its value.",
   parameters: z.object({
     searchText: z
       .string()

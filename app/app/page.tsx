@@ -557,7 +557,7 @@ export default function Home() {
 
         // Set up the test prompt
         const testPrompt =
-          "/file a.py set a breakpoint on line 14, then launch the debug session and trace the values next_val (evaluate next_val, then continue execution, over and over until the program has terminated) takes on as the program runs. then report to me what values next_val took on.";
+          "/file a.py trace how next_val changes as the program runs, then give me a summary";
 
         if (prefillChatInputRef.current) {
           prefillChatInputRef.current(testPrompt);
