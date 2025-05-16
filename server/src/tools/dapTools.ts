@@ -42,10 +42,12 @@ export function generateToolDocs(tools: Record<string, any>): string {
 
 export const setBreakpointByLine = tool({
   description:
-    "Set a breakpoint at a given line number in a.py. Each tool response includes the current debugStatus. This tool can be called regardless of debug status, but it should only be called one time per line.",
+    "Set a breakpoint in a file at a given line number. Each tool response includes the current debugStatus. This tool can be called regardless of debug status, but it should only be called one time per line.",
   parameters: z.object({
     line: z.number().describe("The line where the breakpoint should be set"),
-    filePath: z.literal("a.py"), // hardcoded filePath
+    filePath: z
+      .string()
+      .describe("The path of the file to set the breakpoint in"),
   }),
 });
 
