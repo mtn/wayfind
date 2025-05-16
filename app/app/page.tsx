@@ -333,6 +333,8 @@ export default function Home() {
           status: string;
           seq: number;
           threadId?: number;
+          file?: string;
+          line?: number;
         };
         const status = payload.status.toLowerCase();
 
@@ -376,17 +378,17 @@ export default function Home() {
             // Extract file and line from the payload directly
             const file = payload.file as string | undefined;
             const line = payload.line as number | undefined;
-            
+
             if (file && line) {
               console.log(`Received debug location in status: file=${file}, line=${line}`);
-              
+
               // Update execution position
               setExecutionFile(file);
               setExecutionLine(line);
-              
+
               // Extract just the filename from the path
               const fileName = file.split("/").pop();
-              
+
               // If the stopped file is different from the current file, try to open it
               if (fileName && fileName !== selectedFile?.name) {
                 const fileEntry = files.find((f) => f.name === fileName);
