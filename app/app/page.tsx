@@ -544,49 +544,34 @@ export default function Home() {
   };
 
   const prefillChatInputRef = useRef<((text: string) => void) | null>(null);
-  const handleTestSetup = () => {
-    // 1. Set the workspace path
-    invoke<LoadedFileEntry[]>("read_directory", {
-      path: "/Users/mtn/Documents/workspace/wayfind/dap/test_data/python",
-    })
-      .then(async (entries) => {
-        // Process entries to match your FileEntry structure
-        const mappedEntries = entries.map(
-          (entry) =>
-            ({
-              name: entry.name,
-              path: `./${entry.name}`,
-              type: entry.is_dir ? "directory" : "file",
-              content: entry.content || "",
-              expanded: false,
-              children: entry.is_dir ? [] : undefined,
-            }) satisfies FileEntry,
-        );
+  const handleTestSetup = async () => {
+    try {
+      // First set the debug engine to Python
+      setDebugEngine("python");
 
-        // Create fresh file system
-        const newFs = new InMemoryFileSystem(
-          mappedEntries,
-          "/Users/mtn/Documents/workspace/scratch/zed",
-        );
-        setFs(newFs);
-        setFiles(mappedEntries);
+      const pythonTestPath = "/Users/mtn/Documents/workspace/wayfind/dap/test_data/python";
 
-        // Set debugger to Rust
-        setDebugEngine("rust");
+      // Use handleOpenWorkspace with the Python test path
+      const success = await handleOpenWorkspace(pythonTestPath);
 
+      if (success) {
+        // Look for a.py file to select it
+        const aFile = files.find((f) => f.name === "a.py");
+        if (aFile) {
+          setSelectedFile(aFile);
+        }
+
+        // Set up the test prompt
         const testPrompt =
-          "/set a breakpoint in the main function, then launch the debug session with the Rust binary path set to your executable. After the program stops at the breakpoint, step through the code and evaluate variables as needed.";
+          "/file a.py set a breakpoint on line 14, then launch the debug session and trace the values next_val (evaluate next_val, then continue execution, over and over until the program has terminated) takes on as the program runs. then report to me what values next_val took on.";
 
         if (prefillChatInputRef.current) {
           prefillChatInputRef.current(testPrompt);
         }
-      })
-      .catch((error) => {
-        console.error("Error loading test directory:", error);
-      });
-
-    // For the chat input, we need to address that differently
-    // since it's maintained in the ChatInterface component
+      }
+    } catch (error) {
+      console.error("Error setting up test:", error);
+    }
   };
 
   const handleTestSetup2 = async () => {
