@@ -127,10 +127,6 @@ export default function Home() {
     ];
   };
 
-  const handleShowDebugSync = () => {
-    const syncSnapshot = getDebugSync();
-    console.log("DebugSync Snapshot:", syncSnapshot);
-  };
 
   // Update ref whenever the state changes
   useEffect(() => {
@@ -899,12 +895,6 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col">
       <div className="p-2">
-        <button
-          onClick={handleShowDebugSync}
-          className="px-4 py-2 bg-blue-500 text-white rounded"
-        >
-          Show Debug Sync Info
-        </button>
         <button
           onClick={handleTestSetup}
           className="px-4 py-2 bg-green-500 text-white rounded"
