@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
 import { IBreakpoint } from "@/app/page";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 import type { EvaluationResult } from "@/components/DebugToolbar";
 
@@ -259,6 +260,46 @@ export function ChatInterface({
               id: crypto.randomUUID(),
             });
           }, 0);
+        } else if (toolCall.toolName === "setBreakpointBySearch") {
+          // Handle the new text-based breakpoint tool
+          interface SearchBreakpointResult {
+            foundLine: number;
+            matchCount: number;
+            searchText: string;
+            breakpoints?: any; // The actual breakpoints info from the Rust side
+          }
+
+          const { searchText, context, occurrenceIndex, lineOffset, filePath } =
+            toolCall.args as {
+              searchText: string;
+              context?: string;
+              occurrenceIndex?: number;
+              lineOffset?: number;
+              filePath: string;
+            };
+
+          // Invoke the Tauri command with explicit type
+          const result = await invoke<SearchBreakpointResult>(
+            "set_breakpoint_by_search",
+            {
+              searchText,
+              context,
+              occurrenceIndex,
+              lineOffset,
+              filePath,
+            },
+          );
+
+          actionResult = `Breakpoint set at line ${result.foundLine} (matched "${searchText}")`;
+
+          // Send follow-up message to the chat
+          setTimeout(() => {
+            send({
+              role: "user",
+              content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}".`,
+              id: crypto.randomUUID(),
+            });
+          }, 0);
         } else if (toolCall.toolName === "launchDebug") {
           onLaunch();
           actionResult = "Debug session launched";
@@ -388,64 +429,63 @@ export function ChatInterface({
 
     let unlisten: () => void;
     (async () => {
-      unlisten = await listen<{ status: string; seq?: number; file?: string; line?: number }>(
-        "debug-status",
-        (event) => {
-          const { status, file, line } = event.payload;
+      unlisten = await listen<{
+        status: string;
+        seq?: number;
+        file?: string;
+        line?: number;
+      }>("debug-status", (event) => {
+        const { status, file, line } = event.payload;
 
-          // Handle paused status with location information
-          if (status === "paused" && file && line) {
-            // This is a breakpoint being hit
-            const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
+        // Handle paused status with location information
+        if (status === "paused" && file && line) {
+          // This is a breakpoint being hit
+          const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
-            // Use send to queue the message
-            send({
-              role: "user",
-              content: stopMsg,
-              id: crypto.randomUUID(),
-            });
+          // Use send to queue the message
+          send({
+            role: "user",
+            content: stopMsg,
+            id: crypto.randomUUID(),
+          });
 
-            // Clear the input field
-            setInput("");
-            if (editorRef.current) {
-              editorRef.current.innerText = "";
-            }
-
-            // Update the lastStatusRef
-            lastStatusRef.current = status;
-            return;
+          // Clear the input field
+          setInput("");
+          if (editorRef.current) {
+            editorRef.current.innerText = "";
           }
 
-          // Handle other status changes
-          // Only notify if status has changed since last notification
-          // AND it's not the "initializing" status
-          if (
-            status !== lastStatusRef.current &&
-            status !== "initializing"
-          ) {
-            lastStatusRef.current = status;
+          // Update the lastStatusRef
+          lastStatusRef.current = status;
+          return;
+        }
 
-            // Prepare message for LLM
-            const statusMsg = `Debug session status changed to: ${status}`;
+        // Handle other status changes
+        // Only notify if status has changed since last notification
+        // AND it's not the "initializing" status
+        if (status !== lastStatusRef.current && status !== "initializing") {
+          lastStatusRef.current = status;
 
-            // Use send to queue the message
-            send({
-              role: "user",
-              content: statusMsg,
-              id: crypto.randomUUID(),
-            });
+          // Prepare message for LLM
+          const statusMsg = `Debug session status changed to: ${status}`;
 
-            // Clear the input field
-            setInput("");
-            if (editorRef.current) {
-              editorRef.current.innerText = "";
-            }
-          } else {
-            // Still update the lastStatusRef even if we don't send a message
-            lastStatusRef.current = status;
+          // Use send to queue the message
+          send({
+            role: "user",
+            content: statusMsg,
+            id: crypto.randomUUID(),
+          });
+
+          // Clear the input field
+          setInput("");
+          if (editorRef.current) {
+            editorRef.current.innerText = "";
           }
-        },
-      );
+        } else {
+          // Still update the lastStatusRef even if we don't send a message
+          lastStatusRef.current = status;
+        }
+      });
     })();
     return () => {
       if (unlisten) unlisten();

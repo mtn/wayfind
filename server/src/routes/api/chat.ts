@@ -6,7 +6,8 @@ import { Router, Request, Response } from "express";
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
 import {
-  setBreakpoint,
+  setBreakpointByLine,
+  setBreakpointBySearch,
   launchDebug,
   continueExecution,
   evaluateExpression,
@@ -97,7 +98,8 @@ interface ToolCall {
 }
 
 type DebugTools = {
-  setBreakpoint: typeof setBreakpoint;
+  setBreakpointByLine: typeof setBreakpointByLine;
+  setBreakpointBySearch: typeof setBreakpointBySearch;
   launchDebug?: typeof launchDebug;
   continueExecution?: typeof continueExecution;
   evaluateExpression?: typeof evaluateExpression;
@@ -112,14 +114,15 @@ interface DebugLogEntry {
 const debugStore: DebugLogEntry[] = [];
 
 const toolDescriptions: Record<string, string> = {
-  setBreakpoint: setBreakpoint.description ?? "",
+  setBreakpointByLine: setBreakpointByLine.description ?? "",
+  setBreakpointBySearch: setBreakpointBySearch.description ?? "",
   launchDebug: launchDebug.description ?? "",
   continueExecution: continueExecution.description ?? "",
   evaluateExpression: evaluateExpression.description ?? "",
 };
 
 function getToolsForDebugStatus(debugStatus: string): DebugTools {
-  const baseTools = { setBreakpoint };
+  const baseTools = { setBreakpointByLine, setBreakpointBySearch };
   switch (debugStatus) {
     case "notstarted":
     case "terminated":
@@ -187,6 +190,10 @@ router.post("/", async (req: Request, res: Response) => {
 
             Current debug status: ${debugStatus}
 
+            IMPORTANT: For setting breakpoints, prefer using setBreakpointBySearch instead of setBreakpointByLine
+            whenever possible. This allows you to set breakpoints by searching for code content rather than
+            relying on specific line numbers, which is more reliable if the code has been modified.
+
             Keep in mind that to read the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
             defined on, otherwise, it'll come back as undefined.
             For example, if the user asks you how the value of a variable changes as the program runs,
@@ -211,12 +218,12 @@ router.post("/", async (req: Request, res: Response) => {
       },
       onChunk: (chunk) => {
         if (debug) {
-          if (chunk.chunk.type === 'reasoning') {
-            console.log('Received reasoning chunk:', chunk);
-          } else if (chunk.chunk.type === 'text-delta') {
-            console.log('Received text-delta chunk:', chunk.chunk.textDelta);
+          if (chunk.chunk.type === "reasoning") {
+            console.log("Received reasoning chunk:", chunk);
+          } else if (chunk.chunk.type === "text-delta") {
+            console.log("Received text-delta chunk:", chunk.chunk.textDelta);
           } else {
-            console.log('Received other chunk type:', chunk.chunk.type);
+            console.log("Received other chunk type:", chunk.chunk.type);
           }
         }
       },
@@ -275,7 +282,9 @@ router.post("/", async (req: Request, res: Response) => {
       });
       (result as any).pipe(res);
     } else if (typeof (result as any).toDataStreamResponse === "function") {
-      const response = (result as any).toDataStreamResponse({ sendReasoning: true });
+      const response = (result as any).toDataStreamResponse({
+        sendReasoning: true,
+      });
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       const conversationId = Date.now().toString();

@@ -6,11 +6,12 @@ mod debugger;
 use debug_state::DebugSessionState;
 use debugger::client::{emit_status_update, BreakpointInput, DAPClient, DAPMessage, MessageType};
 use debugger::util::parse_lldb_result;
-use serde_json::Value;
+use serde_json::{json, Value};
 use shellexpand;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
+use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -379,7 +380,111 @@ async fn launch_debug_session(
 }
 
 #[tauri::command]
-async fn set_breakpoints(
+async fn set_breakpoint_by_search(
+    search_text: String,
+    context: Option<String>,
+    occurrence_index: Option<usize>,
+    line_offset: Option<i32>,
+    file_path: String,
+    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<Value, String> {
+    println!(
+        "Setting breakpoint via text search: '{}' in {}",
+        search_text, file_path
+    );
+
+    // Read the file content
+    let content = fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
+
+    // Split into lines and find matches
+    let lines: Vec<&str> = content.lines().collect();
+    let mut matches = Vec::new();
+
+    // Search for lines containing the search text
+    for (line_idx, line) in lines.iter().enumerate() {
+        if line.contains(&search_text) {
+            matches.push(line_idx + 1); // +1 because line numbers are 1-based
+        }
+    }
+
+    // If we have context, filter matches by context
+    if let Some(context) = context {
+        matches = matches
+            .into_iter()
+            .filter(|&line_num| {
+                // Look at a window of lines around the match
+                let start = line_num.saturating_sub(3);
+                let end = std::cmp::min(line_num + 3, lines.len());
+                let window = lines[start - 1..end].join("\n");
+                window.contains(&context)
+            })
+            .collect();
+    }
+
+    // No matches found
+    if matches.is_empty() {
+        return Err(format!(
+            "No matches found for '{}' in {}",
+            search_text, file_path
+        ));
+    }
+
+    // Select the right occurrence
+    let occurrence = occurrence_index.unwrap_or(0);
+    if occurrence >= matches.len() {
+        return Err(format!(
+            "Requested occurrence {} but only {} matches found",
+            occurrence,
+            matches.len()
+        ));
+    }
+
+    // Get the base line number
+    let mut target_line = matches[occurrence];
+
+    // Apply offset if any
+    if let Some(offset) = line_offset {
+        let new_line = target_line as i32 + offset;
+        if new_line <= 0 || new_line > lines.len() as i32 {
+            return Err(format!(
+                "Line offset {} would result in invalid line number {}",
+                offset, new_line
+            ));
+        }
+        target_line = new_line as usize;
+    }
+
+    // Create a breakpoint input with the target line
+    let breakpoint = BreakpointInput {
+        line: target_line as u32,
+    };
+
+    // Now use the existing set_breakpoints function to actually set the breakpoint
+    // But first, need to determine the file part of the path for breakpoint tracking
+    let file_name = Path::new(&file_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&file_path);
+
+    let result = set_breakpoint_by_line(vec![breakpoint], file_path.clone(), debug_state).await?;
+
+    // Add more information to the result
+    let mut result_map = serde_json::Map::new();
+    if let Value::Object(mut map) = result {
+        result_map = map;
+    }
+
+    result_map.insert("foundLine".to_string(), json!(target_line));
+    result_map.insert("matchCount".to_string(), json!(matches.len()));
+    result_map.insert("searchText".to_string(), json!(search_text));
+
+    Ok(Value::Object(result_map))
+}
+
+#[tauri::command]
+async fn set_breakpoint_by_line(
     breakpoints: Vec<BreakpointInput>,
     file_path: String,
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
@@ -711,7 +816,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             read_directory,
             launch_debug_session,
-            set_breakpoints,
+            set_breakpoint_by_search,
+            set_breakpoint_by_line,
             configuration_done,
             continue_debug,
             step_in,
