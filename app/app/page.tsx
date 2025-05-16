@@ -315,9 +315,6 @@ export default function Home() {
   useEffect(() => {
     // If we've already set up the listener, don't set it up again
     if (hasStatusListenerRef.current) {
-      console.log(
-        "FOO page.tsx debug-status listener already exists, skipping",
-      );
       return;
     }
 
@@ -327,7 +324,6 @@ export default function Home() {
     let unlistenStatus: () => void;
     (async () => {
       unlistenStatus = await listen("debug-status", (event) => {
-        console.log("FOO handling debug status event:", event);
         console.log("Debug status event received:", event);
         const payload = event.payload as {
           status: string;
@@ -406,12 +402,10 @@ export default function Home() {
           );
         }
       });
-      console.log("FOO page.tsx subscribed to debug-status");
     })();
 
     return () => {
       if (unlistenStatus) {
-        console.log("FOO page.tsx unsubscribing from debug-status");
         unlistenStatus();
         // Reset the ref when unmounting so it can be set up again if needed
         hasStatusListenerRef.current = false;
