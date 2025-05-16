@@ -11,6 +11,7 @@ import {
   launchDebug,
   continueExecution,
   evaluateExpression,
+  generateToolDocs,
 } from "@/tools/dapTools";
 
 // Regex pattern to find text chunks in the format: digit:"text"
@@ -179,31 +180,29 @@ router.post("/", async (req: Request, res: Response) => {
       delete tools.launchDebug;
     }
 
+    const toolDocs = generateToolDocs(tools);
     const systemPrompt = {
       role: "system",
       content: `You are a highly skilled debugging assistant.
-            When you're asked questions about the code, you should always first consider using the debugging tools available to you
-            to answer it efficiently and accurately. You have access to the following tools:
-            ${Object.keys(tools)
-              .map((tool) => `- ${tool}: ${toolDescriptions[tool]}`)
-              .join("\n            ")}
+              When you're asked questions about the code, you should always first consider using the debugging tools available to you
+              to answer it efficiently and accurately. ${toolDocs}
 
-            Current debug status: ${debugStatus}
+              Current debug status: ${debugStatus}
 
-            IMPORTANT: For setting breakpoints, prefer using setBreakpointBySearch instead of setBreakpointByLine
-            whenever possible. This allows you to set breakpoints by searching for code content rather than
-            relying on specific line numbers, which is more reliable if the code has been modified.
+              IMPORTANT: For setting breakpoints, prefer using setBreakpointBySearch instead of setBreakpointByLine
+              whenever possible. This allows you to set breakpoints by searching for code content rather than
+              relying on specific line numbers, which is more reliable if the code has been modified.
 
-            Keep in mind that to read or trace the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
-            defined on, otherwise, it'll come back as undefined.
-            For example, if the user asks you how the value of a variable changes as the program runs,
-            you should use your tools to set breakpoint(s) at lines that let you read the value (one line after any definition / modification is happening), launch the program, continue till
-            it stops, evaluate the variable, and so on until it terminates.
-            After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
-            (if it makes sense to do so).
+              Keep in mind that to read or trace the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
+              defined on, otherwise, it'll come back as undefined.
+              For example, if the user asks you how the value of a variable changes as the program runs,
+              you should use your tools to set breakpoint(s) at lines that let you read the value (one line after any definition / modification is happening), launch the program, continue till
+              it stops, evaluate the variable, and so on until it terminates.
+              After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
+              (if it makes sense to do so).
 
-            If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
-            steps to finish.`,
+              If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
+              steps to finish.`,
     };
 
     const result = streamText({

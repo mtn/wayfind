@@ -1,5 +1,44 @@
 import { tool } from "ai";
-import { z } from "zod";
+import { z, ZodObject, ZodOptional, ZodNullable, ZodDefault } from "zod";
+
+function unwrap(z: any): { type: string; desc?: string } {
+  if (
+    z instanceof ZodOptional ||
+    z instanceof ZodNullable ||
+    z instanceof ZodDefault
+  ) {
+    return unwrap(z._def.innerType);
+  }
+  const typeName =
+    z._def?.typeName?.replace(/^Zod/, "").toLowerCase() || "unknown";
+  return { type: typeName, desc: z._def?.description };
+}
+
+// Add function to generate tool documentation
+export function generateToolDocs(tools: Record<string, any>): string {
+  const out: string[] = ["You have the following tools available:"];
+
+  for (const [name, toolObj] of Object.entries(tools)) {
+    const schema = (toolObj as any).parameters as ZodObject<any>;
+    const desc = (toolObj as any).description as string;
+    out.push(`\n### ${name}`);
+    out.push(desc);
+
+    const shape = (schema as any)._def.shape() as Record<string, any>;
+    const paramEntries = Object.entries(shape);
+
+    // Only print parameters section if there's at least one parameter
+    if (paramEntries.length > 0) {
+      out.push("**Parameters:**");
+      for (const [param, zodType] of paramEntries) {
+        const { type, desc: pdesc } = unwrap(zodType);
+        out.push(`- \`${param}\`: *${type}*${pdesc ? ` – ${pdesc}` : ""}`);
+      }
+    }
+  }
+
+  return out.join("\n");
+}
 
 export const setBreakpointByLine = tool({
   description:
