@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
 import { useQueuedChat } from "@/lib/useQueuedChat";
 import { Button } from "@/components/ui/button";
-import { FileEntry } from "@/lib/fileSystem";
+import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import ReactMarkdown from "react-markdown";
 import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
 import { IBreakpoint } from "@/app/page";
@@ -33,6 +33,8 @@ interface DebugSyncData {
 interface ChatInterfaceProps {
   // An array of files that provide context.
   files: FileEntry[];
+  // File system instance for path resolution
+  fileSystem: InMemoryFileSystem;
   // Callback to update breakpoints (as if the user clicked the gutter).
   onSetBreakpoint: (line: number) => void;
   // Callback to launch a debug session.
@@ -112,6 +114,7 @@ function parseFileCommands(text: string, allFiles: FileEntry[]): FileEntry[] {
 
 export function ChatInterface({
   files,
+  fileSystem,
   onSetBreakpoint,
   onLaunch,
   onContinue,
@@ -279,9 +282,14 @@ export function ChatInterface({
             };
 
           console.log("FOO Tool call args", toolCall.args);
-          console.log("FOO invokign breakpoint by search");
 
-          // Invoke the Tauri command with explicit type
+          // Resolve the filePath to a full path
+          const fullFilePath = fileSystem.getFullPath(filePath);
+          console.log(
+            `FOO Resolving breakpoint search path: ${filePath} → ${fullFilePath}`,
+          );
+
+          // Invoke the Tauri command with resolved path
           const result = await invoke<SearchBreakpointResult>(
             "set_breakpoint_by_search",
             {
@@ -289,12 +297,11 @@ export function ChatInterface({
               context,
               occurrenceIndex,
               lineOffset,
-              filePath,
-              // filePath: fs.getFullPath(filePath),
+              filePath: fullFilePath, // Now using the fully resolved path
             },
           );
 
-          console.log("FOO invoked and done");
+          console.log("FOO Search breakpoint set successfully");
 
           actionResult = `Breakpoint set at line ${result.foundLine} (matched "${searchText}")`;
 

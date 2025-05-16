@@ -1046,6 +1046,7 @@ export default function Home() {
             <ResizablePanel defaultSize={40}>
               <ChatInterface
                 files={files}
+                fileSystem={fs}
                 getDebugSync={getDebugSync}
                 logToolCall={logToolCall}
                 onSetBreakpoint={handleBreakpointChange}
