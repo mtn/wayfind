@@ -26,13 +26,6 @@ export interface IBreakpoint {
   file?: string;
 }
 
-interface LoadedFileEntry {
-  name: string;
-  path: string;
-  content: string | null;
-  is_dir: boolean;
-}
-
 const initialFiles: FileEntry[] = [];
 
 export default function Home() {
@@ -126,7 +119,6 @@ export default function Home() {
       },
     ];
   };
-
 
   // Update ref whenever the state changes
   useEffect(() => {
@@ -225,10 +217,12 @@ export default function Home() {
   const handleOpenWorkspace = async (providedPath?: string) => {
     try {
       // If a path is provided, use it directly; otherwise open a directory picker
-      const selected = providedPath || await open({
-        directory: true,
-        multiple: false,
-      });
+      const selected =
+        providedPath ||
+        (await open({
+          directory: true,
+          multiple: false,
+        }));
 
       if (selected) {
         console.log("Selected workspace path:", selected);
@@ -377,7 +371,9 @@ export default function Home() {
             const line = payload.line as number | undefined;
 
             if (file && line) {
-              console.log(`Received debug location in status: file=${file}, line=${line}`);
+              console.log(
+                `Received debug location in status: file=${file}, line=${line}`,
+              );
 
               // Update execution position
               setExecutionFile(file);
@@ -412,10 +408,7 @@ export default function Home() {
         hasStatusListenerRef.current = false;
       }
     };
-  }, []);
-
-  // Debug location handling has been moved to the debug-status listener
-  // No separate debug-location listener is needed anymore
+  }, [files, handleFileSelect, selectedFile?.name]);
 
   const fsRef = useRef(fs);
 
@@ -549,7 +542,8 @@ export default function Home() {
       // First set the debug engine to Python
       setDebugEngine("python");
 
-      const pythonTestPath = "/Users/mtn/Documents/workspace/wayfind/dap/test_data/python";
+      const pythonTestPath =
+        "/Users/mtn/Documents/workspace/wayfind/dap/test_data/python";
 
       // Use handleOpenWorkspace with the Python test path
       const success = await handleOpenWorkspace(pythonTestPath);
