@@ -3,16 +3,18 @@ import { z } from "zod";
 
 export const setBreakpointByLine = tool({
   description:
-    "Set a breakpoint at a given line number in a.py. Each tool response includes the current debugStatus. This tool can be called regardless of debug status, but it should only be called one time per line.",
+    "Set a breakpoint in a file at a given line number. Each tool response includes the current debugStatus. This tool can be called regardless of debug status, but it should only be called one time per line.",
   parameters: z.object({
     line: z.number().describe("The line where the breakpoint should be set"),
-    filePath: z.literal("a.py"), // hardcoded filePath
+    filePath: z
+      .string()
+      .describe("The path of the file where the breakpoint should be set"),
   }),
 });
 
 export const setBreakpointBySearch = tool({
   description:
-    "Set a breakpoint by searching for text in a file. This lets you set breakpoints without knowing the exact line number. The lineOffset parameter allows you to set the breakpoint relative to the matched line: use positive values (e.g., 1, 2) to set breakpoints after the match, negative values (e.g., -1, -2) to set breakpoints before the match, or 0 (default) for the exact matching line. This is particularly useful for debugging variables - set lineOffset: 1 to break after a variable is initialized, allowing you to inspect its value.",
+    "Set a breakpoint by searching for text in a file. This lets you set breakpoints without knowing the exact line number. Each tool response includes the current debugStatus. This tool can be called regardless of debug status, but it should only be called one time per line.",
   parameters: z.object({
     searchText: z
       .string()
@@ -58,3 +60,51 @@ export const evaluateExpression = tool({
     expression: z.string().describe("The expression to evaluate"),
   }),
 });
+
+// ─── Quick introspection & dump ───────────────────────────────────────────────
+import { ZodObject, ZodOptional, ZodNullable, ZodDefault } from "zod";
+
+function unwrap(z: any): { type: string; desc?: string } {
+  if (
+    z instanceof ZodOptional ||
+    z instanceof ZodNullable ||
+    z instanceof ZodDefault
+  ) {
+    return unwrap(z._def.innerType);
+  }
+  const typeName =
+    z._def?.typeName?.replace(/^Zod/, "").toLowerCase() || "unknown";
+  return { type: typeName, desc: z._def?.description };
+}
+
+async function dumpToolDocs() {
+  const toolMap = {
+    setBreakpointByLine,
+    setBreakpointBySearch,
+    launchDebug,
+    continueExecution,
+    evaluateExpression,
+  };
+  const out: string[] = ["You have the following tools available:"];
+  for (const [name, toolObj] of Object.entries(toolMap)) {
+    const schema = (toolObj as any).parameters as ZodObject<any>;
+    const desc = (toolObj as any).description as string;
+    out.push(`\n### ${name}`);
+    out.push(desc);
+    out.push("**Parameters:**");
+    const shape = (schema as any)._def.shape() as Record<string, any>;
+    for (const [param, zodType] of Object.entries(shape)) {
+      const { type, desc: pdesc } = unwrap(zodType);
+      out.push(`- \`${param}\`: *${type}*${pdesc ? ` – ${pdesc}` : ""}`);
+    }
+  }
+  console.log(out.join("\n"));
+}
+
+// ─── Test-driver: register ts-node and dump docs ──────────────────────────────
+if (require.main === module) {
+  // 1) Hook ts-node to handle .ts on the fly:
+  require("ts-node").register({ transpileOnly: true });
+  // 2) Call your introspection routine:
+  dumpToolDocs();
+}
