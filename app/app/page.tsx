@@ -222,9 +222,10 @@ export default function Home() {
     }
   };
 
-  const handleOpenWorkspace = async () => {
+  const handleOpenWorkspace = async (providedPath?: string) => {
     try {
-      const selected = await open({
+      // If a path is provided, use it directly; otherwise open a directory picker
+      const selected = providedPath || await open({
         directory: true,
         multiple: false,
       });
@@ -292,9 +293,13 @@ export default function Home() {
         if (firstFile) {
           setSelectedFile(firstFile);
         }
+
+        return true; // Indicate success
       }
+      return false; // Indicate no path was selected
     } catch (error) {
       console.error("Error opening workspace:", error);
+      return false;
     }
   };
 
@@ -561,20 +566,16 @@ export default function Home() {
         // Create fresh file system
         const newFs = new InMemoryFileSystem(
           mappedEntries,
-          "/Users/mtn/Documents/workspace/wayfind/dap/test_data/python",
+          "/Users/mtn/Documents/workspace/scratch/zed",
         );
         setFs(newFs);
         setFiles(mappedEntries);
-        const aFile = mappedEntries.find((f) => f.name === "a.py");
-        if (aFile) {
-          setSelectedFile(aFile);
-        }
 
-        // Set debugger to Python
-        setDebugEngine("python");
+        // Set debugger to Rust
+        setDebugEngine("rust");
 
         const testPrompt =
-          "/file a.py set a breakpoint on line 14, then launch the debug session and trace the values next_val (evaluate next_val, then continue execution, over and over until the program has terminated) takes on as the program runs. then report to me what values next_val took on.";
+          "/set a breakpoint in the main function, then launch the debug session with the Rust binary path set to your executable. After the program stops at the breakpoint, step through the code and evaluate variables as needed.";
 
         if (prefillChatInputRef.current) {
           prefillChatInputRef.current(testPrompt);
@@ -586,6 +587,30 @@ export default function Home() {
 
     // For the chat input, we need to address that differently
     // since it's maintained in the ChatInterface component
+  };
+
+  const handleTestSetup2 = async () => {
+    // Set the debugger to Rust mode
+    setDebugEngine("rust");
+
+    try {
+      const targetPath = "/Users/mtn/Documents/workspace/scratch/zed";
+
+      // Use the refactored handleOpenWorkspace function with a provided path
+      const success = await handleOpenWorkspace(targetPath);
+
+      if (success) {
+        // After workspace loads, prepare the test prompt
+        const testPrompt =
+          "/file crates/workspace/src/workspace.rs set a breakpoint on line 3109 of workspace.rs, then launch the debug session. After the program stops at the breakpoint, say 'foobar'";
+
+        if (prefillChatInputRef.current) {
+          prefillChatInputRef.current(testPrompt);
+        }
+      }
+    } catch (error) {
+      console.error("Error opening workspace for Test Setup 2:", error);
+    }
   };
 
   const handleDebugSessionStart = async (force: boolean = false) => {
@@ -894,12 +919,18 @@ export default function Home() {
   const hasWorkspace = Boolean(fs.getWorkspacePath());
   return (
     <div className="h-screen flex flex-col">
-      <div className="p-2">
+      <div className="p-2 flex gap-2">
         <button
           onClick={handleTestSetup}
           className="px-4 py-2 bg-green-500 text-white rounded"
         >
-          Test Setup
+          Test Setup 1
+        </button>
+        <button
+          onClick={handleTestSetup2}
+          className="px-4 py-2 bg-blue-500 text-white rounded"
+        >
+          Test Setup 2
         </button>
       </div>
       <ResizablePanelGroup direction="horizontal">
