@@ -91,11 +91,17 @@ async function dumpToolDocs() {
     const desc = (toolObj as any).description as string;
     out.push(`\n### ${name}`);
     out.push(desc);
-    out.push("**Parameters:**");
+
     const shape = (schema as any)._def.shape() as Record<string, any>;
-    for (const [param, zodType] of Object.entries(shape)) {
-      const { type, desc: pdesc } = unwrap(zodType);
-      out.push(`- \`${param}\`: *${type}*${pdesc ? ` – ${pdesc}` : ""}`);
+    const paramEntries = Object.entries(shape);
+
+    // Only print parameters section if there's at least one parameter
+    if (paramEntries.length > 0) {
+      out.push("**Parameters:**");
+      for (const [param, zodType] of paramEntries) {
+        const { type, desc: pdesc } = unwrap(zodType);
+        out.push(`- \`${param}\`: *${type}*${pdesc ? ` – ${pdesc}` : ""}`);
+      }
     }
   }
   console.log(out.join("\n"));
