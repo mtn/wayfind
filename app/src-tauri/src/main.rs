@@ -396,7 +396,7 @@ async fn set_breakpoint_by_search(
 
     // Read the file content
     let content = fs::read_to_string(&file_path)
-        .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
+        .map_err(|e| format!("FOO Failed to read file {}: {}", file_path, e))?;
 
     // Split into lines and find matches
     let lines: Vec<&str> = content.lines().collect();

@@ -245,7 +245,7 @@ export function ChatInterface({
 
       try {
         // Handle different tool calls
-        if (toolCall.toolName === "setBreakpoint") {
+        if (toolCall.toolName === "setBreakpointByLine") {
           // First, set the breakpoint
           const { line } = toolCall.args as { line: number };
           onSetBreakpoint(line);
@@ -278,6 +278,9 @@ export function ChatInterface({
               filePath: string;
             };
 
+          console.log("FOO Tool call args", toolCall.args);
+          console.log("FOO invokign breakpoint by search");
+
           // Invoke the Tauri command with explicit type
           const result = await invoke<SearchBreakpointResult>(
             "set_breakpoint_by_search",
@@ -287,8 +290,11 @@ export function ChatInterface({
               occurrenceIndex,
               lineOffset,
               filePath,
+              // filePath: fs.getFullPath(filePath),
             },
           );
+
+          console.log("FOO invoked and done");
 
           actionResult = `Breakpoint set at line ${result.foundLine} (matched "${searchText}")`;
 
