@@ -2,8 +2,6 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 const debug = process.env.DEBUG_CHAT === "true";
 
-import { z } from "zod";
-import zodToJsonSchema from "zod-to-json-schema";
 import { Router, Request, Response } from "express";
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
@@ -115,53 +113,13 @@ interface DebugLogEntry {
 }
 const debugStore: DebugLogEntry[] = [];
 
-function getToolDetailsForPrompt(tools: Record<string, any>): string {
-  const toolDescriptions: Record<string, string> = {
-    setBreakpointByLine: setBreakpointByLine.description ?? "",
-    setBreakpointBySearch: setBreakpointBySearch.description ?? "",
-    launchDebug: launchDebug.description ?? "",
-    continueExecution: continueExecution.description ?? "",
-    evaluateExpression: evaluateExpression.description ?? "",
-  };
-
-  return Object.keys(tools)
-    .map((toolName) => {
-      const tool = tools[toolName];
-
-      // Get parameter descriptions using zodToJsonSchema
-      let paramsDescription = "";
-      if (tool.parameters) {
-        try {
-          const jsonSchema = zodToJsonSchema(
-            tool.parameters,
-            toolName + "Params",
-          );
-
-          if (
-            jsonSchema.properties &&
-            Object.keys(jsonSchema.properties).length > 0
-          ) {
-            paramsDescription = "\n              Parameters:";
-            for (const [paramName, paramDef] of Object.entries(
-              jsonSchema.properties,
-            )) {
-              const type = (paramDef as any).type || "any";
-              const description = (paramDef as any).description || "";
-              const isRequired = jsonSchema.required?.includes(paramName)
-                ? " (required)"
-                : " (optional)";
-              paramsDescription += `\n              - ${paramName}${isRequired} (${type}): ${description}`;
-            }
-          }
-        } catch (error) {
-          console.warn(`Could not extract parameters for ${toolName}:`, error);
-        }
-      }
-
-      return `- ${toolName}: ${toolDescriptions[toolName]}${paramsDescription}`;
-    })
-    .join("\n            ");
-}
+const toolDescriptions: Record<string, string> = {
+  setBreakpointByLine: setBreakpointByLine.description ?? "",
+  setBreakpointBySearch: setBreakpointBySearch.description ?? "",
+  launchDebug: launchDebug.description ?? "",
+  continueExecution: continueExecution.description ?? "",
+  evaluateExpression: evaluateExpression.description ?? "",
+};
 
 function getToolsForDebugStatus(debugStatus: string): DebugTools {
   const baseTools = { setBreakpointByLine, setBreakpointBySearch };
@@ -224,26 +182,28 @@ router.post("/", async (req: Request, res: Response) => {
     const systemPrompt = {
       role: "system",
       content: `You are a highly skilled debugging assistant.
-              When you're asked questions about the code, you should always first consider using the debugging tools available to you
-              to answer it efficiently and accurately. You have access to the following tools:
-              ${getToolDetailsForPrompt(tools)}
+            When you're asked questions about the code, you should always first consider using the debugging tools available to you
+            to answer it efficiently and accurately. You have access to the following tools:
+            ${Object.keys(tools)
+              .map((tool) => `- ${tool}: ${toolDescriptions[tool]}`)
+              .join("\n            ")}
 
-              Current debug status: ${debugStatus}
+            Current debug status: ${debugStatus}
 
-              IMPORTANT: For setting breakpoints, prefer using setBreakpointBySearch instead of setBreakpointByLine
-              whenever possible. This allows you to set breakpoints by searching for code content rather than
-              relying on specific line numbers, which is more reliable if the code has been modified.
+            IMPORTANT: For setting breakpoints, prefer using setBreakpointBySearch instead of setBreakpointByLine
+            whenever possible. This allows you to set breakpoints by searching for code content rather than
+            relying on specific line numbers, which is more reliable if the code has been modified.
 
-              Keep in mind that to read or trace the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
-              defined on, otherwise, it'll come back as undefined.
-              For example, if the user asks you how the value of a variable changes as the program runs,
-              you should use your tools to set breakpoint(s) at lines that let you read the value (one line after any definition / modification is happening), launch the program, continue till
-              it stops, evaluate the variable, and so on until it terminates.
-              After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
-              (if it makes sense to do so).
+            Keep in mind that to read or trace the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
+            defined on, otherwise, it'll come back as undefined.
+            For example, if the user asks you how the value of a variable changes as the program runs,
+            you should use your tools to set breakpoint(s) at lines that let you read the value (one line after any definition / modification is happening), launch the program, continue till
+            it stops, evaluate the variable, and so on until it terminates.
+            After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
+            (if it makes sense to do so).
 
-              If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
-              steps to finish.`,
+            If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
+            steps to finish.`,
     };
 
     const result = streamText({
