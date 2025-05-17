@@ -420,12 +420,27 @@ export function ChatInterface({
     if (!input.trim()) return;
     const experimentalAttachments = [...attachments];
     const matchedFiles = parseFileCommands(input, files);
+
+    // Helper function for Unicode-safe base64 encoding
+    function encodeUnicodeSafeBase64(str: string): string {
+      // Convert the string to UTF-8 encoded array buffer
+      const encoder = new TextEncoder();
+      const utf8Bytes = encoder.encode(str);
+
+      // Convert the array buffer to a string that btoa can handle
+      return btoa(
+        Array.from(utf8Bytes)
+          .map((byte) => String.fromCharCode(byte))
+          .join(""),
+      );
+    }
+
     matchedFiles.forEach((fileEntry) => {
       if (fileEntry.content) {
         experimentalAttachments.push({
           name: fileEntry.name,
           contentType: "text/plain",
-          url: `data:text/plain;base64,${btoa(fileEntry.content)}`,
+          url: `data:text/plain;base64,${encodeUnicodeSafeBase64(fileEntry.content)}`,
         });
       }
     });
