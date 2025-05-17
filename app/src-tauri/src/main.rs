@@ -11,7 +11,6 @@ use shellexpand;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
-use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
