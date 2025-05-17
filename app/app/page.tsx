@@ -584,6 +584,8 @@ export default function Home() {
 
       if (success) {
         // After workspace loads, prepare the test prompt
+        // TODO If the breakpoint is set on a non-code line the breakpoint gets swallowed.
+        // Check how other debuggers handle it (e.g. workspace.rs line 3109)
         const testPrompt =
           "/file crates/workspace/src/workspace.rs set a breakpoint on line 3154 of workspace.rs, then launch the debug session. After the program stops at the breakpoint, say 'foobar'";
 
