@@ -33,7 +33,6 @@ export class InMemoryFileSystem {
       try {
         // Get full directory path
         const fullPath = this.getFullPath(path);
-        console.log(`Loading contents of directory: ${fullPath}`);
 
         // Invoke the backend to get the directory contents
         const dirEntries = await invoke<
@@ -46,11 +45,6 @@ export class InMemoryFileSystem {
         >("read_directory", {
           path: fullPath,
         });
-
-        console.log(
-          `Received ${dirEntries.length} entries for ${path}`,
-          dirEntries,
-        );
 
         // Convert to FileEntry objects
         const children: FileEntry[] = dirEntries.map((item) => {
@@ -75,7 +69,6 @@ export class InMemoryFileSystem {
 
         // Set the children
         entry.children = children;
-        console.log(`Set ${children.length} children for ${path}`);
       } catch (error) {
         console.error(`Error loading directory contents for ${path}:`, error);
         return false;
