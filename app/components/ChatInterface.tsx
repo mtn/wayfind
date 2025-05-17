@@ -95,21 +95,52 @@ function getFileSuggestions(query: string, fileTree: FileEntry[]): FileEntry[] {
   );
 }
 
-// New helper function to parse all /file commands in the text.
+function validateFilePath(
+  filePath: string,
+  files: FileEntry[],
+): FileEntry | undefined {
+  // Check if this is a path with directories
+  if (filePath.includes("/")) {
+    // Get all parts of the path
+    const parts = filePath.split("/");
+    const fileName = parts.pop() || "";
+
+    // Try to find the directory
+    const currentDir = findDirectory(parts, files);
+
+    // If we found the directory, look for the file in its children
+    if (currentDir && currentDir.children) {
+      return currentDir.children.find(
+        (f) =>
+          f.type === "file" && f.name.toLowerCase() === fileName.toLowerCase(),
+      );
+    }
+  } else {
+    // Simple top-level file lookup
+    return files.find(
+      (f) =>
+        f.type === "file" &&
+        f.name.toLowerCase() === filePath.trim().toLowerCase(),
+    );
+  }
+
+  // If no match found, return undefined
+  return undefined;
+}
+
 function parseFileCommands(text: string, allFiles: FileEntry[]): FileEntry[] {
   const regex = /\/file\s+([^\s]+)/g;
   const matchedFiles: FileEntry[] = [];
   let match;
+
   while ((match = regex.exec(text)) !== null) {
     const candidate = match[1];
-    const found = allFiles.find(
-      (f) =>
-        f.type === "file" && f.name.toLowerCase() === candidate.toLowerCase(),
-    );
-    if (found) {
-      matchedFiles.push(found);
+    const fileEntry = validateFilePath(candidate, allFiles);
+    if (fileEntry) {
+      matchedFiles.push(fileEntry);
     }
   }
+
   return matchedFiles;
 }
 
@@ -162,7 +193,6 @@ export function ChatInterface({
     [files, onLazyExpandDirectory],
   );
 
-  // Function to highlight the /file command in the contenteditable div.
   const highlightFileCommand = useCallback(() => {
     if (!editorRef.current) return;
     const element = editorRef.current;
@@ -171,18 +201,19 @@ export function ChatInterface({
     let html = textContent;
     const regex = /^\/file\s+(\S+)(.*)$/;
     const match = textContent.match(regex);
+
     if (match) {
       const fileCandidate = match[1];
       const rest = match[2];
-      const valid = files.some(
-        (f) =>
-          f.type === "file" &&
-          f.name.toLowerCase() === fileCandidate.trim().toLowerCase(),
-      );
+
+      // Use the shared validation function
+      const valid = Boolean(validateFilePath(fileCandidate, files));
+
       html =
         `<span style="color:${valid ? "green" : "red"}">/file ${fileCandidate}</span>` +
         rest;
     }
+
     element.innerHTML = html;
     setCaretPosition(element, caretPos);
   }, [files]);
