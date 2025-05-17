@@ -35,7 +35,7 @@ interface ChatInterfaceProps {
   // File system instance for path resolution
   fileSystem: InMemoryFileSystem;
   // Callback to update breakpoints (as if the user clicked the gutter).
-  onSetBreakpoint: (line: number) => void;
+  onSetBreakpoint: (line: number, file?: FileEntry) => void;
   // Callback to select a file in the editor
   onFileSelect: (file: FileEntry) => Promise<void>;
   // Callback to launch a debug session.
@@ -282,9 +282,24 @@ export function ChatInterface({
       try {
         // Handle different tool calls
         if (toolCall.toolName === "setBreakpointByLine") {
-          // First, set the breakpoint
-          const { line } = toolCall.args as { line: number };
-          onSetBreakpoint(line);
+          // Extract both line AND filePath from the args
+          const { line, filePath } = toolCall.args as {
+            line: number;
+            filePath: string;
+          };
+
+          // Use the file system to find the file by its path
+          const fileEntry = await fileSystem.getFile(filePath);
+
+          if (!fileEntry) {
+            throw new Error(`File not found: ${filePath}`);
+          }
+
+          // Select the file first for visual feedback
+          await onFileSelect(fileEntry);
+
+          // Pass both line and fileEntry explicitly
+          onSetBreakpoint(line, fileEntry);
           actionResult = "Breakpoint set";
 
           // After handling this specific tool, schedule a follow-up message
@@ -333,20 +348,18 @@ export function ChatInterface({
               },
             );
 
-            // We need to make sure the correct file is selected before setting the breakpoint
-            // Find the file entry that matches our path
-            const fileName = filePath.split("/").pop();
-            const fileEntry = files.find((f) => f.name === fileName);
+            // Use the file system to find the file by its path
+            const fileEntry = await fileSystem.getFile(filePath);
 
             if (!fileEntry) {
-              throw new Error(`File not found: ${fileName}`);
+              throw new Error(`File not found: ${filePath}`);
             }
 
-            // Select the file first, then set the breakpoint
+            // Select the file first for visual feedback
             await onFileSelect(fileEntry);
 
-            // Now set the breakpoint using the existing mechanism
-            onSetBreakpoint(result.foundLine);
+            // Now set the breakpoint using the existing mechanism, passing the file explicitly
+            onSetBreakpoint(result.foundLine, fileEntry);
 
             actionResult = `Breakpoint set at line ${result.foundLine} (matched "${searchText}")`;
 
@@ -354,7 +367,7 @@ export function ChatInterface({
             setTimeout(() => {
               send({
                 role: "user",
-                content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileName}.`,
+                content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
                 id: crypto.randomUUID(),
               });
             }, 0);

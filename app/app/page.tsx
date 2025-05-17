@@ -417,10 +417,14 @@ export default function Home() {
     fsRef.current = fs;
   }, [fs]);
 
-  const handleBreakpointChange = (lineNumber: number) => {
+  const handleBreakpointChange = (
+    lineNumber: number,
+    fileEntry?: FileEntry,
+  ) => {
     console.log(`handleBreakpointChange called with lineNumber: ${lineNumber}`);
-    const currentFilePath = selectedFileRef.current?.path;
-    console.log(`Current file path: ${currentFilePath}`);
+    // Use provided fileEntry if available, otherwise use the currently selected file
+    const currentFilePath = fileEntry?.path || selectedFileRef.current?.path;
+    console.log(`Using file path: ${currentFilePath}`);
     if (!currentFilePath) return;
 
     if (!isDebugSessionActiveRef.current) {
@@ -477,11 +481,11 @@ export default function Home() {
         activeBreakpointsRef.current = newBreakpoints;
 
         // Get full file path for the current file
-        if (!selectedFileRef.current) return newBreakpoints;
+        // Use fileEntry if provided, otherwise use selectedFileRef.current
+        const fileToUse = fileEntry || selectedFileRef.current;
+        if (!fileToUse) return newBreakpoints;
 
-        const fullFilePath = fsRef.current.getFullPath(
-          selectedFileRef.current.path,
-        );
+        const fullFilePath = fsRef.current.getFullPath(fileToUse.path);
         console.log(`Full file path for request: ${fullFilePath}`);
 
         const breakpointsToSend = newBreakpoints.filter(
@@ -581,7 +585,7 @@ export default function Home() {
       if (success) {
         // After workspace loads, prepare the test prompt
         const testPrompt =
-          "/file crates/workspace/src/workspace.rs set a breakpoint on line 3109 of workspace.rs, then launch the debug session. After the program stops at the breakpoint, say 'foobar'";
+          "/file crates/workspace/src/workspace.rs set a breakpoint on line 3154 of workspace.rs, then launch the debug session. After the program stops at the breakpoint, say 'foobar'";
 
         if (prefillChatInputRef.current) {
           prefillChatInputRef.current(testPrompt);
@@ -1036,7 +1040,9 @@ export default function Home() {
                     queuedBreakpoints,
                     activeBreakpoints,
                   ).filter((bp) => bp.file === selectedFile?.path)}
-                  onBreakpointChange={handleBreakpointChange}
+                  onBreakpointChange={(lineNumber) =>
+                    handleBreakpointChange(lineNumber)
+                  }
                   executionFile={executionFile}
                   executionLine={executionLine}
                   currentFile={selectedFile?.name}
