@@ -29,7 +29,6 @@ interface DebugSyncData {
   executionFile: string | null;
   executionLine: number | null;
 }
-
 interface ChatInterfaceProps {
   // An array of files that provide context.
   files: FileEntry[];
@@ -37,6 +36,8 @@ interface ChatInterfaceProps {
   fileSystem: InMemoryFileSystem;
   // Callback to update breakpoints (as if the user clicked the gutter).
   onSetBreakpoint: (line: number) => void;
+  // Callback to select a file in the editor
+  onFileSelect: (file: FileEntry) => Promise<void>;
   // Callback to launch a debug session.
   onLaunch: () => void;
   // Callback to continue execution.
@@ -116,6 +117,7 @@ export function ChatInterface({
   files,
   fileSystem,
   onSetBreakpoint,
+  onFileSelect,
   onLaunch,
   onContinue,
   onEvaluate,
@@ -264,12 +266,12 @@ export function ChatInterface({
             });
           }, 0);
         } else if (toolCall.toolName === "setBreakpointBySearch") {
-          // Handle the new text-based breakpoint tool
-          interface SearchBreakpointResult {
+          // Define the result interface
+          interface ResolveBreakpointResult {
             foundLine: number;
             matchCount: number;
             searchText: string;
-            breakpoints?: any; // The actual breakpoints info from the Rust side
+            filePath: string;
           }
 
           const { searchText, context, occurrenceIndex, lineOffset, filePath } =
@@ -281,38 +283,54 @@ export function ChatInterface({
               filePath: string;
             };
 
-          console.log("FOO Tool call args", toolCall.args);
-
-          // Resolve the filePath to a full path
+          // Resolve the file path
           const fullFilePath = fileSystem.getFullPath(filePath);
           console.log(
-            `FOO Resolving breakpoint search path: ${filePath} → ${fullFilePath}`,
+            `Resolving breakpoint search path: ${filePath} → ${fullFilePath}`,
           );
 
-          // Invoke the Tauri command with resolved path
-          const result = await invoke<SearchBreakpointResult>(
-            "set_breakpoint_by_search",
-            {
-              searchText,
-              context,
-              occurrenceIndex,
-              lineOffset,
-              filePath: fullFilePath, // Now using the fully resolved path
-            },
-          );
+          try {
+            // First, resolve the line number through text search
+            const result = await invoke<ResolveBreakpointResult>(
+              "resolve_breakpoint_by_search",
+              {
+                searchText,
+                context,
+                occurrenceIndex,
+                lineOffset,
+                filePath: fullFilePath,
+              },
+            );
 
-          console.log("FOO Search breakpoint set successfully");
+            // We need to make sure the correct file is selected before setting the breakpoint
+            // Find the file entry that matches our path
+            const fileName = filePath.split("/").pop();
+            const fileEntry = files.find((f) => f.name === fileName);
 
-          actionResult = `Breakpoint set at line ${result.foundLine} (matched "${searchText}")`;
+            if (!fileEntry) {
+              throw new Error(`File not found: ${fileName}`);
+            }
 
-          // Send follow-up message to the chat
-          setTimeout(() => {
-            send({
-              role: "user",
-              content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}".`,
-              id: crypto.randomUUID(),
-            });
-          }, 0);
+            // Select the file first, then set the breakpoint
+            await onFileSelect(fileEntry);
+
+            // Now set the breakpoint using the existing mechanism
+            onSetBreakpoint(result.foundLine);
+
+            actionResult = `Breakpoint set at line ${result.foundLine} (matched "${searchText}")`;
+
+            // Send follow-up message
+            setTimeout(() => {
+              send({
+                role: "user",
+                content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileName}.`,
+                id: crypto.randomUUID(),
+              });
+            }, 0);
+          } catch (error) {
+            console.error("Error setting breakpoint by search:", error);
+            throw error;
+          }
         } else if (toolCall.toolName === "launchDebug") {
           onLaunch();
           actionResult = "Debug session launched";

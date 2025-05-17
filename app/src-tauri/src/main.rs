@@ -380,23 +380,21 @@ async fn launch_debug_session(
 }
 
 #[tauri::command]
-async fn set_breakpoint_by_search(
+async fn resolve_breakpoint_by_search(
     search_text: String,
     context: Option<String>,
     occurrence_index: Option<usize>,
     line_offset: Option<i32>,
     file_path: String,
-    debug_state: tauri::State<'_, Arc<DebugSessionState>>,
-    app_handle: tauri::AppHandle,
 ) -> Result<Value, String> {
     println!(
-        "Setting breakpoint via text search: '{}' in {}",
+        "Resolving line number via text search: '{}' in {}",
         search_text, file_path
     );
 
     // Read the file content
     let content = fs::read_to_string(&file_path)
-        .map_err(|e| format!("FOO Failed to read file {}: {}", file_path, e))?;
+        .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
 
     // Split into lines and find matches
     let lines: Vec<&str> = content.lines().collect();
@@ -456,35 +454,18 @@ async fn set_breakpoint_by_search(
         target_line = new_line as usize;
     }
 
-    // Create a breakpoint input with the target line
-    let breakpoint = BreakpointInput {
-        line: target_line as u32,
-    };
-
-    // Now use the existing set_breakpoints function to actually set the breakpoint
-    // But first, need to determine the file part of the path for breakpoint tracking
-    let file_name = Path::new(&file_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&file_path);
-
-    let result = set_breakpoint_by_line(vec![breakpoint], file_path.clone(), debug_state).await?;
-
-    // Add more information to the result
+    // Return the result with just the line number information (no breakpoint setting)
     let mut result_map = serde_json::Map::new();
-    if let Value::Object(mut map) = result {
-        result_map = map;
-    }
-
     result_map.insert("foundLine".to_string(), json!(target_line));
     result_map.insert("matchCount".to_string(), json!(matches.len()));
     result_map.insert("searchText".to_string(), json!(search_text));
+    result_map.insert("filePath".to_string(), json!(file_path));
 
     Ok(Value::Object(result_map))
 }
 
 #[tauri::command]
-async fn set_breakpoint_by_line(
+async fn set_breakpoint(
     breakpoints: Vec<BreakpointInput>,
     file_path: String,
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
@@ -816,8 +797,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             read_directory,
             launch_debug_session,
-            set_breakpoint_by_search,
-            set_breakpoint_by_line,
+            resolve_breakpoint_by_search,
+            set_breakpoint,
             configuration_done,
             continue_debug,
             step_in,

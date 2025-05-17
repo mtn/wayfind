@@ -491,12 +491,12 @@ export default function Home() {
           `Sending breakpoints for current file: ${JSON.stringify(breakpointsToSend)}`,
         );
 
-        invoke("set_breakpoints", {
+        invoke("set_breakpoint", {
           breakpoints: breakpointsToSend,
           filePath: fullFilePath, // Use full path instead of just the file name
         })
           .then((data) => {
-            console.log(`set_breakpoints response: ${JSON.stringify(data)}`);
+            console.log(`set_breakpoint response: ${JSON.stringify(data)}`);
             const typedData = data as { breakpoints?: IBreakpoint[] };
             if (typedData.breakpoints) {
               // Update active breakpoints with verification status
@@ -666,7 +666,7 @@ export default function Home() {
           );
 
           const bpResp = await invoke<{ breakpoints?: IBreakpoint[] }>(
-            "set_breakpoints",
+            "set_breakpoint",
             {
               breakpoints: fileBreakpoints,
               filePath: fullFilePath,
@@ -779,12 +779,12 @@ export default function Home() {
         addLog(
           `Setting breakpoints for ${file} (path: ${fullFilePath}): ${JSON.stringify(fileBreakpoints)}`,
         );
-        console.log(`Invoking set_breakpoints for ${file}`, {
+        console.log(`Invoking set_breakpoint for ${file}`, {
           breakpoints: fileBreakpoints,
           filePath: fullFilePath,
         });
         const bpResp = await invoke<{ breakpoints?: IBreakpoint[] }>(
-          "set_breakpoints",
+          "set_breakpoint",
           {
             breakpoints: fileBreakpoints,
             filePath: fullFilePath, // Use full path instead of just the file name
@@ -1050,6 +1050,7 @@ export default function Home() {
                 getDebugSync={getDebugSync}
                 logToolCall={logToolCall}
                 onSetBreakpoint={handleBreakpointChange}
+                onFileSelect={handleFileSelect}
                 onLaunch={handleDebugSessionStart}
                 onContinue={handleContinue}
                 onEvaluate={evaluateExpression}
