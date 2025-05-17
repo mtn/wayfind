@@ -86,7 +86,6 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
 
         // Track reasoning parts
         if (typedPart.type === "reasoning") {
-          console.log("Detected reasoning part:", part);
           hasReasoningParts = true;
         }
 
