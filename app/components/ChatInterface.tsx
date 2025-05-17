@@ -3,11 +3,12 @@
 import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
 import { useQueuedChat } from "@/lib/useQueuedChat";
 import { Button } from "@/components/ui/button";
-import { FileEntry } from "@/lib/fileSystem";
+import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import ReactMarkdown from "react-markdown";
 import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
 import { IBreakpoint } from "@/app/page";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 import type { EvaluationResult } from "@/components/DebugToolbar";
 
@@ -28,12 +29,15 @@ interface DebugSyncData {
   executionFile: string | null;
   executionLine: number | null;
 }
-
 interface ChatInterfaceProps {
   // An array of files that provide context.
   files: FileEntry[];
+  // File system instance for path resolution
+  fileSystem: InMemoryFileSystem;
   // Callback to update breakpoints (as if the user clicked the gutter).
   onSetBreakpoint: (line: number) => void;
+  // Callback to select a file in the editor
+  onFileSelect: (file: FileEntry) => Promise<void>;
   // Callback to launch a debug session.
   onLaunch: () => void;
   // Callback to continue execution.
@@ -111,7 +115,9 @@ function parseFileCommands(text: string, allFiles: FileEntry[]): FileEntry[] {
 
 export function ChatInterface({
   files,
+  fileSystem,
   onSetBreakpoint,
+  onFileSelect,
   onLaunch,
   onContinue,
   onEvaluate,
@@ -244,7 +250,7 @@ export function ChatInterface({
 
       try {
         // Handle different tool calls
-        if (toolCall.toolName === "setBreakpoint") {
+        if (toolCall.toolName === "setBreakpointByLine") {
           // First, set the breakpoint
           const { line } = toolCall.args as { line: number };
           onSetBreakpoint(line);
@@ -259,6 +265,72 @@ export function ChatInterface({
               id: crypto.randomUUID(),
             });
           }, 0);
+        } else if (toolCall.toolName === "setBreakpointBySearch") {
+          // Define the result interface
+          interface ResolveBreakpointResult {
+            foundLine: number;
+            matchCount: number;
+            searchText: string;
+            filePath: string;
+          }
+
+          const { searchText, context, occurrenceIndex, lineOffset, filePath } =
+            toolCall.args as {
+              searchText: string;
+              context?: string;
+              occurrenceIndex?: number;
+              lineOffset?: number;
+              filePath: string;
+            };
+
+          // Resolve the file path
+          const fullFilePath = fileSystem.getFullPath(filePath);
+          console.log(
+            `Resolving breakpoint search path: ${filePath} → ${fullFilePath}`,
+          );
+
+          try {
+            // First, resolve the line number through text search
+            const result = await invoke<ResolveBreakpointResult>(
+              "resolve_breakpoint_by_search",
+              {
+                searchText,
+                context,
+                occurrenceIndex,
+                lineOffset,
+                filePath: fullFilePath,
+              },
+            );
+
+            // We need to make sure the correct file is selected before setting the breakpoint
+            // Find the file entry that matches our path
+            const fileName = filePath.split("/").pop();
+            const fileEntry = files.find((f) => f.name === fileName);
+
+            if (!fileEntry) {
+              throw new Error(`File not found: ${fileName}`);
+            }
+
+            // Select the file first, then set the breakpoint
+            await onFileSelect(fileEntry);
+
+            // Now set the breakpoint using the existing mechanism
+            onSetBreakpoint(result.foundLine);
+
+            actionResult = `Breakpoint set at line ${result.foundLine} (matched "${searchText}")`;
+
+            // Send follow-up message
+            setTimeout(() => {
+              send({
+                role: "user",
+                content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileName}.`,
+                id: crypto.randomUUID(),
+              });
+            }, 0);
+          } catch (error) {
+            console.error("Error setting breakpoint by search:", error);
+            throw error;
+          }
         } else if (toolCall.toolName === "launchDebug") {
           onLaunch();
           actionResult = "Debug session launched";
@@ -388,64 +460,63 @@ export function ChatInterface({
 
     let unlisten: () => void;
     (async () => {
-      unlisten = await listen<{ status: string; seq?: number; file?: string; line?: number }>(
-        "debug-status",
-        (event) => {
-          const { status, file, line } = event.payload;
+      unlisten = await listen<{
+        status: string;
+        seq?: number;
+        file?: string;
+        line?: number;
+      }>("debug-status", (event) => {
+        const { status, file, line } = event.payload;
 
-          // Handle paused status with location information
-          if (status === "paused" && file && line) {
-            // This is a breakpoint being hit
-            const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
+        // Handle paused status with location information
+        if (status === "paused" && file && line) {
+          // This is a breakpoint being hit
+          const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
-            // Use send to queue the message
-            send({
-              role: "user",
-              content: stopMsg,
-              id: crypto.randomUUID(),
-            });
+          // Use send to queue the message
+          send({
+            role: "user",
+            content: stopMsg,
+            id: crypto.randomUUID(),
+          });
 
-            // Clear the input field
-            setInput("");
-            if (editorRef.current) {
-              editorRef.current.innerText = "";
-            }
-
-            // Update the lastStatusRef
-            lastStatusRef.current = status;
-            return;
+          // Clear the input field
+          setInput("");
+          if (editorRef.current) {
+            editorRef.current.innerText = "";
           }
 
-          // Handle other status changes
-          // Only notify if status has changed since last notification
-          // AND it's not the "initializing" status
-          if (
-            status !== lastStatusRef.current &&
-            status !== "initializing"
-          ) {
-            lastStatusRef.current = status;
+          // Update the lastStatusRef
+          lastStatusRef.current = status;
+          return;
+        }
 
-            // Prepare message for LLM
-            const statusMsg = `Debug session status changed to: ${status}`;
+        // Handle other status changes
+        // Only notify if status has changed since last notification
+        // AND it's not the "initializing" status
+        if (status !== lastStatusRef.current && status !== "initializing") {
+          lastStatusRef.current = status;
 
-            // Use send to queue the message
-            send({
-              role: "user",
-              content: statusMsg,
-              id: crypto.randomUUID(),
-            });
+          // Prepare message for LLM
+          const statusMsg = `Debug session status changed to: ${status}`;
 
-            // Clear the input field
-            setInput("");
-            if (editorRef.current) {
-              editorRef.current.innerText = "";
-            }
-          } else {
-            // Still update the lastStatusRef even if we don't send a message
-            lastStatusRef.current = status;
+          // Use send to queue the message
+          send({
+            role: "user",
+            content: statusMsg,
+            id: crypto.randomUUID(),
+          });
+
+          // Clear the input field
+          setInput("");
+          if (editorRef.current) {
+            editorRef.current.innerText = "";
           }
-        },
-      );
+        } else {
+          // Still update the lastStatusRef even if we don't send a message
+          lastStatusRef.current = status;
+        }
+      });
     })();
     return () => {
       if (unlisten) unlisten();

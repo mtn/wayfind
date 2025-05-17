@@ -6,10 +6,12 @@ import { Router, Request, Response } from "express";
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
 import {
-  setBreakpoint,
+  setBreakpointByLine,
+  setBreakpointBySearch,
   launchDebug,
   continueExecution,
   evaluateExpression,
+  generateToolDocs,
 } from "@/tools/dapTools";
 
 // Regex pattern to find text chunks in the format: digit:"text"
@@ -97,7 +99,8 @@ interface ToolCall {
 }
 
 type DebugTools = {
-  setBreakpoint: typeof setBreakpoint;
+  setBreakpointByLine: typeof setBreakpointByLine;
+  setBreakpointBySearch: typeof setBreakpointBySearch;
   launchDebug?: typeof launchDebug;
   continueExecution?: typeof continueExecution;
   evaluateExpression?: typeof evaluateExpression;
@@ -112,14 +115,15 @@ interface DebugLogEntry {
 const debugStore: DebugLogEntry[] = [];
 
 const toolDescriptions: Record<string, string> = {
-  setBreakpoint: setBreakpoint.description ?? "",
+  setBreakpointByLine: setBreakpointByLine.description ?? "",
+  setBreakpointBySearch: setBreakpointBySearch.description ?? "",
   launchDebug: launchDebug.description ?? "",
   continueExecution: continueExecution.description ?? "",
   evaluateExpression: evaluateExpression.description ?? "",
 };
 
 function getToolsForDebugStatus(debugStatus: string): DebugTools {
-  const baseTools = { setBreakpoint };
+  const baseTools = { setBreakpointByLine, setBreakpointBySearch };
   switch (debugStatus) {
     case "notstarted":
     case "terminated":
@@ -176,27 +180,29 @@ router.post("/", async (req: Request, res: Response) => {
       delete tools.launchDebug;
     }
 
+    const toolDocs = generateToolDocs(tools);
     const systemPrompt = {
       role: "system",
       content: `You are a highly skilled debugging assistant.
-            When you're asked questions about the code, you should always first consider using the debugging tools available to you
-            to answer it efficiently and accurately. You have access to the following tools:
-            ${Object.keys(tools)
-              .map((tool) => `- ${tool}: ${toolDescriptions[tool]}`)
-              .join("\n            ")}
+              When you're asked questions about the code, you should always first consider using the debugging tools available to you
+              to answer it efficiently and accurately. ${toolDocs}
 
-            Current debug status: ${debugStatus}
+              Current debug status: ${debugStatus}
 
-            Keep in mind that to read the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
-            defined on, otherwise, it'll come back as undefined.
-            For example, if the user asks you how the value of a variable changes as the program runs,
-            you should use your tools to set breakpoint(s) at lines that let you read the value, launch the program, continue till
-            it stops, evaluate the variable, and so on until it terminates.
-            After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
-            (if it makes sense to do so).
+              IMPORTANT: For setting breakpoints, prefer using setBreakpointBySearch instead of setBreakpointByLine
+              whenever possible. This allows you to set breakpoints by searching for code content rather than
+              relying on specific line numbers, which is more reliable if the code has been modified.
 
-            If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
-            steps to finish.`,
+              Keep in mind that to read or trace the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
+              defined on, otherwise, it'll come back as undefined.
+              For example, if the user asks you how the value of a variable changes as the program runs,
+              you should use your tools to set breakpoint(s) at lines that let you read the value (one line after any definition / modification is happening), launch the program, continue till
+              it stops, evaluate the variable, and so on until it terminates.
+              After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
+              (if it makes sense to do so).
+
+              If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more
+              steps to finish.`,
     };
 
     const result = streamText({
@@ -211,12 +217,12 @@ router.post("/", async (req: Request, res: Response) => {
       },
       onChunk: (chunk) => {
         if (debug) {
-          if (chunk.chunk.type === 'reasoning') {
-            console.log('Received reasoning chunk:', chunk);
-          } else if (chunk.chunk.type === 'text-delta') {
-            console.log('Received text-delta chunk:', chunk.chunk.textDelta);
+          if (chunk.chunk.type === "reasoning") {
+            console.log("Received reasoning chunk:", chunk);
+          } else if (chunk.chunk.type === "text-delta") {
+            console.log("Received text-delta chunk:", chunk.chunk.textDelta);
           } else {
-            console.log('Received other chunk type:', chunk.chunk.type);
+            console.log("Received other chunk type:", chunk.chunk.type);
           }
         }
       },
@@ -275,7 +281,9 @@ router.post("/", async (req: Request, res: Response) => {
       });
       (result as any).pipe(res);
     } else if (typeof (result as any).toDataStreamResponse === "function") {
-      const response = (result as any).toDataStreamResponse({ sendReasoning: true });
+      const response = (result as any).toDataStreamResponse({
+        sendReasoning: true,
+      });
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       const conversationId = Date.now().toString();
