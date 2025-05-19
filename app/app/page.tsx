@@ -379,7 +379,7 @@ export default function Home() {
 
               // Convert to relative path if possible
               let relativePath = file;
-              const workspacePath = fs.getWorkspacePath();
+              const workspacePath = fsRef.current.getWorkspacePath();
               if (workspacePath && file.startsWith(workspacePath)) {
                 relativePath = `./${file.substring(workspacePath.length).replace(/^[\/\\]+/, "")}`;
                 console.log(`FOO Converted to relative path: ${relativePath}`);
