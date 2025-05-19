@@ -1,5 +1,5 @@
 import { Message, useChat, UseChatHelpers } from "ai/react";
-import { useRef, useCallback, useEffect, useState } from "react";
+import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 
 // Define a type for queue items to include both message and options
 type QueueItem = {
@@ -12,6 +12,12 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
   const q = useRef<QueueItem[]>([]); // FIFO queue of message+options pairs
   const flushing = useRef(false); // "is streaming" flag
   const [isThinking, setIsThinking] = useState(false);
+
+  // Add a derived assistantBusy flag that combines all activity signals
+  const assistantBusy = useMemo(
+    () => flushing.current || chat.isLoading || isThinking,
+    [chat.isLoading, isThinking],
+  );
 
   /** flush the queue if idle */
   const flush = useCallback(async () => {
@@ -122,5 +128,5 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
     }
   }, [chat.messages, chat.isLoading, isThinking]);
 
-  return { ...chat, send, isThinking }; // expose isThinking state
+  return { ...chat, send, isThinking, assistantBusy }; // expose isThinking and assistantBusy states
 }

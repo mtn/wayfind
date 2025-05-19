@@ -223,6 +223,7 @@ export function ChatInterface({
     isLoading: chatIsLoading,
     isThinking,
     send,
+    assistantBusy,
     handleInputChange,
   } = useQueuedChat({
     api: "http://localhost:3001/api/chat",
@@ -413,6 +414,11 @@ export function ChatInterface({
     },
   });
 
+  const assistantBusyRef = useRef(false);
+  useEffect(() => {
+    assistantBusyRef.current = assistantBusy;
+  }, [assistantBusy]);
+
   // Create attachments from files (for additional context).
   const attachments: Attachment[] = [];
   files.forEach((f) => {
@@ -525,6 +531,13 @@ export function ChatInterface({
         file?: string;
         line?: number;
       }>("debug-status", (event) => {
+        // Only process the debug event if the assistant is actively busy
+        // This prevents notifications when user is manually debugging
+        if (!assistantBusyRef.current) {
+          console.log("Ignoring debug status event - assistant not active");
+          return;
+        }
+
         const { status, file, line } = event.payload;
 
         // Handle paused status with location information
