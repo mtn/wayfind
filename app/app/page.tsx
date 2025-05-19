@@ -377,11 +377,21 @@ export default function Home() {
                 `Received debug location in status: file=${file}, line=${line}`,
               );
 
-              // Update execution position
-              setExecutionFile(file);
+              // Convert to relative path if possible
+              let relativePath = file;
+              const workspacePath = fs.getWorkspacePath();
+              if (workspacePath && file.startsWith(workspacePath)) {
+                relativePath = `./${file.substring(workspacePath.length).replace(/^[\/\\]+/, "")}`;
+                console.log(`FOO Converted to relative path: ${relativePath}`);
+              } else {
+                console.log("BAR  ", workspacePath, file);
+              }
+
+              // Update execution position with relative path
+              setExecutionFile(relativePath);
               setExecutionLine(line);
 
-              // Extract just the filename from the path
+              // Extract just the filename from the path (still using original file path)
               const fileName = file.split("/").pop();
 
               // If the stopped file is different from the current file, try to open it
