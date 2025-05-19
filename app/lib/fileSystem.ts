@@ -267,37 +267,4 @@ export class InMemoryFileSystem {
     }
     return flatten(this.files);
   }
-
-  // Expand non-hidden and non-gitignored directories in the background.
-  public async expandDefaultDirectories(): Promise<void> {
-    async function processDir(
-      fs: InMemoryFileSystem,
-      entries: FileEntry[],
-    ): Promise<void> {
-      const promises = entries
-        .filter(
-          (e) =>
-            e.type === "directory" &&
-            !e.name.startsWith(".") &&
-            e.name !== ".git" &&
-            e.name !== "node_modules" &&
-            e.name !== "target",
-        )
-        .map(async (entry) => {
-          // Expand directory if not already expanded or if children are empty.
-          if (
-            !entry.expanded ||
-            !entry.children ||
-            entry.children.length === 0
-          ) {
-            await fs.toggleDirectoryExpanded(entry.path);
-          }
-          if (entry.children && entry.children.length > 0) {
-            await processDir(fs, entry.children);
-          }
-        });
-      await Promise.all(promises);
-    }
-    await processDir(this, this.files);
-  }
 }
