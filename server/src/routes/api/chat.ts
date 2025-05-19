@@ -114,14 +114,6 @@ interface DebugLogEntry {
 }
 const debugStore: DebugLogEntry[] = [];
 
-const toolDescriptions: Record<string, string> = {
-  setBreakpointByLine: setBreakpointByLine.description ?? "",
-  setBreakpointBySearch: setBreakpointBySearch.description ?? "",
-  launchDebug: launchDebug.description ?? "",
-  continueExecution: continueExecution.description ?? "",
-  evaluateExpression: evaluateExpression.description ?? "",
-};
-
 function getToolsForDebugStatus(debugStatus: string): DebugTools {
   const baseTools = { setBreakpointByLine, setBreakpointBySearch };
   switch (debugStatus) {
