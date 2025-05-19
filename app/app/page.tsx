@@ -277,10 +277,12 @@ export default function Home() {
         setFs(newFs);
         setFiles(newFiles);
 
-        // In the background, expand non-hidden and non-gitignored directories
-        newFs.expandDefaultDirectories().then(() => {
-          setFiles(newFs.getAllFileEntries());
-        });
+        // Preload directories in the background without expanding them
+        void (async () => {
+          // fire‑and‑forget; we don't await, so the click handler returns immediately
+          await newFs.preloadAllDirectories();
+          console.info("Background directory preload finished");
+        })();
 
         // Select first file if available
         const firstFile = newFiles.find((f) => f.type === "file");

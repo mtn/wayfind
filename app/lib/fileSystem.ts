@@ -21,6 +21,83 @@ export class InMemoryFileSystem {
     this.files = initialFiles;
   }
 
+  public async preloadAllDirectories(): Promise<void> {
+    const recurse = async (dir: FileEntry) => {
+      // Load children if we haven't yet
+      if (
+        dir.type === "directory" &&
+        (!dir.children || dir.children.length === 0)
+      ) {
+        try {
+          const full = this.getFullPath(dir.path);
+          const dirEntries = await invoke<
+            Array<{
+              name: string;
+              path: string;
+              is_dir: boolean;
+              content?: string;
+            }>
+          >("read_directory", { path: full });
+
+          // Convert to FileEntry objects and sort them
+          const children: FileEntry[] = dirEntries.map((item) => ({
+            name: item.name,
+            path: `${dir.path}/${item.name}`.replace(/\/+/g, "/"),
+            type: item.is_dir ? "directory" : "file",
+            content: item.content || "",
+            expanded: false, // Important: keep it collapsed
+            children: item.is_dir ? [] : undefined,
+          }));
+
+          // Sort: directories first, then files alphabetically
+          children.sort((a, b) => {
+            if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          });
+
+          // Set the children
+          dir.children = children;
+
+          // Note: we deliberately do NOT set dir.expanded = true
+        } catch (error) {
+          console.error(`Error preloading directory ${dir.path}:`, error);
+        }
+      }
+
+      // Yield to the event loop so the UI remains responsive
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Recursively process subdirectories, but skip heavy folders
+      if (dir.children) {
+        const skipDirs = [".git", "node_modules", "target"];
+        const subdirs = dir.children.filter(
+          (child) =>
+            child.type === "directory" &&
+            !skipDirs.includes(child.name) &&
+            !child.name.startsWith("."),
+        );
+
+        for (const subdir of subdirs) {
+          await recurse(subdir);
+        }
+      }
+    };
+
+    // Process all top-level directories in parallel
+    await Promise.all(
+      this.files
+        .filter(
+          (f) =>
+            f.type === "directory" &&
+            !f.name.startsWith(".") &&
+            f.name !== "node_modules" &&
+            f.name !== ".git" &&
+            f.name !== "target",
+        )
+        .map((dir) => recurse(dir)),
+    );
+  }
+
   // Toggle directory expansion state
   async toggleDirectoryExpanded(path: string): Promise<boolean> {
     const entry = this.findEntry(path);
