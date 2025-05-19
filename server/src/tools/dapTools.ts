@@ -99,3 +99,23 @@ export const evaluateExpression = tool({
     expression: z.string().describe("The expression to evaluate"),
   }),
 });
+
+export const readFileContent = tool({
+  description:
+    "Read the content of a file, optionally specifying a range of lines to read. Use this tool to examine (parts of or entire) source files.",
+  parameters: z.object({
+    filePath: z.string().describe("Path to the file to read"),
+    startLine: z
+      .number()
+      .optional()
+      .describe(
+        "Start line number (1-based, inclusive). If not provided, starts from line 1.",
+      ),
+    endLine: z
+      .number()
+      .optional()
+      .describe(
+        "End line number (1-based, inclusive). If not provided, reads to the end of the file.",
+      ),
+  }),
+});

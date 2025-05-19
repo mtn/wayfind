@@ -35,6 +35,49 @@ struct FrameInfo {
 }
 
 #[tauri::command]
+async fn read_file_content(
+    file_path: String,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+) -> Result<String, String> {
+    println!("Reading file content: {}", file_path);
+
+    // Read the entire file
+    let content = fs::read_to_string(&file_path)
+        .map_err(|e| format!("Error reading file {}: {}", file_path, e))?;
+
+    // If no range specified, return the entire content
+    if start_line.is_none() && end_line.is_none() {
+        return Ok(content);
+    }
+
+    // Split the content into lines
+    let lines: Vec<&str> = content.lines().collect();
+    let total_lines = lines.len();
+
+    // Convert from 1-based to 0-based indexing and handle defaults
+    let start_idx = start_line.map(|l| l.saturating_sub(1)).unwrap_or(0);
+    let end_idx = end_line
+        .map(|l| l.saturating_sub(1).min(total_lines - 1))
+        .unwrap_or(total_lines - 1);
+
+    // Validate range
+    if start_idx > end_idx || start_idx >= total_lines {
+        return Err(format!(
+            "Invalid line range: start={}, end={}, total_lines={}",
+            start_idx + 1,
+            end_idx + 1,
+            total_lines
+        ));
+    }
+
+    // Extract the requested range
+    let selected_lines = lines[start_idx..=end_idx.min(total_lines - 1)].join("\n");
+
+    Ok(selected_lines)
+}
+
+#[tauri::command]
 async fn read_directory(path: String) -> Result<Vec<FileEntry>, String> {
     println!("Reading directory: {}", path); // Log the path
 
@@ -806,6 +849,7 @@ fn main() {
             evaluate_expression,
             get_call_stack,
             terminate_program,
+            read_file_content,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,6 +11,7 @@ import {
   launchDebug,
   continueExecution,
   evaluateExpression,
+  readFileContent,
   generateToolDocs,
 } from "@/tools/dapTools";
 
@@ -101,6 +102,7 @@ interface ToolCall {
 type DebugTools = {
   setBreakpointByLine: typeof setBreakpointByLine;
   setBreakpointBySearch: typeof setBreakpointBySearch;
+  readFileContent: typeof readFileContent;
   launchDebug?: typeof launchDebug;
   continueExecution?: typeof continueExecution;
   evaluateExpression?: typeof evaluateExpression;
@@ -115,7 +117,11 @@ interface DebugLogEntry {
 const debugStore: DebugLogEntry[] = [];
 
 function getToolsForDebugStatus(debugStatus: string): DebugTools {
-  const baseTools = { setBreakpointByLine, setBreakpointBySearch };
+  const baseTools = {
+    setBreakpointByLine,
+    setBreakpointBySearch,
+    readFileContent,
+  };
   switch (debugStatus) {
     case "notstarted":
     case "terminated":
