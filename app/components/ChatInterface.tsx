@@ -230,7 +230,6 @@ export function ChatInterface({
     maxSteps: 1,
     experimental_prepareRequestBody({ messages, requestBody }) {
       const debugState = getDebugSync();
-      console.log("Debug state being sent to model:", debugState);
       return {
         ...requestBody,
         messages,
