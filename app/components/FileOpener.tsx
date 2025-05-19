@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Command,
   CommandInput,
@@ -26,6 +26,7 @@ export default function FileOpener({
   onClose,
 }: FileOpenerProps) {
   const [search, setSearch] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   const allFiles = fileSystem.getAllFileEntries();
   const filteredFiles = allFiles.filter(
@@ -34,6 +35,37 @@ export default function FileOpener({
       (search.length === 0 ||
         f.path.toLowerCase().includes(search.toLowerCase())),
   );
+
+  // Reset selected index when the filtered list changes
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [filteredFiles.length]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev < filteredFiles.length - 1 ? prev + 1 : prev,
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : 0));
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (filteredFiles.length > 0 && selectedIndex >= 0) {
+          onSelectFile(filteredFiles[selectedIndex]);
+          onClose();
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        onClose();
+        break;
+    }
+  };
 
   return (
     // Outer wrapper covers the screen. We do NOT attach onClick={onClose} here,
@@ -50,11 +82,7 @@ export default function FileOpener({
       <Command
         className="relative bg-white rounded-md shadow-lg w-1/3"
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            onClose();
-          }
-        }}
+        onKeyDown={handleKeyDown}
       >
         <div className="px-3 py-2 border-b text-sm font-bold">Open File</div>
         <CommandInput
@@ -65,14 +93,18 @@ export default function FileOpener({
           className="w-full px-3 py-2 border-b outline-none"
         />
         <CommandList className="max-h-64 overflow-y-auto">
-          {filteredFiles.map((file) => (
+          {filteredFiles.map((file, index) => (
             <CommandItem
               key={file.path}
               onSelect={() => {
                 onSelectFile(file);
                 onClose();
               }}
-              className="p-2 hover:bg-gray-100 cursor-pointer"
+              className={`p-2 cursor-pointer ${
+                index === selectedIndex
+                  ? "bg-accent text-accent-foreground"
+                  : "hover:bg-gray-100"
+              }`}
             >
               {file.path}
             </CommandItem>
