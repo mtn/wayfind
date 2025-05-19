@@ -196,8 +196,8 @@ router.post("/", async (req: Request, res: Response) => {
               Keep in mind that to read or trace the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
               defined on, otherwise, it'll come back as undefined.
               For example, if the user asks you how the value of a variable changes as the program runs,
-              you should use your tools to set breakpoint(s) at lines that let you read the value (one line after any definition / modification is happening), launch the program, continue till
-              it stops, evaluate the variable, and so on until it terminates.
+              you should use your tools to set breakpoint(s) at lines that let you read the value (one line after the variable definition / modification is happening), launch the program, continue till
+              it stops, evaluate the variable, and so on until it terminates. The easiest way to do this is by using the setBreakpointBySearch tool with offset 1.
               After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
               (if it makes sense to do so).
 
