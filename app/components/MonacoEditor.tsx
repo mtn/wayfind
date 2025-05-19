@@ -97,6 +97,25 @@ export function MonacoEditorWrapper({
     decorationsRef.current = editor.deltaDecorations([], allDecorations);
   }, [breakpoints, executionFile, executionLine, currentFile]);
 
+  // Add new effect to scroll to the execution line when it changes
+  useEffect(() => {
+    // Only scroll to the execution line if:
+    // 1. We have a valid editor instance
+    // 2. There is an execution line
+    // 3. The current file matches the execution file
+    if (
+      editorRef.current &&
+      executionLine !== null &&
+      executionLine !== undefined &&
+      executionFile &&
+      currentFile &&
+      executionFile.endsWith(currentFile)
+    ) {
+      // Reveal the line in the center of the editor viewport
+      editorRef.current.revealLineInCenter(executionLine);
+    }
+  }, [executionLine, executionFile, currentFile]);
+
   const getBreakpointClassName = (bp: IBreakpoint) => {
     const classes = ["breakpoint"];
     if (bp.verified) classes.push("verified");
