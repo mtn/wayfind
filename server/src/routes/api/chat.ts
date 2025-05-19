@@ -178,6 +178,13 @@ router.post("/", async (req: Request, res: Response) => {
       delete tools.launchDebug;
     }
 
+    const executionFile = debugState?.executionFile;
+    const executionLine = debugState?.executionLine;
+    let locationInfo = "";
+    if (debugStatus === "paused" && executionFile && executionLine) {
+      locationInfo = `Execution is currently paused at line ${executionLine} in file ${executionFile}.`;
+    }
+
     const toolDocs = generateToolDocs(tools);
     const systemPrompt = {
       role: "system",
@@ -186,6 +193,7 @@ router.post("/", async (req: Request, res: Response) => {
               to answer it efficiently and accurately. ${toolDocs}
 
               Current debug status: ${debugStatus}
+              ${locationInfo}
 
               IMPORTANT: For setting breakpoints, prefer using setBreakpointBySearch instead of setBreakpointByLine
               whenever possible. This allows you to set breakpoints by searching for code content rather than
