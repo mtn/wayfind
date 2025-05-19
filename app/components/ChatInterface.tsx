@@ -394,6 +394,38 @@ export function ChatInterface({
               id: crypto.randomUUID(),
             });
           }, 0);
+        } else if (toolCall.toolName === "readFileContent") {
+          const { filePath, startLine, endLine } = toolCall.args as {
+            filePath: string;
+            startLine?: number;
+            endLine?: number;
+          };
+
+          const fullFilePath = fileSystem.getFullPath(filePath);
+          console.log(`Resolving file path: ${filePath} → ${fullFilePath}`);
+
+          try {
+            // Pass the RESOLVED path to the Rust backend
+            const result = await invoke<string>("read_file_content", {
+              filePath: fullFilePath,
+              startLine,
+              endLine,
+            });
+
+            actionResult = `Read ${result.length} characters from ${filePath}`;
+
+            // Send follow-up message with file content
+            setTimeout(() => {
+              send({
+                role: "user",
+                content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
+                id: crypto.randomUUID(),
+              });
+            }, 0);
+          } catch (error) {
+            console.error("Error reading file:", error);
+            throw error;
+          }
         }
 
         console.log("Tool call completed successfully:", {
