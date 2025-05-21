@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
+import { createToolCallResult } from "ai/react";
 import { useQueuedChat } from "@/lib/useQueuedChat";
 import { Button } from "@/components/ui/button";
 import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
@@ -312,6 +313,8 @@ export function ChatInterface({
               id: crypto.randomUUID(),
             });
           }, 0);
+
+          return createToolCallResult(toolCall, { message: actionResult });
         } else if (toolCall.toolName === "setBreakpointBySearch") {
           // Define the result interface
           interface ResolveBreakpointResult {
@@ -372,6 +375,8 @@ export function ChatInterface({
                 id: crypto.randomUUID(),
               });
             }, 0);
+
+            return createToolCallResult(toolCall, { message: actionResult });
           } catch (error) {
             console.error("Error setting breakpoint by search:", error);
             throw error;
@@ -381,11 +386,13 @@ export function ChatInterface({
           expectingDAPEventRef.current = true;
           onLaunch();
           actionResult = "Debug session launched";
+          return createToolCallResult(toolCall, { message: actionResult });
         } else if (toolCall.toolName === "continueExecution") {
           // Set flag to expect a debug event
           expectingDAPEventRef.current = true;
           onContinue();
           actionResult = "Continued execution";
+          return createToolCallResult(toolCall, { message: actionResult });
         } else if (toolCall.toolName === "evaluateExpression") {
           const { expression } = toolCall.args as { expression: string };
           const result = await onEvaluate(expression);
@@ -398,6 +405,8 @@ export function ChatInterface({
               id: crypto.randomUUID(),
             });
           }, 0);
+
+          return createToolCallResult(toolCall, { message: actionResult });
         } else if (toolCall.toolName === "readFileContent") {
           const { filePath, startLine, endLine } = toolCall.args as {
             filePath: string;
@@ -426,6 +435,8 @@ export function ChatInterface({
                 id: crypto.randomUUID(),
               });
             }, 0);
+
+            return createToolCallResult(toolCall, { message: actionResult });
           } catch (error) {
             console.error("Error reading file:", error);
             throw error;
@@ -437,9 +448,7 @@ export function ChatInterface({
           actionResult,
         });
 
-        return {
-          message: actionResult,
-        };
+        return createToolCallResult(toolCall, { message: actionResult });
       } catch (error) {
         // Reset expectingDAPEvent flag if there's an error
         expectingDAPEventRef.current = false;
