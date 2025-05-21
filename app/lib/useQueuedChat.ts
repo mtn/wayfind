@@ -13,11 +13,6 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
   const flushing = useRef(false); // "is streaming" flag
   const [isThinking, setIsThinking] = useState(false);
 
-  // Add a derived assistantBusy flag that combines all activity signals
-  const assistantBusy = useMemo(
-    () => flushing.current || chat.isLoading || isThinking,
-    [chat.isLoading, isThinking],
-  );
 
   /** flush the queue if idle */
   const flush = useCallback(async () => {
@@ -128,5 +123,5 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
     }
   }, [chat.messages, chat.isLoading, isThinking]);
 
-  return { ...chat, send, isThinking, assistantBusy }; // expose isThinking and assistantBusy states
+  return { ...chat, send, isThinking }; // expose isThinking state
 }
