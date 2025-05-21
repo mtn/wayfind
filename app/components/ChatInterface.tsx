@@ -377,9 +377,13 @@ export function ChatInterface({
             throw error;
           }
         } else if (toolCall.toolName === "launchDebug") {
+          // Set flag to expect a debug event
+          expectingDAPEventRef.current = true;
           onLaunch();
           actionResult = "Debug session launched";
         } else if (toolCall.toolName === "continueExecution") {
+          // Set flag to expect a debug event
+          expectingDAPEventRef.current = true;
           onContinue();
           actionResult = "Continued execution";
         } else if (toolCall.toolName === "evaluateExpression") {
@@ -437,6 +441,8 @@ export function ChatInterface({
           message: actionResult,
         };
       } catch (error) {
+        // Reset expectingDAPEvent flag if there's an error
+        expectingDAPEventRef.current = false;
         console.error("Error in tool call execution:", {
           toolName: toolCall.toolName,
           error,
@@ -450,6 +456,7 @@ export function ChatInterface({
   useEffect(() => {
     assistantBusyRef.current = assistantBusy;
   }, [assistantBusy]);
+  const expectingDAPEventRef = useRef(false);
 
   // Create attachments from files (for additional context).
   const attachments: Attachment[] = [];
@@ -563,14 +570,20 @@ export function ChatInterface({
         file?: string;
         line?: number;
       }>("debug-status", (event) => {
-        // Only process the debug event if the assistant is actively busy
-        // This prevents notifications when user is manually debugging
-        if (!assistantBusyRef.current) {
-          console.log("Ignoring debug status event - assistant not active");
+        // Only process if we're explicitly expecting a debug event OR if the assistant is actively busy
+        if (!expectingDAPEventRef.current && !assistantBusyRef.current) {
+          console.log(
+            "Ignoring debug status event - not expected and assistant not active",
+          );
           return;
         }
 
         const { status, file, line } = event.payload;
+
+        // Reset the expectation flag when we receive a relevant status change
+        if (["running", "paused", "terminated"].includes(status)) {
+          expectingDAPEventRef.current = false;
+        }
 
         // Handle paused status with location information
         if (status === "paused" && file && line) {
