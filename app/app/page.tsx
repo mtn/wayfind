@@ -556,7 +556,10 @@ export default function Home() {
     // If we were given an explicit fileEntry (i.e. this came from a tool
     // call rather than a gutter click) → queue a jump.
     if (fileEntry) {
-      setJumpRequest({ file: currentFilePath, line: lineNumber });
+      // Ensure the file is fully selected before creating the jump request
+      handleFileSelect(fileEntry).then(() => {
+        setJumpRequest({ file: currentFilePath, line: lineNumber });
+      });
     }
   };
 
@@ -1069,11 +1072,7 @@ export default function Home() {
                   executionFile={executionFile}
                   executionLine={executionLine}
                   currentFile={selectedFile?.name}
-                  jumpLine={
-                    jumpRequest && selectedFile?.path === jumpRequest.file
-                      ? jumpRequest.line
-                      : null
-                  }
+                  jumpLine={jumpRequest ? jumpRequest.line : null}
                   onJumpHandled={() => setJumpRequest(null)}
                 />
               </div>
