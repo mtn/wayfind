@@ -823,6 +823,18 @@ export function ChatInterface({
         onSubmit={onSubmit}
         className="p-4 flex flex-col gap-2 border-t bg-background"
       >
+        {/* Assistant Status Indicator */}
+        <div className="flex justify-end mb-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium">Assistant Status:</span>
+            <div
+              className={`w-3 h-3 rounded-full ${
+                assistantBusy ? "bg-red-500" : "bg-green-500"
+              }`}
+              title={assistantBusy ? "Assistant is busy" : "Assistant is ready"}
+            />
+          </div>
+        </div>
         <div className="flex gap-2 items-end">
           <div
             ref={editorRef}
