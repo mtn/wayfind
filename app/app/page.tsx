@@ -35,6 +35,11 @@ export default function Home() {
     undefined,
   );
 
+  const [jumpRequest, setJumpRequest] = useState<{
+    file: string;
+    line: number;
+  } | null>(null);
+
   const selectedFileRef = useRef(selectedFile);
   useEffect(() => {
     selectedFileRef.current = selectedFile;
@@ -547,6 +552,12 @@ export default function Home() {
         return newBreakpoints;
       });
     }
+
+    // If we were given an explicit fileEntry (i.e. this came from a tool
+    // call rather than a gutter click) → queue a jump.
+    if (fileEntry) {
+      setJumpRequest({ file: currentFilePath, line: lineNumber });
+    }
   };
 
   const prefillChatInputRef = useRef<((text: string) => void) | null>(null);
@@ -1058,6 +1069,12 @@ export default function Home() {
                   executionFile={executionFile}
                   executionLine={executionLine}
                   currentFile={selectedFile?.name}
+                  jumpLine={
+                    jumpRequest && selectedFile?.path === jumpRequest.file
+                      ? jumpRequest.line
+                      : null
+                  }
+                  onJumpHandled={() => setJumpRequest(null)}
                 />
               </div>
             </ResizablePanel>

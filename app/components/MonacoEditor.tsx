@@ -16,6 +16,8 @@ interface EditorProps {
   executionFile?: string | null;
   executionLine?: number | null;
   currentFile?: string | null;
+  jumpLine?: number | null;
+  onJumpHandled?: () => void;
 }
 
 export function MonacoEditorWrapper({
@@ -27,10 +29,19 @@ export function MonacoEditorWrapper({
   executionFile,
   executionLine,
   currentFile,
+  jumpLine,
+  onJumpHandled,
 }: EditorProps) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<string[]>([]);
   const contentRef = useRef<string>(content);
+
+  useEffect(() => {
+    if (jumpLine != null && editorRef.current && jumpLine > 0) {
+      editorRef.current.revealLineInCenter(jumpLine);
+      onJumpHandled?.();
+    }
+  }, [jumpLine, onJumpHandled]);
 
   // Update content ref when content prop changes
   useEffect(() => {
