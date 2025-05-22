@@ -53,7 +53,9 @@ interface ChatInterfaceProps {
   // Optional callback to prefill the chat input.
   onPrefillInput?: (prefillCallback: (text: string) => void) => void;
   // Optional callback to register manual evaluation handler
-  onRegisterManualEvalHandler?: (handler: (expression: string, result: EvaluationResult) => void) => void;
+  onRegisterManualEvalHandler?: (
+    handler: (expression: string, result: EvaluationResult) => void,
+  ) => void;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -461,7 +463,22 @@ export function ChatInterface({
   // Track whether assistant owns the current conversational context
   const activeTurn = useRef(false);
   const [activeTurnDisplay, setActiveTurnDisplay] = useState(false);
-  
+
+  // Auto-mode state - controls whether unsolicited events are forwarded to LLM
+  const [autoModeOn, setAutoModeOn] = useState(true);
+  const autoModeRef = useRef(autoModeOn);
+  useEffect(() => {
+    autoModeRef.current = autoModeOn;
+  }, [autoModeOn]);
+
+  // Listen for manual debug actions to turn off auto-mode
+  useEffect(() => {
+    function off() {
+      setAutoModeOn(false);
+    }
+    window.addEventListener("manual-debug-action", off);
+    return () => window.removeEventListener("manual-debug-action", off);
+  }, []);
 
   // Expose the single flag to the rest of the app
   const assistantBusy =
@@ -499,6 +516,7 @@ export function ChatInterface({
       opts?: Parameters<UseChatHelpers["append"]>[1],
     ) => {
       console.log("Setting activeTurn to true");
+      setAutoModeOn(true); // arm auto-mode
       activeTurn.current = true;
       setActiveTurnDisplay(true);
       send(content, opts);
@@ -507,37 +525,44 @@ export function ChatInterface({
   );
 
   // Function to append message locally without sending to LLM
-  const appendLocal = useCallback((content: string | Message) => {
-    const msg: Message = typeof content === "string"
-      ? { id: crypto.randomUUID(), role: "user", content }
-      : content;
-    
-    setMessages(prevMessages => [...prevMessages, msg]);
-  }, [setMessages]);
+  const appendLocal = useCallback(
+    (content: string | Message) => {
+      const msg: Message =
+        typeof content === "string"
+          ? { id: crypto.randomUUID(), role: "user", content }
+          : content;
+
+      setMessages((prevMessages) => [...prevMessages, msg]);
+    },
+    [setMessages],
+  );
 
   // Handle manual evaluation results with gating logic
-  const handleManualEvaluation = useCallback((expression: string, result: EvaluationResult) => {
-    const evalMsg = `Expression evaluation result: ${expression} = ${result.result}`;
-    
-    // Gate unsolicited events - only send to LLM if assistant owns the conversation
-    if (activeTurn.current) {
-      console.log("Manual evaluation - sending to LLM");
-      // Use send to queue the message (not originate, as this is a response)
-      send({
-        role: "user",
-        content: evalMsg,
-        id: crypto.randomUUID(),
-      });
-    } else {
-      console.log("Manual evaluation gated - appending locally only");
-      // Append locally so assistant can see it if invoked later
-      appendLocal({
-        role: "user",
-        content: `[Manual Debug] ${evalMsg}`,
-        id: crypto.randomUUID(),
-      });
-    }
-  }, [activeTurn, send, appendLocal]);
+  const handleManualEvaluation = useCallback(
+    (expression: string, result: EvaluationResult) => {
+      const evalMsg = `Expression evaluation result: ${expression} = ${result.result}`;
+
+      // Gate unsolicited events - only send to LLM if auto-mode is enabled
+      if (autoModeRef.current) {
+        console.log("Manual evaluation - sending to LLM");
+        // Use send to queue the message (not originate, as this is a response)
+        send({
+          role: "user",
+          content: evalMsg,
+          id: crypto.randomUUID(),
+        });
+      } else {
+        console.log("Manual evaluation gated - appending locally only");
+        // Append locally so assistant can see it if invoked later
+        appendLocal({
+          role: "user",
+          content: `[Manual Debug] ${evalMsg}`,
+          id: crypto.randomUUID(),
+        });
+      }
+    },
+    [autoModeRef, send, appendLocal],
+  );
 
   // Register the manual evaluation handler
   useEffect(() => {
@@ -663,11 +688,10 @@ export function ChatInterface({
 
         // Handle paused status with location information
         if (status === "paused" && file && line) {
-          
           const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
-          // Gate unsolicited events - only send to LLM if assistant owns the conversation
-          if (activeTurn.current) {
+          // Gate unsolicited events - only send to LLM if auto-mode is enabled
+          if (autoModeRef.current) {
             console.log("Processing debug status event - sending to LLM");
             // Use send to queue the message (not originate, as this is a response)
             send({
@@ -703,12 +727,11 @@ export function ChatInterface({
         if (status !== lastStatusRef.current && status !== "initializing") {
           lastStatusRef.current = status;
 
-
           // Prepare message for LLM
           const statusMsg = `Debug session status changed to: ${status}`;
 
-          // Gate unsolicited events - only send to LLM if assistant owns the conversation
-          if (activeTurn.current) {
+          // Gate unsolicited events - only send to LLM if auto-mode is enabled
+          if (autoModeRef.current) {
             console.log("Processing debug status change - sending to LLM");
             // Use send to queue the message (not originate, as this is a response)
             send({
@@ -748,6 +771,19 @@ export function ChatInterface({
 
   return (
     <div className="flex flex-col h-full border-t relative">
+      {/* Auto-mode toggle */}
+      <div className="absolute top-2 left-2 z-50 bg-black/80 text-white text-xs p-2 rounded">
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoModeOn}
+            onChange={(e) => setAutoModeOn(e.target.checked)}
+            className="w-3 h-3"
+          />
+          Auto-mode
+        </label>
+      </div>
+
       {/* Debug indicators for busy flags */}
       <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded space-y-1 font-mono">
         <div
@@ -805,6 +841,14 @@ export function ChatInterface({
             className={`w-2 h-2 rounded-full ${activeTurnDisplay ? "bg-red-400" : "bg-green-400"}`}
           />
           activeTurn: {activeTurnDisplay.toString()}
+        </div>
+        <div
+          className={`flex items-center gap-2 ${autoModeOn ? "text-green-400" : "text-red-400"}`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${autoModeOn ? "bg-green-400" : "bg-red-400"}`}
+          />
+          autoModeOn: {autoModeOn.toString()}
         </div>
       </div>
       {/* Chat Messages */}
