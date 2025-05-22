@@ -308,7 +308,7 @@ export function ChatInterface({
           // After handling this specific tool, schedule a follow-up message
           // This is done after returning from this function to avoid interrupting the flow
           setTimeout(() => {
-            send({
+            originate({
               role: "user",
               content: "Breakpoint was set successfully.",
               id: crypto.randomUUID(),
@@ -368,7 +368,7 @@ export function ChatInterface({
 
             // Send follow-up message
             setTimeout(() => {
-              send({
+              originate({
                 role: "user",
                 content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
                 id: crypto.randomUUID(),
@@ -390,7 +390,7 @@ export function ChatInterface({
           actionResult = result ? `Evaluated: ${result.result}` : "No result";
 
           setTimeout(() => {
-            send({
+            originate({
               role: "user",
               content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
               id: crypto.randomUUID(),
@@ -418,7 +418,7 @@ export function ChatInterface({
 
             // Send follow-up message with file content
             setTimeout(() => {
-              send({
+              originate({
                 role: "user",
                 content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
                 id: crypto.randomUUID(),
@@ -454,6 +454,10 @@ export function ChatInterface({
   // active tool-calls
   const [toolCallsInFlight, setToolCallsInFlight] = useState(0);
 
+  // Track whether assistant owns the current conversational context
+  const activeTurn = useRef(false);
+  const [activeTurnDisplay, setActiveTurnDisplay] = useState(false);
+
   // Expose the single flag to the rest of the app
   const assistantBusy =
     chatIsLoading || // streaming / writing
@@ -468,6 +472,34 @@ export function ChatInterface({
       new CustomEvent("assistant-busy", { detail: assistantBusy }),
     );
   }, [assistantBusy]);
+
+  // Clear activeTurn when assistantBusy transitions from true to false
+  const prevBusy = useRef(false);
+  useEffect(() => {
+    console.log(
+      `assistantBusy transition: ${prevBusy.current} -> ${assistantBusy}, activeTurn: ${activeTurn.current}`,
+    );
+    if (prevBusy.current && !assistantBusy) {
+      console.log("Clearing activeTurn");
+      activeTurn.current = false;
+      setActiveTurnDisplay(false);
+    }
+    prevBusy.current = assistantBusy;
+  }, [assistantBusy]);
+
+  // Function to originate messages that expect a reply
+  const originate = useCallback(
+    (
+      content: string | Message,
+      opts?: Parameters<UseChatHelpers["append"]>[1],
+    ) => {
+      console.log("Setting activeTurn to true");
+      activeTurn.current = true;
+      setActiveTurnDisplay(true);
+      send(content, opts);
+    },
+    [send],
+  );
 
   // Create attachments from files (for additional context).
   const attachments: Attachment[] = [];
@@ -513,7 +545,7 @@ export function ChatInterface({
         });
       }
     });
-    send(input, {
+    originate(input, {
       body: { content: input },
       experimental_attachments: experimentalAttachments,
     });
@@ -581,7 +613,9 @@ export function ChatInterface({
         file?: string;
         line?: number;
       }>("debug-status", (event) => {
-        // Process all debug events regardless of assistant state
+        // Gate unsolicited events - only process if assistant owns the conversation
+        if (!activeTurn.current) return;
+
         console.log("Processing debug status event");
 
         const { status, file, line } = event.payload;
@@ -591,7 +625,7 @@ export function ChatInterface({
           // This is a breakpoint being hit
           const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
-          // Use send to queue the message
+          // Use send to queue the message (not originate, as this is a response)
           send({
             role: "user",
             content: stopMsg,
@@ -618,7 +652,7 @@ export function ChatInterface({
           // Prepare message for LLM
           const statusMsg = `Debug session status changed to: ${status}`;
 
-          // Use send to queue the message
+          // Use send to queue the message (not originate, as this is a response)
           send({
             role: "user",
             content: statusMsg,
@@ -696,6 +730,14 @@ export function ChatInterface({
             className={`w-2 h-2 rounded-full ${toolCallsInFlight > 0 ? "bg-red-400" : "bg-green-400"}`}
           />
           toolCallsInFlight: {toolCallsInFlight}
+        </div>
+        <div
+          className={`flex items-center gap-2 ${activeTurnDisplay ? "text-red-400" : "text-green-400"}`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${activeTurnDisplay ? "bg-red-400" : "bg-green-400"}`}
+          />
+          activeTurn: {activeTurnDisplay.toString()}
         </div>
       </div>
       {/* Chat Messages */}
