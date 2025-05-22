@@ -27,6 +27,7 @@ interface DebugToolbarProps {
   onDebugEngineChange?: (engine: string) => void;
   rustBinaryPath?: string;
   onRustBinaryPathChange?: (path: string) => void;
+  onManualEvaluation?: (expression: string, result: EvaluationResult) => void;
 }
 
 export interface EvaluationResult {
@@ -45,8 +46,13 @@ export function DebugToolbar({
   onDebugEngineChange,
   rustBinaryPath = "",
   onRustBinaryPathChange,
+  onManualEvaluation,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
+
+  function markManual() {
+    window.dispatchEvent(new CustomEvent("manual-debug-action"));
+  }
 
   // Use canonical debugStatus: when it's "notstarted" or "terminated" there is no active session.
   const isSessionActive =
@@ -64,6 +70,7 @@ export function DebugToolbar({
   }
 
   async function handleEvaluate() {
+    markManual();
     if (!isSessionActive) {
       console.error("Cannot evaluate: Debug session not started");
       return;
@@ -90,6 +97,11 @@ export function DebugToolbar({
           <strong>{expression}</strong> = {displayValue}
         </div>,
       );
+
+      // Notify callback about manual evaluation
+      if (onManualEvaluation) {
+        onManualEvaluation(expression, result);
+      }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error evaluating:", errMsg);
@@ -106,6 +118,7 @@ export function DebugToolbar({
   }
 
   async function handleContinue() {
+    markManual();
     if (!isSessionActive) {
       console.error("Cannot continue: Debug session not started");
       return;
@@ -121,6 +134,7 @@ export function DebugToolbar({
   }
 
   async function handleStepOver() {
+    markManual();
     try {
       await invoke("step_over", { threadId: 1 });
       addLog("Stepping over next line");
@@ -132,6 +146,7 @@ export function DebugToolbar({
   }
 
   async function handleStepIn() {
+    markManual();
     try {
       console.log("Clicked step in");
       // Call the step_in command we just implemented
@@ -147,6 +162,7 @@ export function DebugToolbar({
   }
 
   async function handleStepOut() {
+    markManual();
     try {
       // Call the step_out command we just implemented
       await invoke("step_out", {
@@ -161,6 +177,7 @@ export function DebugToolbar({
   }
 
   async function handleRestart() {
+    markManual();
     try {
       addLog("Restarting debug session...");
       await invoke("terminate_program");
@@ -174,6 +191,7 @@ export function DebugToolbar({
   }
 
   async function handleTerminate() {
+    markManual();
     try {
       await invoke("terminate_program");
       addLog("Terminating debug session");

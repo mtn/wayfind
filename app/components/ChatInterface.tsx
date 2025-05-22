@@ -52,6 +52,10 @@ interface ChatInterfaceProps {
   onLazyExpandDirectory?: (directoryPath: string) => Promise<void>;
   // Optional callback to prefill the chat input.
   onPrefillInput?: (prefillCallback: (text: string) => void) => void;
+  // Optional callback to register manual evaluation handler
+  onRegisterManualEvalHandler?: (
+    handler: (expression: string, result: EvaluationResult) => void,
+  ) => void;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -156,6 +160,7 @@ export function ChatInterface({
   logToolCall,
   onLazyExpandDirectory,
   onPrefillInput,
+  onRegisterManualEvalHandler,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -226,6 +231,7 @@ export function ChatInterface({
     handleInputChange,
     queueLength,
     isFlushing,
+    setMessages,
   } = useQueuedChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 1,
@@ -308,11 +314,19 @@ export function ChatInterface({
           // After handling this specific tool, schedule a follow-up message
           // This is done after returning from this function to avoid interrupting the flow
           setTimeout(() => {
-            originate({
-              role: "user",
-              content: "Breakpoint was set successfully.",
-              id: crypto.randomUUID(),
-            });
+            if (autoModeRef.current) {
+              originate({
+                role: "user",
+                content: "Breakpoint was set successfully.",
+                id: crypto.randomUUID(),
+              });
+            } else {
+              appendLocal({
+                role: "user",
+                content: "[Manual Debug] Breakpoint was set successfully.",
+                id: crypto.randomUUID(),
+              });
+            }
           }, 0);
         } else if (toolCall.toolName === "setBreakpointBySearch") {
           // Define the result interface
@@ -368,11 +382,19 @@ export function ChatInterface({
 
             // Send follow-up message
             setTimeout(() => {
-              originate({
-                role: "user",
-                content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
-                id: crypto.randomUUID(),
-              });
+              if (autoModeRef.current) {
+                originate({
+                  role: "user",
+                  content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
+                  id: crypto.randomUUID(),
+                });
+              } else {
+                appendLocal({
+                  role: "user",
+                  content: `[Manual Debug] Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
+                  id: crypto.randomUUID(),
+                });
+              }
             }, 0);
           } catch (error) {
             console.error("Error setting breakpoint by search:", error);
@@ -390,11 +412,19 @@ export function ChatInterface({
           actionResult = result ? `Evaluated: ${result.result}` : "No result";
 
           setTimeout(() => {
-            originate({
-              role: "user",
-              content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
-              id: crypto.randomUUID(),
-            });
+            if (autoModeRef.current) {
+              originate({
+                role: "user",
+                content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
+                id: crypto.randomUUID(),
+              });
+            } else {
+              appendLocal({
+                role: "user",
+                content: `[Manual Debug] Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
+                id: crypto.randomUUID(),
+              });
+            }
           }, 0);
         } else if (toolCall.toolName === "readFileContent") {
           const { filePath, startLine, endLine } = toolCall.args as {
@@ -418,11 +448,19 @@ export function ChatInterface({
 
             // Send follow-up message with file content
             setTimeout(() => {
-              originate({
-                role: "user",
-                content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
-                id: crypto.randomUUID(),
-              });
+              if (autoModeRef.current) {
+                originate({
+                  role: "user",
+                  content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
+                  id: crypto.randomUUID(),
+                });
+              } else {
+                appendLocal({
+                  role: "user",
+                  content: `[Manual Debug] File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
+                  id: crypto.randomUUID(),
+                });
+              }
             }, 0);
           } catch (error) {
             console.error("Error reading file:", error);
@@ -458,6 +496,22 @@ export function ChatInterface({
   const activeTurn = useRef(false);
   const [activeTurnDisplay, setActiveTurnDisplay] = useState(false);
 
+  // Auto-mode state - controls whether unsolicited events are forwarded to LLM
+  const [autoModeOn, setAutoModeOn] = useState(true);
+  const autoModeRef = useRef(autoModeOn);
+  useEffect(() => {
+    autoModeRef.current = autoModeOn;
+  }, [autoModeOn]);
+
+  // Listen for manual debug actions to turn off auto-mode
+  useEffect(() => {
+    function off() {
+      setAutoModeOn(false);
+    }
+    window.addEventListener("manual-debug-action", off);
+    return () => window.removeEventListener("manual-debug-action", off);
+  }, []);
+
   // Expose the single flag to the rest of the app
   const assistantBusy =
     chatIsLoading || // streaming / writing
@@ -492,14 +546,65 @@ export function ChatInterface({
     (
       content: string | Message,
       opts?: Parameters<UseChatHelpers["append"]>[1],
+      enableAutoMode: boolean = true,
     ) => {
       console.log("Setting activeTurn to true");
+      if (enableAutoMode) {
+        setAutoModeOn(true); // arm auto-mode only if requested
+      }
       activeTurn.current = true;
       setActiveTurnDisplay(true);
       send(content, opts);
     },
     [send],
   );
+
+  // Function to append message locally without sending to LLM
+  const appendLocal = useCallback(
+    (content: string | Message) => {
+      const msg: Message =
+        typeof content === "string"
+          ? { id: crypto.randomUUID(), role: "user", content }
+          : content;
+
+      setMessages((prevMessages) => [...prevMessages, msg]);
+    },
+    [setMessages],
+  );
+
+  // Handle manual evaluation results with gating logic
+  const handleManualEvaluation = useCallback(
+    (expression: string, result: EvaluationResult) => {
+      const evalMsg = `Expression evaluation result: ${expression} = ${result.result}`;
+
+      // Gate unsolicited events - only send to LLM if auto-mode is enabled
+      if (autoModeRef.current) {
+        console.log("Manual evaluation - sending to LLM");
+        // Use send to queue the message (not originate, as this is a response)
+        send({
+          role: "user",
+          content: evalMsg,
+          id: crypto.randomUUID(),
+        });
+      } else {
+        console.log("Manual evaluation gated - appending locally only");
+        // Append locally so assistant can see it if invoked later
+        appendLocal({
+          role: "user",
+          content: `[Manual Debug] ${evalMsg}`,
+          id: crypto.randomUUID(),
+        });
+      }
+    },
+    [autoModeRef, send, appendLocal],
+  );
+
+  // Register the manual evaluation handler
+  useEffect(() => {
+    if (onRegisterManualEvalHandler) {
+      onRegisterManualEvalHandler(handleManualEvaluation);
+    }
+  }, [onRegisterManualEvalHandler, handleManualEvaluation]);
 
   // Create attachments from files (for additional context).
   const attachments: Attachment[] = [];
@@ -545,10 +650,14 @@ export function ChatInterface({
         });
       }
     });
-    originate(input, {
-      body: { content: input },
-      experimental_attachments: experimentalAttachments,
-    });
+    originate(
+      input,
+      {
+        body: { content: input },
+        experimental_attachments: experimentalAttachments,
+      },
+      false,
+    ); // Don't auto-enable auto-mode, let user control it manually
     setInput("");
     if (editorRef.current) {
       editorRef.current.innerText = "";
@@ -613,24 +722,32 @@ export function ChatInterface({
         file?: string;
         line?: number;
       }>("debug-status", (event) => {
-        // Gate unsolicited events - only process if assistant owns the conversation
-        if (!activeTurn.current) return;
-
-        console.log("Processing debug status event");
-
+        console.log("Debug status event received");
         const { status, file, line } = event.payload;
 
         // Handle paused status with location information
         if (status === "paused" && file && line) {
-          // This is a breakpoint being hit
           const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
-          // Use send to queue the message (not originate, as this is a response)
-          send({
-            role: "user",
-            content: stopMsg,
-            id: crypto.randomUUID(),
-          });
+          // Gate unsolicited events - only send to LLM if auto-mode is enabled
+          if (autoModeRef.current) {
+            console.log("Processing debug status event - sending to LLM");
+            // Use send to queue the message (not originate, as this is a response)
+            send({
+              role: "user",
+              content: stopMsg,
+              id: crypto.randomUUID(),
+            });
+          } else {
+            console.log("Debug status event gated - appending locally only");
+            // Append locally so assistant can see it if invoked later
+            appendLocal({
+              role: "user",
+              content: `[Manual Debug] ${stopMsg}`,
+              id: crypto.randomUUID(),
+            });
+            return;
+          }
 
           // Clear the input field
           setInput("");
@@ -652,17 +769,29 @@ export function ChatInterface({
           // Prepare message for LLM
           const statusMsg = `Debug session status changed to: ${status}`;
 
-          // Use send to queue the message (not originate, as this is a response)
-          send({
-            role: "user",
-            content: statusMsg,
-            id: crypto.randomUUID(),
-          });
+          // Gate unsolicited events - only send to LLM if auto-mode is enabled
+          if (autoModeRef.current) {
+            console.log("Processing debug status change - sending to LLM");
+            // Use send to queue the message (not originate, as this is a response)
+            send({
+              role: "user",
+              content: statusMsg,
+              id: crypto.randomUUID(),
+            });
 
-          // Clear the input field
-          setInput("");
-          if (editorRef.current) {
-            editorRef.current.innerText = "";
+            // Clear the input field
+            setInput("");
+            if (editorRef.current) {
+              editorRef.current.innerText = "";
+            }
+          } else {
+            console.log("Debug status change gated - appending locally only");
+            // Append locally so assistant can see it if invoked later
+            appendLocal({
+              role: "user",
+              content: `[Manual Debug] ${statusMsg}`,
+              id: crypto.randomUUID(),
+            });
           }
         } else {
           // Still update the lastStatusRef even if we don't send a message
@@ -681,8 +810,21 @@ export function ChatInterface({
 
   return (
     <div className="flex flex-col h-full border-t relative">
-      {/* Debug indicators for busy flags */}
-      <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded space-y-1 font-mono">
+      {/* Auto-mode toggle */}
+      <div className="absolute top-2 left-2 z-50 bg-black/80 text-white text-xs p-2 rounded">
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoModeOn}
+            onChange={(e) => setAutoModeOn(e.target.checked)}
+            className="w-3 h-3"
+          />
+          Auto-mode
+        </label>
+      </div>
+
+      {/* Assistant status indicator */}
+      <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded font-mono">
         <div
           className={`flex items-center gap-2 ${assistantBusy ? "text-red-400" : "text-green-400"}`}
         >
@@ -690,54 +832,6 @@ export function ChatInterface({
             className={`w-2 h-2 rounded-full ${assistantBusy ? "bg-red-400" : "bg-green-400"}`}
           />
           assistantBusy: {assistantBusy.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${chatIsLoading ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${chatIsLoading ? "bg-red-400" : "bg-green-400"}`}
-          />
-          chatIsLoading: {chatIsLoading.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${isThinking ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${isThinking ? "bg-red-400" : "bg-green-400"}`}
-          />
-          isThinking: {isThinking.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${queueLength > 0 ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${queueLength > 0 ? "bg-red-400" : "bg-green-400"}`}
-          />
-          queueLength: {queueLength}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${isFlushing ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${isFlushing ? "bg-red-400" : "bg-green-400"}`}
-          />
-          isFlushing: {isFlushing.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${toolCallsInFlight > 0 ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${toolCallsInFlight > 0 ? "bg-red-400" : "bg-green-400"}`}
-          />
-          toolCallsInFlight: {toolCallsInFlight}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${activeTurnDisplay ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${activeTurnDisplay ? "bg-red-400" : "bg-green-400"}`}
-          />
-          activeTurn: {activeTurnDisplay.toString()}
         </div>
       </div>
       {/* Chat Messages */}
