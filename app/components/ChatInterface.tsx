@@ -56,6 +56,9 @@ interface ChatInterfaceProps {
   onRegisterManualEvalHandler?: (
     handler: (expression: string, result: EvaluationResult) => void,
   ) => void;
+  // Auto-mode state and setter
+  autoModeOn: boolean;
+  onAutoModeChange: (value: boolean) => void;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -161,6 +164,8 @@ export function ChatInterface({
   onLazyExpandDirectory,
   onPrefillInput,
   onRegisterManualEvalHandler,
+  autoModeOn,
+  onAutoModeChange,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -496,8 +501,7 @@ export function ChatInterface({
   const activeTurn = useRef(false);
   const [activeTurnDisplay, setActiveTurnDisplay] = useState(false);
 
-  // Auto-mode state - controls whether unsolicited events are forwarded to LLM
-  const [autoModeOn, setAutoModeOn] = useState(true);
+  // Auto-mode ref for consistency with other refs
   const autoModeRef = useRef(autoModeOn);
   useEffect(() => {
     autoModeRef.current = autoModeOn;
@@ -506,11 +510,11 @@ export function ChatInterface({
   // Listen for manual debug actions to turn off auto-mode
   useEffect(() => {
     function off() {
-      setAutoModeOn(false);
+      onAutoModeChange(false);
     }
     window.addEventListener("manual-debug-action", off);
     return () => window.removeEventListener("manual-debug-action", off);
-  }, []);
+  }, [onAutoModeChange]);
 
   // Expose the single flag to the rest of the app
   const assistantBusy =
@@ -816,7 +820,7 @@ export function ChatInterface({
           <input
             type="checkbox"
             checked={autoModeOn}
-            onChange={(e) => setAutoModeOn(e.target.checked)}
+            onChange={(e) => onAutoModeChange(e.target.checked)}
             className="w-3 h-3"
           />
           Auto-mode

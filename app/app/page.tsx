@@ -80,14 +80,19 @@ export default function Home() {
   const [debugStatus, setDebugStatus] = useState("notstarted");
 
   // Ref to store chat interface callback for manual evaluations
-  const chatManualEvalRef = useRef<((expression: string, result: EvaluationResult) => void) | null>(null);
+  const chatManualEvalRef = useRef<
+    ((expression: string, result: EvaluationResult) => void) | null
+  >(null);
 
   // Handle manual evaluation from DebugToolbar
-  const handleManualEvaluation = useCallback((expression: string, result: EvaluationResult) => {
-    if (chatManualEvalRef.current) {
-      chatManualEvalRef.current(expression, result);
-    }
-  }, []);
+  const handleManualEvaluation = useCallback(
+    (expression: string, result: EvaluationResult) => {
+      if (chatManualEvalRef.current) {
+        chatManualEvalRef.current(expression, result);
+      }
+    },
+    [],
+  );
   // Add ref for tracking the latest debug status
   const debugStatusRef = useRef("notstarted");
 
@@ -105,6 +110,13 @@ export default function Home() {
   const addLog = (msg: ReactNode) => setDebugLog((prev) => [...prev, msg]);
 
   const watchExpressionsRef = useRef<WatchExpressionsHandle>(null);
+
+  // Auto-mode state - controls whether unsolicited events are forwarded to LLM
+  const [autoModeOn, setAutoModeOn] = useState(true);
+  const autoModeRef = useRef(autoModeOn);
+  useEffect(() => {
+    autoModeRef.current = autoModeOn;
+  }, [autoModeOn]);
 
   const [selectedTab, setSelectedTab] = useState("status");
 
@@ -935,6 +947,18 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  // Global Shift+Tab shortcut to toggle auto-mode
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.shiftKey && e.key === "Tab") {
+        e.preventDefault();
+        setAutoModeOn((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const hasWorkspace = Boolean(fs.getWorkspacePath());
   return (
     <div className="h-screen flex flex-col">
@@ -1110,6 +1134,8 @@ export default function Home() {
                 onRegisterManualEvalHandler={(handler) => {
                   chatManualEvalRef.current = handler;
                 }}
+                autoModeOn={autoModeOn}
+                onAutoModeChange={setAutoModeOn}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
