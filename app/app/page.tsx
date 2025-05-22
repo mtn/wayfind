@@ -78,6 +78,16 @@ export default function Home() {
   const [isDebugSessionActive, setIsDebugSessionActive] = useState(false);
   // Updated to use canonical debug state value "notstarted"
   const [debugStatus, setDebugStatus] = useState("notstarted");
+
+  // Ref to store chat interface callback for manual evaluations
+  const chatManualEvalRef = useRef<((expression: string, result: EvaluationResult) => void) | null>(null);
+
+  // Handle manual evaluation from DebugToolbar
+  const handleManualEvaluation = useCallback((expression: string, result: EvaluationResult) => {
+    if (chatManualEvalRef.current) {
+      chatManualEvalRef.current(expression, result);
+    }
+  }, []);
   // Add ref for tracking the latest debug status
   const debugStatusRef = useRef("notstarted");
 
@@ -972,6 +982,7 @@ export default function Home() {
                     onDebugEngineChange={setDebugEngine}
                     rustBinaryPath={rustBinaryPath}
                     onRustBinaryPathChange={setRustBinaryPath}
+                    onManualEvaluation={handleManualEvaluation}
                   />
                 </div>
                 {/* Tab Header */}
@@ -1095,6 +1106,9 @@ export default function Home() {
                 }}
                 onPrefillInput={(callback) => {
                   prefillChatInputRef.current = callback;
+                }}
+                onRegisterManualEvalHandler={(handler) => {
+                  chatManualEvalRef.current = handler;
                 }}
               />
             </ResizablePanel>

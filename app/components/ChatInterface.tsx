@@ -52,6 +52,8 @@ interface ChatInterfaceProps {
   onLazyExpandDirectory?: (directoryPath: string) => Promise<void>;
   // Optional callback to prefill the chat input.
   onPrefillInput?: (prefillCallback: (text: string) => void) => void;
+  // Optional callback to register manual evaluation handler
+  onRegisterManualEvalHandler?: (handler: (expression: string, result: EvaluationResult) => void) => void;
 }
 
 // Helper function to extract a wrapped user prompt.
@@ -156,6 +158,7 @@ export function ChatInterface({
   logToolCall,
   onLazyExpandDirectory,
   onPrefillInput,
+  onRegisterManualEvalHandler,
 }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -226,6 +229,7 @@ export function ChatInterface({
     handleInputChange,
     queueLength,
     isFlushing,
+    setMessages,
   } = useQueuedChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 1,
@@ -457,6 +461,7 @@ export function ChatInterface({
   // Track whether assistant owns the current conversational context
   const activeTurn = useRef(false);
   const [activeTurnDisplay, setActiveTurnDisplay] = useState(false);
+  
 
   // Expose the single flag to the rest of the app
   const assistantBusy =
@@ -500,6 +505,46 @@ export function ChatInterface({
     },
     [send],
   );
+
+  // Function to append message locally without sending to LLM
+  const appendLocal = useCallback((content: string | Message) => {
+    const msg: Message = typeof content === "string"
+      ? { id: crypto.randomUUID(), role: "user", content }
+      : content;
+    
+    setMessages(prevMessages => [...prevMessages, msg]);
+  }, [setMessages]);
+
+  // Handle manual evaluation results with gating logic
+  const handleManualEvaluation = useCallback((expression: string, result: EvaluationResult) => {
+    const evalMsg = `Expression evaluation result: ${expression} = ${result.result}`;
+    
+    // Gate unsolicited events - only send to LLM if assistant owns the conversation
+    if (activeTurn.current) {
+      console.log("Manual evaluation - sending to LLM");
+      // Use send to queue the message (not originate, as this is a response)
+      send({
+        role: "user",
+        content: evalMsg,
+        id: crypto.randomUUID(),
+      });
+    } else {
+      console.log("Manual evaluation gated - appending locally only");
+      // Append locally so assistant can see it if invoked later
+      appendLocal({
+        role: "user",
+        content: `[Manual Debug] ${evalMsg}`,
+        id: crypto.randomUUID(),
+      });
+    }
+  }, [activeTurn, send, appendLocal]);
+
+  // Register the manual evaluation handler
+  useEffect(() => {
+    if (onRegisterManualEvalHandler) {
+      onRegisterManualEvalHandler(handleManualEvaluation);
+    }
+  }, [onRegisterManualEvalHandler, handleManualEvaluation]);
 
   // Create attachments from files (for additional context).
   const attachments: Attachment[] = [];
@@ -613,24 +658,33 @@ export function ChatInterface({
         file?: string;
         line?: number;
       }>("debug-status", (event) => {
-        // Gate unsolicited events - only process if assistant owns the conversation
-        if (!activeTurn.current) return;
-
-        console.log("Processing debug status event");
-
+        console.log("Debug status event received");
         const { status, file, line } = event.payload;
 
         // Handle paused status with location information
         if (status === "paused" && file && line) {
-          // This is a breakpoint being hit
+          
           const stopMsg = `Breakpoint reached on line ${line} of ${file}.`;
 
-          // Use send to queue the message (not originate, as this is a response)
-          send({
-            role: "user",
-            content: stopMsg,
-            id: crypto.randomUUID(),
-          });
+          // Gate unsolicited events - only send to LLM if assistant owns the conversation
+          if (activeTurn.current) {
+            console.log("Processing debug status event - sending to LLM");
+            // Use send to queue the message (not originate, as this is a response)
+            send({
+              role: "user",
+              content: stopMsg,
+              id: crypto.randomUUID(),
+            });
+          } else {
+            console.log("Debug status event gated - appending locally only");
+            // Append locally so assistant can see it if invoked later
+            appendLocal({
+              role: "user",
+              content: `[Manual Debug] ${stopMsg}`,
+              id: crypto.randomUUID(),
+            });
+            return;
+          }
 
           // Clear the input field
           setInput("");
@@ -649,20 +703,33 @@ export function ChatInterface({
         if (status !== lastStatusRef.current && status !== "initializing") {
           lastStatusRef.current = status;
 
+
           // Prepare message for LLM
           const statusMsg = `Debug session status changed to: ${status}`;
 
-          // Use send to queue the message (not originate, as this is a response)
-          send({
-            role: "user",
-            content: statusMsg,
-            id: crypto.randomUUID(),
-          });
+          // Gate unsolicited events - only send to LLM if assistant owns the conversation
+          if (activeTurn.current) {
+            console.log("Processing debug status change - sending to LLM");
+            // Use send to queue the message (not originate, as this is a response)
+            send({
+              role: "user",
+              content: statusMsg,
+              id: crypto.randomUUID(),
+            });
 
-          // Clear the input field
-          setInput("");
-          if (editorRef.current) {
-            editorRef.current.innerText = "";
+            // Clear the input field
+            setInput("");
+            if (editorRef.current) {
+              editorRef.current.innerText = "";
+            }
+          } else {
+            console.log("Debug status change gated - appending locally only");
+            // Append locally so assistant can see it if invoked later
+            appendLocal({
+              role: "user",
+              content: `[Manual Debug] ${statusMsg}`,
+              id: crypto.randomUUID(),
+            });
           }
         } else {
           // Still update the lastStatusRef even if we don't send a message

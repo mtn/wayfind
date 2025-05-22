@@ -27,6 +27,7 @@ interface DebugToolbarProps {
   onDebugEngineChange?: (engine: string) => void;
   rustBinaryPath?: string;
   onRustBinaryPathChange?: (path: string) => void;
+  onManualEvaluation?: (expression: string, result: EvaluationResult) => void;
 }
 
 export interface EvaluationResult {
@@ -45,6 +46,7 @@ export function DebugToolbar({
   onDebugEngineChange,
   rustBinaryPath = "",
   onRustBinaryPathChange,
+  onManualEvaluation,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
 
@@ -90,6 +92,11 @@ export function DebugToolbar({
           <strong>{expression}</strong> = {displayValue}
         </div>,
       );
+
+      // Notify callback about manual evaluation
+      if (onManualEvaluation) {
+        onManualEvaluation(expression, result);
+      }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("Error evaluating:", errMsg);
