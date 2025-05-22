@@ -224,6 +224,8 @@ export function ChatInterface({
     isThinking,
     send,
     handleInputChange,
+    queueLength,
+    isFlushing,
   } = useQueuedChat({
     api: "http://localhost:3001/api/chat",
     maxSteps: 1,
@@ -270,6 +272,7 @@ export function ChatInterface({
       }
     },
     async onToolCall({ toolCall }) {
+      setToolCallsInFlight((c) => c + 1);
       console.log("Tool call starting:", {
         toolCallId: toolCall.toolCallId,
         toolName: toolCall.toolName,
@@ -441,10 +444,30 @@ export function ChatInterface({
           error,
         });
         throw error;
+      } finally {
+        // after queueing any follow-up message
+        setToolCallsInFlight((c) => c - 1);
       }
     },
   });
 
+  // active tool-calls
+  const [toolCallsInFlight, setToolCallsInFlight] = useState(0);
+
+  // Expose the single flag to the rest of the app
+  const assistantBusy =
+    chatIsLoading || // streaming / writing
+    isThinking || // "analysis" parts only
+    queueLength > 0 || // queued user follow-ups
+    isFlushing || // currently popping from queue
+    toolCallsInFlight > 0; // waiting on tool result
+
+  // Make it available to parents via custom event
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("assistant-busy", { detail: assistantBusy }),
+    );
+  }, [assistantBusy]);
 
   // Create attachments from files (for additional context).
   const attachments: Attachment[] = [];
@@ -624,6 +647,57 @@ export function ChatInterface({
 
   return (
     <div className="flex flex-col h-full border-t relative">
+      {/* Debug indicators for busy flags */}
+      <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded space-y-1 font-mono">
+        <div
+          className={`flex items-center gap-2 ${assistantBusy ? "text-red-400" : "text-green-400"}`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${assistantBusy ? "bg-red-400" : "bg-green-400"}`}
+          />
+          assistantBusy: {assistantBusy.toString()}
+        </div>
+        <div
+          className={`flex items-center gap-2 ${chatIsLoading ? "text-red-400" : "text-green-400"}`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${chatIsLoading ? "bg-red-400" : "bg-green-400"}`}
+          />
+          chatIsLoading: {chatIsLoading.toString()}
+        </div>
+        <div
+          className={`flex items-center gap-2 ${isThinking ? "text-red-400" : "text-green-400"}`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${isThinking ? "bg-red-400" : "bg-green-400"}`}
+          />
+          isThinking: {isThinking.toString()}
+        </div>
+        <div
+          className={`flex items-center gap-2 ${queueLength > 0 ? "text-red-400" : "text-green-400"}`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${queueLength > 0 ? "bg-red-400" : "bg-green-400"}`}
+          />
+          queueLength: {queueLength}
+        </div>
+        <div
+          className={`flex items-center gap-2 ${isFlushing ? "text-red-400" : "text-green-400"}`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${isFlushing ? "bg-red-400" : "bg-green-400"}`}
+          />
+          isFlushing: {isFlushing.toString()}
+        </div>
+        <div
+          className={`flex items-center gap-2 ${toolCallsInFlight > 0 ? "text-red-400" : "text-green-400"}`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${toolCallsInFlight > 0 ? "bg-red-400" : "bg-green-400"}`}
+          />
+          toolCallsInFlight: {toolCallsInFlight}
+        </div>
+      </div>
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Render all messages in their original order */}

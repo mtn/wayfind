@@ -12,6 +12,7 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
   const q = useRef<QueueItem[]>([]); // FIFO queue of message+options pairs
   const flushing = useRef(false); // "is streaming" flag
   const [isThinking, setIsThinking] = useState(false);
+  const [queueLength, setQueueLength] = useState(0);
 
   /** flush the queue if idle */
   const flush = useCallback(async () => {
@@ -33,6 +34,7 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
           : content;
 
       q.current.push({ msg, opts }); // store both message and options
+      setQueueLength(q.current.length); // track length
       flush(); // try to send
     },
     [flush],
@@ -42,6 +44,7 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
   useEffect(() => {
     if (!chat.isLoading && flushing.current) {
       flushing.current = false;
+      setQueueLength(q.current.length);
       setIsThinking(false);
       flush();
     }
@@ -51,6 +54,7 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
   useEffect(() => {
     if (chat.error && flushing.current) {
       flushing.current = false;
+      setQueueLength(q.current.length);
       setIsThinking(false);
       flush();
     }
@@ -122,5 +126,11 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
     }
   }, [chat.messages, chat.isLoading, isThinking]);
 
-  return { ...chat, send, isThinking }; // expose isThinking state
+  return {
+    ...chat,
+    send,
+    isThinking,
+    queueLength,
+    isFlushing: flushing.current,
+  };
 }
