@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
+import { Message, UseChatHelpers } from "ai/react";
 import { useQueuedChat } from "@/lib/useQueuedChat";
 import { Button } from "@/components/ui/button";
 import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
@@ -499,7 +500,6 @@ export function ChatInterface({
 
   // Track whether assistant owns the current conversational context
   const activeTurn = useRef(false);
-  const [activeTurnDisplay, setActiveTurnDisplay] = useState(false);
 
   // Auto-mode ref for consistency with other refs
   const autoModeRef = useRef(autoModeOn);
@@ -540,7 +540,6 @@ export function ChatInterface({
     if (prevBusy.current && !assistantBusy) {
       console.log("Clearing activeTurn");
       activeTurn.current = false;
-      setActiveTurnDisplay(false);
     }
     prevBusy.current = assistantBusy;
   }, [assistantBusy]);
@@ -554,13 +553,12 @@ export function ChatInterface({
     ) => {
       console.log("Setting activeTurn to true");
       if (enableAutoMode) {
-        setAutoModeOn(true); // arm auto-mode only if requested
+        onAutoModeChange(true); // arm auto-mode only if requested
       }
       activeTurn.current = true;
-      setActiveTurnDisplay(true);
       send(content, opts);
     },
-    [send],
+    [send, onAutoModeChange],
   );
 
   // Function to append message locally without sending to LLM
