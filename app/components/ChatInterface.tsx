@@ -784,8 +784,8 @@ export function ChatInterface({
         </label>
       </div>
 
-      {/* Debug indicators for busy flags */}
-      <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded space-y-1 font-mono">
+      {/* Assistant status indicator */}
+      <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded font-mono">
         <div
           className={`flex items-center gap-2 ${assistantBusy ? "text-red-400" : "text-green-400"}`}
         >
@@ -793,62 +793,6 @@ export function ChatInterface({
             className={`w-2 h-2 rounded-full ${assistantBusy ? "bg-red-400" : "bg-green-400"}`}
           />
           assistantBusy: {assistantBusy.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${chatIsLoading ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${chatIsLoading ? "bg-red-400" : "bg-green-400"}`}
-          />
-          chatIsLoading: {chatIsLoading.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${isThinking ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${isThinking ? "bg-red-400" : "bg-green-400"}`}
-          />
-          isThinking: {isThinking.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${queueLength > 0 ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${queueLength > 0 ? "bg-red-400" : "bg-green-400"}`}
-          />
-          queueLength: {queueLength}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${isFlushing ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${isFlushing ? "bg-red-400" : "bg-green-400"}`}
-          />
-          isFlushing: {isFlushing.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${toolCallsInFlight > 0 ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${toolCallsInFlight > 0 ? "bg-red-400" : "bg-green-400"}`}
-          />
-          toolCallsInFlight: {toolCallsInFlight}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${activeTurnDisplay ? "text-red-400" : "text-green-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${activeTurnDisplay ? "bg-red-400" : "bg-green-400"}`}
-          />
-          activeTurn: {activeTurnDisplay.toString()}
-        </div>
-        <div
-          className={`flex items-center gap-2 ${autoModeOn ? "text-green-400" : "text-red-400"}`}
-        >
-          <div
-            className={`w-2 h-2 rounded-full ${autoModeOn ? "bg-green-400" : "bg-red-400"}`}
-          />
-          autoModeOn: {autoModeOn.toString()}
         </div>
       </div>
       {/* Chat Messages */}
