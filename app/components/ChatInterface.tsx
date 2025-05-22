@@ -314,11 +314,19 @@ export function ChatInterface({
           // After handling this specific tool, schedule a follow-up message
           // This is done after returning from this function to avoid interrupting the flow
           setTimeout(() => {
-            originate({
-              role: "user",
-              content: "Breakpoint was set successfully.",
-              id: crypto.randomUUID(),
-            });
+            if (autoModeRef.current) {
+              originate({
+                role: "user",
+                content: "Breakpoint was set successfully.",
+                id: crypto.randomUUID(),
+              });
+            } else {
+              appendLocal({
+                role: "user",
+                content: "[Manual Debug] Breakpoint was set successfully.",
+                id: crypto.randomUUID(),
+              });
+            }
           }, 0);
         } else if (toolCall.toolName === "setBreakpointBySearch") {
           // Define the result interface
@@ -374,11 +382,19 @@ export function ChatInterface({
 
             // Send follow-up message
             setTimeout(() => {
-              originate({
-                role: "user",
-                content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
-                id: crypto.randomUUID(),
-              });
+              if (autoModeRef.current) {
+                originate({
+                  role: "user",
+                  content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
+                  id: crypto.randomUUID(),
+                });
+              } else {
+                appendLocal({
+                  role: "user",
+                  content: `[Manual Debug] Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
+                  id: crypto.randomUUID(),
+                });
+              }
             }, 0);
           } catch (error) {
             console.error("Error setting breakpoint by search:", error);
@@ -396,11 +412,19 @@ export function ChatInterface({
           actionResult = result ? `Evaluated: ${result.result}` : "No result";
 
           setTimeout(() => {
-            originate({
-              role: "user",
-              content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
-              id: crypto.randomUUID(),
-            });
+            if (autoModeRef.current) {
+              originate({
+                role: "user",
+                content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
+                id: crypto.randomUUID(),
+              });
+            } else {
+              appendLocal({
+                role: "user",
+                content: `[Manual Debug] Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
+                id: crypto.randomUUID(),
+              });
+            }
           }, 0);
         } else if (toolCall.toolName === "readFileContent") {
           const { filePath, startLine, endLine } = toolCall.args as {
@@ -424,11 +448,19 @@ export function ChatInterface({
 
             // Send follow-up message with file content
             setTimeout(() => {
-              originate({
-                role: "user",
-                content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
-                id: crypto.randomUUID(),
-              });
+              if (autoModeRef.current) {
+                originate({
+                  role: "user",
+                  content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
+                  id: crypto.randomUUID(),
+                });
+              } else {
+                appendLocal({
+                  role: "user",
+                  content: `[Manual Debug] File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
+                  id: crypto.randomUUID(),
+                });
+              }
             }, 0);
           } catch (error) {
             console.error("Error reading file:", error);
@@ -514,9 +546,12 @@ export function ChatInterface({
     (
       content: string | Message,
       opts?: Parameters<UseChatHelpers["append"]>[1],
+      enableAutoMode: boolean = true,
     ) => {
       console.log("Setting activeTurn to true");
-      setAutoModeOn(true); // arm auto-mode
+      if (enableAutoMode) {
+        setAutoModeOn(true); // arm auto-mode only if requested
+      }
       activeTurn.current = true;
       setActiveTurnDisplay(true);
       send(content, opts);
@@ -615,10 +650,14 @@ export function ChatInterface({
         });
       }
     });
-    originate(input, {
-      body: { content: input },
-      experimental_attachments: experimentalAttachments,
-    });
+    originate(
+      input,
+      {
+        body: { content: input },
+        experimental_attachments: experimentalAttachments,
+      },
+      false,
+    ); // Don't auto-enable auto-mode, let user control it manually
     setInput("");
     if (editorRef.current) {
       editorRef.current.innerText = "";
