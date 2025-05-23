@@ -126,9 +126,26 @@ export function useQueuedChat(opts?: Parameters<typeof useChat>[0]) {
     }
   }, [chat.messages, chat.isLoading, isThinking]);
 
+  // Stop function that cancels current stream and clears queue
+  const stop = useCallback(() => {
+    // Stop the current chat stream if available
+    if (chat.stop) {
+      chat.stop();
+    }
+
+    // Clear the queue
+    q.current = [];
+    setQueueLength(0);
+
+    // Reset flushing state
+    flushing.current = false;
+    setIsThinking(false);
+  }, [chat]);
+
   return {
     ...chat,
     send,
+    stop,
     isThinking,
     queueLength,
     isFlushing: flushing.current,

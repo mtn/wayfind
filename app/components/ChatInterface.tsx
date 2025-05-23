@@ -241,6 +241,7 @@ export function ChatInterface({
     isLoading: chatIsLoading,
     isThinking,
     send,
+    stop,
     handleInputChange,
     queueLength,
     isFlushing,
@@ -1064,10 +1065,16 @@ export function ChatInterface({
               }}
               className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[30px] whitespace-pre-wrap"
             />
-            <Button type="submit">
-              <span className="text-white">Send</span>{" "}
-              <span className="text-gray-500">cmd-enter</span>
-            </Button>
+            {assistantBusy ? (
+              <Button type="button" onClick={stop} variant="destructive">
+                <span className="text-white">Stop</span>
+              </Button>
+            ) : (
+              <Button type="submit">
+                <span className="text-white">Send</span>{" "}
+                <span className="text-gray-500">cmd-enter</span>
+              </Button>
+            )}
           </div>
         </form>
 
