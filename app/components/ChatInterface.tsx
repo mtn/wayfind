@@ -855,7 +855,7 @@ export function ChatInterface({
                 ${
                   message.role === "user"
                     ? isToolResult
-                      ? "bg-gray-100 mx-auto max-w-[80%] text-left text-gray-600 border border-gray-200"
+                      ? "bg-gray-100 mx-auto max-w-[80%] text-left text-gray-600 border-dashed border border-gray-300"
                       : "bg-primary/10 ml-auto max-w-[80%]"
                     : "bg-muted mr-auto max-w-[80%]"
                 }
