@@ -632,7 +632,7 @@ export default function Home() {
         // TODO If the breakpoint is set on a non-code line the breakpoint gets swallowed.
         // Check how other debuggers handle it (e.g. workspace.rs a few lines above the target)
         const testPrompt =
-          "set a breakpoint on line 3397 of crates/workspace/src/workspace.rs, that is all";
+          "set a breakpoint on line 3397 of crates/workspace/src/workspace.rs";
         // "/file crates/workspace/src/workspace.rs set a breakpoint on line 3397 of workspace.rs, then launch the debug session. After the program stops at the breakpoint, say 'foobar'";
 
         if (prefillChatInputRef.current) {
