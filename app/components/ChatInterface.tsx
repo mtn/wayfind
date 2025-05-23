@@ -812,19 +812,6 @@ export function ChatInterface({
 
   return (
     <div className="flex flex-col h-full border-t relative">
-      {/* Auto-mode toggle */}
-      <div className="absolute top-2 left-2 z-50 bg-black/80 text-white text-xs p-2 rounded">
-        <label className="flex items-center gap-2 text-xs cursor-pointer">
-          <input
-            type="checkbox"
-            checked={autoModeOn}
-            onChange={(e) => onAutoModeChange(e.target.checked)}
-            className="w-3 h-3"
-          />
-          Auto-mode
-        </label>
-      </div>
-
       {/* Assistant status indicator */}
       <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded font-mono">
         <div
@@ -1011,7 +998,7 @@ export function ChatInterface({
       {/* Input Form */}
       <form
         onSubmit={onSubmit}
-        className="p-4 flex flex-col gap-2 border-t bg-background"
+        className="p-2 flex flex-col gap-2 border-t bg-background"
       >
         <div className="flex gap-2 items-end">
           <div
@@ -1073,6 +1060,11 @@ export function ChatInterface({
           </Button>
         </div>
       </form>
+
+      {/* Auto-mode status */}
+      <div className="px-2 pb-2 text-xs text-gray-500 text-right">
+        auto mode is {autoModeOn ? "on" : "off"} (shift-tab to toggle)
+      </div>
     </div>
   );
 }
