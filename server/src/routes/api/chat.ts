@@ -205,7 +205,8 @@ router.post("/", async (req: Request, res: Response) => {
               After you've set up the breakpoints, don't forget to launch the program, and also don't forget to continue execution when paused
               (if it makes sense to do so).
 
-              If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more steps to finish.`,
+              If you can't complete the task in the available number of steps, that's alright, just start it and then you'll be given more steps to finish.
+              Whenever you provide a summary of what you've found, be concise and clear, focusing on the most important details.`,
     };
 
     const result = streamText({
