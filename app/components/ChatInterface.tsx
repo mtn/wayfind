@@ -4,6 +4,13 @@ import { useState, useRef, useEffect, useCallback, ReactNode } from "react";
 import { Message, UseChatHelpers } from "ai/react";
 import { useQueuedChat } from "@/lib/useQueuedChat";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import ReactMarkdown from "react-markdown";
 import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
@@ -811,25 +818,26 @@ export function ChatInterface({
   // No separate debug-location listener is needed anymore
 
   return (
-    <div className="flex flex-col h-full border-t relative">
-      {/* Assistant status indicator */}
-      <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded font-mono">
-        <div
-          className={`flex items-center gap-2 ${assistantBusy ? "text-red-400" : "text-green-400"}`}
-        >
+    <TooltipProvider>
+      <div className="flex flex-col h-full border-t relative">
+        {/* Assistant status indicator */}
+        <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded font-mono">
           <div
-            className={`w-2 h-2 rounded-full ${assistantBusy ? "bg-red-400" : "bg-green-400"}`}
-          />
-          assistantBusy: {assistantBusy.toString()}
+            className={`flex items-center gap-2 ${assistantBusy ? "text-red-400" : "text-green-400"}`}
+          >
+            <div
+              className={`w-2 h-2 rounded-full ${assistantBusy ? "bg-red-400" : "bg-green-400"}`}
+            />
+            assistantBusy: {assistantBusy.toString()}
+          </div>
         </div>
-      </div>
-      {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Render all messages in their original order */}
-        {messages.map((message, messageIndex) => (
-          <div
-            key={message.id}
-            className={`
+        {/* Chat Messages */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Render all messages in their original order */}
+          {messages.map((message, messageIndex) => (
+            <div
+              key={message.id}
+              className={`
               p-3 rounded-lg text-sm whitespace-pre-wrap
               ${
                 message.role === "user"
@@ -837,235 +845,250 @@ export function ChatInterface({
                   : "bg-muted mr-auto max-w-[80%]"
               }
             `}
-          >
-            {message.role === "user" ? (
-              <ReactMarkdown>
-                {extractUserPrompt(message.content)}
-              </ReactMarkdown>
-            ) : (
-              <>
-                {/* Render assistant message content */}
-                {message.parts ? (
-                  message.parts.map((part, idx) => {
-                    type ToolInvocation = {
-                      toolName: string;
-                      args: Record<string, unknown>;
-                      state: string;
-                      result?: unknown;
-                    };
-
-                    type MessagePart =
-                      | { type: "text"; text: string }
-                      | {
-                          type: "tool-invocation";
-                          toolInvocation: ToolInvocation;
-                        };
-
-                    const typedPart = part as MessagePart;
-
-                    if (typedPart.type === "text") {
-                      return (
-                        <ReactMarkdown key={idx}>
-                          {typedPart.text}
-                        </ReactMarkdown>
-                      );
-                    } else if (typedPart.type === "tool-invocation") {
-                      return (
-                        <div
-                          key={idx}
-                          className="text-xs text-gray-600 border rounded p-1 mb-2"
-                        >
-                          <strong>Tool Call:</strong>{" "}
-                          {typedPart.toolInvocation.toolName} with args{" "}
-                          {JSON.stringify(typedPart.toolInvocation.args)}
-                          <br />
-                          <em>Status: {typedPart.toolInvocation.state}</em>
-                          {typedPart.toolInvocation.state === "result" && (
-                            <>
-                              <br />
-                              <strong>Result:</strong>{" "}
-                              {JSON.stringify(typedPart.toolInvocation.result)}
-                            </>
-                          )}
-                        </div>
-                      );
-                    }
-                    return null;
-                  })
-                ) : (
-                  <ReactMarkdown>
-                    {extractUserPrompt(message.content)}
-                  </ReactMarkdown>
-                )}
-
-                {/* Show thinking indicator only for the last assistant message during loading */}
-                {messageIndex === messages.length - 1 &&
-                  chatIsLoading &&
-                  isThinking && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                      <span className="text-sm text-blue-700 font-medium">
-                        Thinking...
-                      </span>
-                    </div>
-                  )}
-              </>
-            )}
-          </div>
-        ))}
-
-        {/* If we're loading but there's no assistant message yet, show a standalone indicator */}
-        {chatIsLoading &&
-          messages.length > 0 &&
-          messages[messages.length - 1].role === "user" && (
-            <div className="p-3 rounded-lg text-sm whitespace-pre-wrap bg-muted mr-auto max-w-[80%]">
-              {isThinking ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                  <span className="text-sm text-blue-700 font-medium">
-                    Thinking...
-                  </span>
-                </div>
+            >
+              {message.role === "user" ? (
+                <ReactMarkdown>
+                  {extractUserPrompt(message.content)}
+                </ReactMarkdown>
               ) : (
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-                  <div
-                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                    style={{ animationDelay: "0.2s" }}
-                  />
-                  <div
-                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                    style={{ animationDelay: "0.4s" }}
-                  />
-                </div>
+                <>
+                  {/* Render assistant message content */}
+                  {message.parts ? (
+                    message.parts.map((part, idx) => {
+                      type ToolInvocation = {
+                        toolName: string;
+                        args: Record<string, unknown>;
+                        state: string;
+                        result?: unknown;
+                      };
+
+                      type MessagePart =
+                        | { type: "text"; text: string }
+                        | {
+                            type: "tool-invocation";
+                            toolInvocation: ToolInvocation;
+                          };
+
+                      const typedPart = part as MessagePart;
+
+                      if (typedPart.type === "text") {
+                        return (
+                          <ReactMarkdown key={idx}>
+                            {typedPart.text}
+                          </ReactMarkdown>
+                        );
+                      } else if (typedPart.type === "tool-invocation") {
+                        return (
+                          <div
+                            key={idx}
+                            className="text-xs text-gray-600 border rounded p-1 mb-2"
+                          >
+                            <strong>Tool Call:</strong>{" "}
+                            {typedPart.toolInvocation.toolName} with args{" "}
+                            {JSON.stringify(typedPart.toolInvocation.args)}
+                            <br />
+                            <em>Status: {typedPart.toolInvocation.state}</em>
+                            {typedPart.toolInvocation.state === "result" && (
+                              <>
+                                <br />
+                                <strong>Result:</strong>{" "}
+                                {JSON.stringify(
+                                  typedPart.toolInvocation.result,
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })
+                  ) : (
+                    <ReactMarkdown>
+                      {extractUserPrompt(message.content)}
+                    </ReactMarkdown>
+                  )}
+
+                  {/* Show thinking indicator only for the last assistant message during loading */}
+                  {messageIndex === messages.length - 1 &&
+                    chatIsLoading &&
+                    isThinking && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                        <span className="text-sm text-blue-700 font-medium">
+                          Thinking...
+                        </span>
+                      </div>
+                    )}
+                </>
               )}
             </div>
-          )}
-      </div>
-
-      {/* Suggestions Dropdown for Commands */}
-      {suggestions.length > 0 && (
-        <div
-          className="absolute bg-white border rounded shadow py-1 px-2 z-10 w-auto"
-          style={{ bottom: "60px", left: "16px", right: "16px" }}
-        >
-          {suggestions.map((s, idx) => (
-            <div
-              key={idx}
-              className="cursor-pointer hover:bg-gray-200 p-0.5"
-              onClick={() => {
-                setInput(s + " ");
-                setSuggestions([]);
-              }}
-            >
-              <div className="font-medium">{s}</div>
-              <div className="text-xs text-gray-500">
-                Insert file and/or directory
-              </div>
-            </div>
           ))}
-        </div>
-      )}
 
-      {/* File Suggestions Dropdown */}
-      {fileSuggestions.length > 0 && (
-        <div
-          className="absolute bg-white border rounded shadow py-1 px-2 z-10 max-h-64 overflow-y-auto w-auto"
-          style={{ bottom: "60px", left: "16px", right: "16px" }}
-        >
-          {fileSuggestions.map((file, idx) => (
-            <div
-              key={idx}
-              className="cursor-pointer hover:bg-gray-200 p-0.5"
-              onClick={() => {
-                const currentQuery = input.slice(6).trim();
-                const parts = currentQuery.split("/");
-                parts[parts.length - 1] = file.name;
-                const newQuery = parts.join("/") + " ";
-                setInput("/file " + newQuery);
-                setFileSuggestions([]);
-              }}
-            >
-              <div className="font-medium">{file.name}</div>
-              <div className="text-xs text-gray-500">
-                Insert file and/or directory
+          {/* If we're loading but there's no assistant message yet, show a standalone indicator */}
+          {chatIsLoading &&
+            messages.length > 0 &&
+            messages[messages.length - 1].role === "user" && (
+              <div className="p-3 rounded-lg text-sm whitespace-pre-wrap bg-muted mr-auto max-w-[80%]">
+                {isThinking ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                    <span className="text-sm text-blue-700 font-medium">
+                      Thinking...
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: "0.2s" }}
+                    />
+                    <div
+                      className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                      style={{ animationDelay: "0.4s" }}
+                    />
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            )}
         </div>
-      )}
 
-      {/* Input Form */}
-      <form
-        onSubmit={onSubmit}
-        className="p-2 flex flex-col gap-2 border-t bg-background"
-      >
-        <div className="flex gap-2 items-end">
+        {/* Suggestions Dropdown for Commands */}
+        {suggestions.length > 0 && (
           <div
-            ref={editorRef}
-            contentEditable
-            onInput={(e) => {
-              const newText = e.currentTarget.textContent || "";
-              setInput(newText);
-              handleInputChange({
-                target: { value: newText },
-              } as React.ChangeEvent<HTMLInputElement>);
-              updateSlashSuggestions(newText);
-              requestAnimationFrame(() => highlightFileCommand());
-            }}
-            onPaste={(e) => {
-              e.preventDefault();
-              const text = e.clipboardData.getData("text/plain");
-              if (editorRef.current) {
-                const selection = window.getSelection();
-                if (selection && selection.rangeCount > 0) {
-                  const range = selection.getRangeAt(0);
-                  range.deleteContents();
-                  range.insertNode(document.createTextNode(text));
-                  selection.collapseToEnd();
-                } else {
-                  editorRef.current.textContent += text;
-                }
-              }
-              requestAnimationFrame(() => {
-                highlightFileCommand();
-              });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.metaKey) {
+            className="absolute bg-white border rounded shadow py-1 px-2 z-10 w-auto"
+            style={{ bottom: "60px", left: "16px", right: "16px" }}
+          >
+            {suggestions.map((s, idx) => (
+              <div
+                key={idx}
+                className="cursor-pointer hover:bg-gray-200 p-0.5"
+                onClick={() => {
+                  setInput(s + " ");
+                  setSuggestions([]);
+                }}
+              >
+                <div className="font-medium">{s}</div>
+                <div className="text-xs text-gray-500">
+                  Insert file and/or directory
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* File Suggestions Dropdown */}
+        {fileSuggestions.length > 0 && (
+          <div
+            className="absolute bg-white border rounded shadow py-1 px-2 z-10 max-h-64 overflow-y-auto w-auto"
+            style={{ bottom: "60px", left: "16px", right: "16px" }}
+          >
+            {fileSuggestions.map((file, idx) => (
+              <div
+                key={idx}
+                className="cursor-pointer hover:bg-gray-200 p-0.5"
+                onClick={() => {
+                  const currentQuery = input.slice(6).trim();
+                  const parts = currentQuery.split("/");
+                  parts[parts.length - 1] = file.name;
+                  const newQuery = parts.join("/") + " ";
+                  setInput("/file " + newQuery);
+                  setFileSuggestions([]);
+                }}
+              >
+                <div className="font-medium">{file.name}</div>
+                <div className="text-xs text-gray-500">
+                  Insert file and/or directory
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Input Form */}
+        <form
+          onSubmit={onSubmit}
+          className="p-2 flex flex-col gap-2 border-t bg-background"
+        >
+          <div className="flex gap-2 items-end">
+            <div
+              ref={editorRef}
+              contentEditable
+              onInput={(e) => {
+                const newText = e.currentTarget.textContent || "";
+                setInput(newText);
+                handleInputChange({
+                  target: { value: newText },
+                } as React.ChangeEvent<HTMLInputElement>);
+                updateSlashSuggestions(newText);
+                requestAnimationFrame(() => highlightFileCommand());
+              }}
+              onPaste={(e) => {
                 e.preventDefault();
+                const text = e.clipboardData.getData("text/plain");
                 if (editorRef.current) {
                   const selection = window.getSelection();
                   if (selection && selection.rangeCount > 0) {
                     const range = selection.getRangeAt(0);
-                    const br = document.createElement("br");
                     range.deleteContents();
-                    range.insertNode(br);
-                    range.setStartAfter(br);
-                    range.setEndAfter(br);
-                    selection.removeAllRanges();
-                    selection.addRange(range);
+                    range.insertNode(document.createTextNode(text));
+                    selection.collapseToEnd();
+                  } else {
+                    editorRef.current.textContent += text;
                   }
                 }
-              } else if (e.metaKey && e.key === "Enter") {
-                e.preventDefault();
-                submitMessage();
-              }
-            }}
-            className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[30px] whitespace-pre-wrap"
-          />
-          <Button type="submit">
-            <span className="text-white">Send</span>{" "}
-            <span className="text-gray-500">cmd-enter</span>
-          </Button>
-        </div>
-      </form>
+                requestAnimationFrame(() => {
+                  highlightFileCommand();
+                });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.metaKey) {
+                  e.preventDefault();
+                  if (editorRef.current) {
+                    const selection = window.getSelection();
+                    if (selection && selection.rangeCount > 0) {
+                      const range = selection.getRangeAt(0);
+                      const br = document.createElement("br");
+                      range.deleteContents();
+                      range.insertNode(br);
+                      range.setStartAfter(br);
+                      range.setEndAfter(br);
+                      selection.removeAllRanges();
+                      selection.addRange(range);
+                    }
+                  }
+                } else if (e.metaKey && e.key === "Enter") {
+                  e.preventDefault();
+                  submitMessage();
+                }
+              }}
+              className="flex-1 px-3 py-2 text-sm rounded-md border bg-background min-h-[30px] whitespace-pre-wrap"
+            />
+            <Button type="submit">
+              <span className="text-white">Send</span>{" "}
+              <span className="text-gray-500">cmd-enter</span>
+            </Button>
+          </div>
+        </form>
 
-      {/* Auto-mode status */}
-      <div className="px-2 pb-2 text-xs text-gray-500 text-right">
-        auto mode is {autoModeOn ? "on" : "off"} (shift-tab to toggle)
+        {/* Auto-mode status */}
+        <div className="px-2 pb-2 text-xs text-gray-500 text-right flex items-center justify-end gap-1">
+          <span>
+            auto mode is {autoModeOn ? "on" : "off"} (shift-tab to toggle)
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="w-3 h-3 cursor-help text-gray-400 hover:text-gray-600" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>
+                In auto-mode, the LLM will continue to respond and act in a loop
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
 
