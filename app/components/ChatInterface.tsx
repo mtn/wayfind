@@ -329,7 +329,7 @@ export function ChatInterface({
             } else {
               appendLocal({
                 role: "user",
-                content: "[Manual Debug] Breakpoint was set successfully.",
+                content: "Breakpoint was set successfully.",
                 id: crypto.randomUUID(),
               });
             }
@@ -397,7 +397,7 @@ export function ChatInterface({
               } else {
                 appendLocal({
                   role: "user",
-                  content: `[Manual Debug] Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
+                  content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
                   id: crypto.randomUUID(),
                 });
               }
@@ -427,7 +427,7 @@ export function ChatInterface({
             } else {
               appendLocal({
                 role: "user",
-                content: `[Manual Debug] Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
+                content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
                 id: crypto.randomUUID(),
               });
             }
@@ -463,7 +463,7 @@ export function ChatInterface({
               } else {
                 appendLocal({
                   role: "user",
-                  content: `[Manual Debug] File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
+                  content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
                   id: crypto.randomUUID(),
                 });
               }
@@ -593,7 +593,7 @@ export function ChatInterface({
         // Append locally so assistant can see it if invoked later
         appendLocal({
           role: "user",
-          content: `[Manual Debug] ${evalMsg}`,
+          content: `${evalMsg}`,
           id: crypto.randomUUID(),
         });
       }
@@ -745,7 +745,7 @@ export function ChatInterface({
             // Append locally so assistant can see it if invoked later
             appendLocal({
               role: "user",
-              content: `[Manual Debug] ${stopMsg}`,
+              content: `${stopMsg}`,
               id: crypto.randomUUID(),
             });
             return;
@@ -791,7 +791,7 @@ export function ChatInterface({
             // Append locally so assistant can see it if invoked later
             appendLocal({
               role: "user",
-              content: `[Manual Debug] ${statusMsg}`,
+              content: `${statusMsg}`,
               id: crypto.randomUUID(),
             });
           }
