@@ -821,17 +821,6 @@ export function ChatInterface({
   return (
     <TooltipProvider>
       <div className="flex flex-col h-full border-t relative">
-        {/* Assistant status indicator */}
-        <div className="absolute top-2 right-2 z-50 bg-black/80 text-white text-xs p-2 rounded font-mono">
-          <div
-            className={`flex items-center gap-2 ${assistantBusy ? "text-red-400" : "text-green-400"}`}
-          >
-            <div
-              className={`w-2 h-2 rounded-full ${assistantBusy ? "bg-red-400" : "bg-green-400"}`}
-            />
-            assistantBusy: {assistantBusy.toString()}
-          </div>
-        </div>
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Render all messages in their original order */}
