@@ -199,6 +199,8 @@ router.post("/", async (req: Request, res: Response) => {
               whenever possible. This allows you to set breakpoints by searching for code content rather than
               relying on specific line numbers, which is more reliable if the code has been modified.
 
+              IMPORTANT: If you are sent a file as an attachment, then there's no need to read it in using the readFileContent tool. However, it may be useful to read in a section of it (e.g. to get an idea of where in the code we are when stopped at a breakpoint).
+
               Keep in mind that to read or trace the value of a variable, you need to set a breakpoint at least one line _after_ the line that it is
               defined on, otherwise, it'll come back as undefined.
               If you're asked to evaluate how a variable changes as the program runs, set a breakpoint by searching for the variable definition / update and set the breakpoint with offset 1 from that line to get the line after, and then ONLY evaluate the variable in each loop iteration.
