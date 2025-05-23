@@ -26,6 +26,11 @@ interface Attachment {
   url: string;
 }
 
+// Extended Message interface to track tool call results
+interface ExtendedMessage extends Message {
+  isToolResult?: boolean;
+}
+
 interface DebugSyncData {
   debugStatus: string;
   breakpoints: IBreakpoint[];
@@ -333,13 +338,15 @@ export function ChatInterface({
                 role: "user",
                 content: "Breakpoint was set successfully.",
                 id: crypto.randomUUID(),
-              });
+                isToolResult: true,
+              } as ExtendedMessage);
             } else {
               appendLocal({
                 role: "user",
                 content: "Breakpoint was set successfully.",
                 id: crypto.randomUUID(),
-              });
+                isToolResult: true,
+              } as ExtendedMessage);
             }
           }, 0);
         } else if (toolCall.toolName === "setBreakpointBySearch") {
@@ -401,13 +408,15 @@ export function ChatInterface({
                   role: "user",
                   content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
                   id: crypto.randomUUID(),
-                });
+                  isToolResult: true,
+                } as ExtendedMessage);
               } else {
                 appendLocal({
                   role: "user",
                   content: `Breakpoint set on line ${result.foundLine} by searching for "${searchText}" in ${fileEntry.name}.`,
                   id: crypto.randomUUID(),
-                });
+                  isToolResult: true,
+                } as ExtendedMessage);
               }
             }, 0);
           } catch (error) {
@@ -431,13 +440,15 @@ export function ChatInterface({
                 role: "user",
                 content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
                 id: crypto.randomUUID(),
-              });
+                isToolResult: true,
+              } as ExtendedMessage);
             } else {
               appendLocal({
                 role: "user",
                 content: `Expression evaluation result: ${expression} = ${result ? result.result : "undefined"}`,
                 id: crypto.randomUUID(),
-              });
+                isToolResult: true,
+              } as ExtendedMessage);
             }
           }, 0);
         } else if (toolCall.toolName === "readFileContent") {
@@ -467,13 +478,15 @@ export function ChatInterface({
                   role: "user",
                   content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
                   id: crypto.randomUUID(),
-                });
+                  isToolResult: true,
+                } as ExtendedMessage);
               } else {
                 appendLocal({
                   role: "user",
                   content: `File content for ${filePath}:\n\`\`\`\n${result}\n\`\`\``,
                   id: crypto.randomUUID(),
-                });
+                  isToolResult: true,
+                } as ExtendedMessage);
               }
             }, 0);
           } catch (error) {
@@ -555,7 +568,7 @@ export function ChatInterface({
   // Function to originate messages that expect a reply
   const originate = useCallback(
     (
-      content: string | Message,
+      content: string | Message | ExtendedMessage,
       opts?: Parameters<UseChatHelpers["append"]>[1],
       enableAutoMode: boolean = true,
     ) => {
@@ -571,7 +584,7 @@ export function ChatInterface({
 
   // Function to append message locally without sending to LLM
   const appendLocal = useCallback(
-    (content: string | Message) => {
+    (content: string | Message | ExtendedMessage) => {
       const msg: Message =
         typeof content === "string"
           ? { id: crypto.randomUUID(), role: "user", content }
@@ -595,7 +608,8 @@ export function ChatInterface({
           role: "user",
           content: evalMsg,
           id: crypto.randomUUID(),
-        });
+          isToolResult: true,
+        } as ExtendedMessage);
       } else {
         console.log("Manual evaluation gated - appending locally only");
         // Append locally so assistant can see it if invoked later
@@ -603,7 +617,8 @@ export function ChatInterface({
           role: "user",
           content: `${evalMsg}`,
           id: crypto.randomUUID(),
-        });
+          isToolResult: true,
+        } as ExtendedMessage);
       }
     },
     [autoModeRef, send, appendLocal],
@@ -747,7 +762,8 @@ export function ChatInterface({
               role: "user",
               content: stopMsg,
               id: crypto.randomUUID(),
-            });
+              isToolResult: true,
+            } as ExtendedMessage);
           } else {
             console.log("Debug status event gated - appending locally only");
             // Append locally so assistant can see it if invoked later
@@ -755,7 +771,8 @@ export function ChatInterface({
               role: "user",
               content: `${stopMsg}`,
               id: crypto.randomUUID(),
-            });
+              isToolResult: true,
+            } as ExtendedMessage);
             return;
           }
 
@@ -787,7 +804,8 @@ export function ChatInterface({
               role: "user",
               content: statusMsg,
               id: crypto.randomUUID(),
-            });
+              isToolResult: true,
+            } as ExtendedMessage);
 
             // Clear the input field
             setInput("");
@@ -801,7 +819,8 @@ export function ChatInterface({
               role: "user",
               content: `${statusMsg}`,
               id: crypto.randomUUID(),
-            });
+              isToolResult: true,
+            } as ExtendedMessage);
           }
         } else {
           // Still update the lastStatusRef even if we don't send a message
@@ -824,95 +843,102 @@ export function ChatInterface({
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Render all messages in their original order */}
-          {messages.map((message, messageIndex) => (
-            <div
-              key={message.id}
-              className={`
-              p-3 rounded-lg text-sm whitespace-pre-wrap
-              ${
-                message.role === "user"
-                  ? "bg-primary/10 ml-auto max-w-[80%]"
-                  : "bg-muted mr-auto max-w-[80%]"
-              }
-            `}
-            >
-              {message.role === "user" ? (
-                <ReactMarkdown>
-                  {extractUserPrompt(message.content)}
-                </ReactMarkdown>
-              ) : (
-                <>
-                  {/* Render assistant message content */}
-                  {message.parts ? (
-                    message.parts.map((part, idx) => {
-                      type ToolInvocation = {
-                        toolName: string;
-                        args: Record<string, unknown>;
-                        state: string;
-                        result?: unknown;
-                      };
+          {messages.map((message, messageIndex) => {
+            const extendedMessage = message as ExtendedMessage;
+            const isToolResult = extendedMessage.isToolResult;
 
-                      type MessagePart =
-                        | { type: "text"; text: string }
-                        | {
-                            type: "tool-invocation";
-                            toolInvocation: ToolInvocation;
-                          };
+            return (
+              <div
+                key={message.id}
+                className={`
+                p-3 rounded-lg text-sm whitespace-pre-wrap
+                ${
+                  message.role === "user"
+                    ? isToolResult
+                      ? "bg-gray-100 mx-auto max-w-[80%] text-left text-gray-600 border border-gray-200"
+                      : "bg-primary/10 ml-auto max-w-[80%]"
+                    : "bg-muted mr-auto max-w-[80%]"
+                }
+              `}
+              >
+                {message.role === "user" ? (
+                  <ReactMarkdown>
+                    {extractUserPrompt(message.content)}
+                  </ReactMarkdown>
+                ) : (
+                  <>
+                    {/* Render assistant message content */}
+                    {message.parts ? (
+                      message.parts.map((part, idx) => {
+                        type ToolInvocation = {
+                          toolName: string;
+                          args: Record<string, unknown>;
+                          state: string;
+                          result?: unknown;
+                        };
 
-                      const typedPart = part as MessagePart;
+                        type MessagePart =
+                          | { type: "text"; text: string }
+                          | {
+                              type: "tool-invocation";
+                              toolInvocation: ToolInvocation;
+                            };
 
-                      if (typedPart.type === "text") {
-                        return (
-                          <ReactMarkdown key={idx}>
-                            {typedPart.text}
-                          </ReactMarkdown>
-                        );
-                      } else if (typedPart.type === "tool-invocation") {
-                        return (
-                          <div
-                            key={idx}
-                            className="text-xs text-gray-600 border rounded p-1 mb-2"
-                          >
-                            <strong>Tool Call:</strong>{" "}
-                            {typedPart.toolInvocation.toolName} with args{" "}
-                            {JSON.stringify(typedPart.toolInvocation.args)}
-                            <br />
-                            <em>Status: {typedPart.toolInvocation.state}</em>
-                            {typedPart.toolInvocation.state === "result" && (
-                              <>
-                                <br />
-                                <strong>Result:</strong>{" "}
-                                {JSON.stringify(
-                                  typedPart.toolInvocation.result,
-                                )}
-                              </>
-                            )}
-                          </div>
-                        );
-                      }
-                      return null;
-                    })
-                  ) : (
-                    <ReactMarkdown>
-                      {extractUserPrompt(message.content)}
-                    </ReactMarkdown>
-                  )}
+                        const typedPart = part as MessagePart;
 
-                  {/* Show thinking indicator only for the last assistant message during loading */}
-                  {messageIndex === messages.length - 1 &&
-                    chatIsLoading &&
-                    isThinking && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                        <span className="text-sm text-blue-700 font-medium">
-                          Thinking...
-                        </span>
-                      </div>
+                        if (typedPart.type === "text") {
+                          return (
+                            <ReactMarkdown key={idx}>
+                              {typedPart.text}
+                            </ReactMarkdown>
+                          );
+                        } else if (typedPart.type === "tool-invocation") {
+                          return (
+                            <div
+                              key={idx}
+                              className="text-xs text-gray-600 border rounded p-1 mb-2"
+                            >
+                              <strong>Tool Call:</strong>{" "}
+                              {typedPart.toolInvocation.toolName} with args{" "}
+                              {JSON.stringify(typedPart.toolInvocation.args)}
+                              <br />
+                              <em>Status: {typedPart.toolInvocation.state}</em>
+                              {typedPart.toolInvocation.state === "result" && (
+                                <>
+                                  <br />
+                                  <strong>Result:</strong>{" "}
+                                  {JSON.stringify(
+                                    typedPart.toolInvocation.result,
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })
+                    ) : (
+                      <ReactMarkdown>
+                        {extractUserPrompt(message.content)}
+                      </ReactMarkdown>
                     )}
-                </>
-              )}
-            </div>
-          ))}
+
+                    {/* Show thinking indicator only for the last assistant message during loading */}
+                    {messageIndex === messages.length - 1 &&
+                      chatIsLoading &&
+                      isThinking && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                          <span className="text-sm text-blue-700 font-medium">
+                            Thinking...
+                          </span>
+                        </div>
+                      )}
+                  </>
+                )}
+              </div>
+            );
+          })}
 
           {/* If we're loading but there's no assistant message yet, show a standalone indicator */}
           {chatIsLoading &&
