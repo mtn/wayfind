@@ -13,12 +13,7 @@ import {
 import { Info, Plus } from "lucide-react";
 import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import ReactMarkdown from "react-markdown";
-
-import {
-  getCaretPosition,
-  setCaretPosition,
-  insertAtCaret,
-} from "@/lib/utils/caretHelpers";
+import { getCaretPosition, setCaretPosition, insertAtCaret } from "@/lib/utils/caretHelpers";
 import { IBreakpoint } from "@/app/page";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -231,7 +226,7 @@ export function ChatInterface({
     const textContent = element.innerText;
     let html = textContent;
     const regex = /@file\s+(\S+)/g;
-
+    
     // Replace all @file commands in the text
     html = textContent.replace(regex, (match, fileCandidate) => {
       const valid = Boolean(validateFilePath(fileCandidate, files));
@@ -702,25 +697,25 @@ export function ChatInterface({
     console.log("handleInsert called with:", filePath);
     if (editorRef.current) {
       console.log("Editor ref exists, inserting text at cursor");
-
+      
       // First, focus the editor and restore cursor position
       editorRef.current.focus();
       setCaretPosition(editorRef.current, savedCaretPosition);
-
+      
       // Insert at the current cursor position
       insertAtCaret(editorRef.current, `@file ${filePath} `);
-
+      
       // Update the input state to match the editor content
       const newText = editorRef.current.innerText;
       setInput(newText);
       handleInputChange({
         target: { value: newText },
       } as React.ChangeEvent<HTMLInputElement>);
-
+      
       // Update syntax highlighting
       updateSlashSuggestions(newText);
       requestAnimationFrame(() => highlightFileCommand());
-
+      
       console.log("Text updated to:", newText);
     } else {
       console.log("Editor ref is null");
@@ -890,7 +885,7 @@ export function ChatInterface({
               <div
                 key={message.id}
                 className={`
-                chat-message p-3 rounded-lg text-sm whitespace-pre overflow-x-auto
+                p-3 rounded-lg text-sm whitespace-pre-wrap
                 ${
                   message.role === "user"
                     ? isToolResult
@@ -983,7 +978,7 @@ export function ChatInterface({
           {chatIsLoading &&
             messages.length > 0 &&
             messages[messages.length - 1].role === "user" && (
-              <div className="chat-message p-3 rounded-lg text-sm whitespace-pre overflow-x-auto bg-muted mr-auto max-w-[80%]">
+              <div className="p-3 rounded-lg text-sm whitespace-pre-wrap bg-muted mr-auto max-w-[80%]">
                 {isThinking ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
@@ -1139,7 +1134,7 @@ export function ChatInterface({
               </Button>
             )}
           </div>
-
+          
           {/* File Insert Dialog */}
           {showInsertDialog && (
             <div className="absolute bottom-full left-2 mb-1 z-50">

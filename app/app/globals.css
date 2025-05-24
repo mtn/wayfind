@@ -116,18 +116,3 @@ body {
         @apply bg-background text-foreground;
     }
 }
-
-/* Chat message horizontal scrolling styles */
-.chat-message {
-    overflow-x: auto !important;
-    max-width: 100% !important;
-}
-
-.chat-message pre {
-    white-space: pre !important;
-    overflow-x: auto !important;
-}
-
-.chat-message code {
-    white-space: pre !important;
-}
