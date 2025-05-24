@@ -10,13 +10,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Info } from "lucide-react";
+import { Info, Plus } from "lucide-react";
 import { FileEntry, InMemoryFileSystem } from "@/lib/fileSystem";
 import ReactMarkdown from "react-markdown";
-import { getCaretPosition, setCaretPosition } from "@/lib/utils/caretHelpers";
+import { getCaretPosition, setCaretPosition, insertAtCaret } from "@/lib/utils/caretHelpers";
 import { IBreakpoint } from "@/app/page";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import FileInsertDialog from "./FileInsertDialog";
 
 import type { EvaluationResult } from "@/components/DebugToolbar";
 
@@ -149,7 +150,7 @@ function validateFilePath(
 }
 
 function parseFileCommands(text: string, allFiles: FileEntry[]): FileEntry[] {
-  const regex = /\/file\s+([^\s]+)/g;
+  const regex = /@file\s+([^\s]+)/g;
   const matchedFiles: FileEntry[] = [];
   let match;
 
@@ -183,6 +184,7 @@ export function ChatInterface({
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
+  const [showInsertDialog, setShowInsertDialog] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
 
   const updateSlashSuggestions = useCallback(
@@ -222,20 +224,13 @@ export function ChatInterface({
     const caretPos = getCaretPosition(element);
     const textContent = element.innerText;
     let html = textContent;
-    const regex = /^\/file\s+(\S+)(.*)$/;
-    const match = textContent.match(regex);
-
-    if (match) {
-      const fileCandidate = match[1];
-      const rest = match[2];
-
-      // Use the shared validation function
+    const regex = /@file\s+(\S+)/g;
+    
+    // Replace all @file commands in the text
+    html = textContent.replace(regex, (match, fileCandidate) => {
       const valid = Boolean(validateFilePath(fileCandidate, files));
-
-      html =
-        `<span style="color:${valid ? "green" : "red"}">/file ${fileCandidate}</span>` +
-        rest;
-    }
+      return `<span style="color:${valid ? "green" : "red"}">@file ${fileCandidate}</span>`;
+    });
 
     element.innerHTML = html;
     setCaretPosition(element, caretPos);
@@ -697,6 +692,29 @@ export function ChatInterface({
     onSubmit(fakeEvent);
   };
 
+  const handleInsert = (filePath: string) => {
+    if (editorRef.current) {
+      insertAtCaret(editorRef.current, `@file ${filePath} `);
+      
+      // Update the input state to match the editor content
+      const newText = editorRef.current.innerText;
+      setInput(newText);
+      handleInputChange({
+        target: { value: newText },
+      } as React.ChangeEvent<HTMLInputElement>);
+      
+      // Update syntax highlighting
+      updateSlashSuggestions(newText);
+      requestAnimationFrame(() => highlightFileCommand());
+    }
+    setShowInsertDialog(false);
+    
+    // Return focus to the editor
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+  };
+
   // Register the prefill callback
   useEffect(() => {
     if (onPrefillInput) {
@@ -1024,9 +1042,18 @@ export function ChatInterface({
         {/* Input Form */}
         <form
           onSubmit={onSubmit}
-          className="p-2 flex flex-col gap-2 border-t bg-background"
+          className="p-2 flex flex-col gap-2 border-t bg-background relative"
         >
           <div className="flex gap-2 items-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowInsertDialog(true)}
+              className="px-2 py-2 h-[38px]"
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
             <div
               ref={editorRef}
               contentEditable
@@ -1091,6 +1118,17 @@ export function ChatInterface({
               </Button>
             )}
           </div>
+          
+          {/* File Insert Dialog */}
+          {showInsertDialog && (
+            <div className="absolute bottom-full left-2 mb-1 z-50">
+              <FileInsertDialog
+                files={files}
+                onSelectFile={handleInsert}
+                onClose={() => setShowInsertDialog(false)}
+              />
+            </div>
+          )}
         </form>
 
         {/* Auto-mode status */}
