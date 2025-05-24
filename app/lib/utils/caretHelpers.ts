@@ -49,3 +49,14 @@ export function setCaretPosition(element: HTMLElement, position: number): void {
     }
   }
 }
+
+export function insertAtCaret(el: HTMLElement, text: string): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  range.insertNode(document.createTextNode(text));
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
