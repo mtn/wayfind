@@ -150,7 +150,7 @@ function validateFilePath(
 }
 
 function parseFileCommands(text: string, allFiles: FileEntry[]): FileEntry[] {
-  const regex = /\/file\s+([^\s]+)/g;
+  const regex = /@file\s+([^\s]+)/g;
   const matchedFiles: FileEntry[] = [];
   let match;
 
@@ -190,7 +190,7 @@ export function ChatInterface({
 
   const updateSlashSuggestions = useCallback(
     (text: string) => {
-      const fileCommandMatch = text.match(/^\/file\s+(\S*)$/);
+      const fileCommandMatch = text.match(/^@file\s+(\S*)$/);
       if (fileCommandMatch) {
         const query = fileCommandMatch[1];
         if (query.endsWith("/") && onLazyExpandDirectory) {
@@ -204,9 +204,9 @@ export function ChatInterface({
           setFileSuggestions(matches);
         }
         setSuggestions([]);
-      } else if (text.startsWith("/")) {
-        if ("/file".startsWith(text)) {
-          setSuggestions(["/file"]);
+      } else if (text.startsWith("@")) {
+        if ("@file".startsWith(text)) {
+          setSuggestions(["@file"]);
         } else {
           setSuggestions([]);
         }
@@ -225,12 +225,12 @@ export function ChatInterface({
     const caretPos = getCaretPosition(element);
     const textContent = element.innerText;
     let html = textContent;
-    const regex = /\/file\s+(\S+)/g;
+    const regex = /@file\s+(\S+)/g;
     
-    // Replace all /file commands in the text
+    // Replace all @file commands in the text
     html = textContent.replace(regex, (match, fileCandidate) => {
       const valid = Boolean(validateFilePath(fileCandidate, files));
-      return `<span style="color:${valid ? "green" : "red"}">/file ${fileCandidate}</span>`;
+      return `<span style="color:${valid ? "green" : "red"}">@file ${fileCandidate}</span>`;
     });
 
     element.innerHTML = html;
@@ -703,7 +703,7 @@ export function ChatInterface({
       setCaretPosition(editorRef.current, savedCaretPosition);
       
       // Insert at the current cursor position
-      insertAtCaret(editorRef.current, `/file ${filePath} `);
+      insertAtCaret(editorRef.current, `@file ${filePath} `);
       
       // Update the input state to match the editor content
       const newText = editorRef.current.innerText;
@@ -1042,7 +1042,7 @@ export function ChatInterface({
                   const parts = currentQuery.split("/");
                   parts[parts.length - 1] = file.name;
                   const newQuery = parts.join("/") + " ";
-                  setInput("/file " + newQuery);
+                  setInput("@file " + newQuery);
                   setFileSuggestions([]);
                 }}
               >
