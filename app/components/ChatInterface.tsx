@@ -150,7 +150,7 @@ function validateFilePath(
 }
 
 function parseFileCommands(text: string, allFiles: FileEntry[]): FileEntry[] {
-  const regex = /@file\s+([^\s]+)/g;
+  const regex = /\/file\s+([^\s]+)/g;
   const matchedFiles: FileEntry[] = [];
   let match;
 
@@ -185,6 +185,7 @@ export function ChatInterface({
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [fileSuggestions, setFileSuggestions] = useState<FileEntry[]>([]);
   const [showInsertDialog, setShowInsertDialog] = useState(false);
+  const [savedCaretPosition, setSavedCaretPosition] = useState<number>(0);
   const editorRef = useRef<HTMLDivElement>(null);
 
   const updateSlashSuggestions = useCallback(
@@ -224,12 +225,12 @@ export function ChatInterface({
     const caretPos = getCaretPosition(element);
     const textContent = element.innerText;
     let html = textContent;
-    const regex = /@file\s+(\S+)/g;
+    const regex = /\/file\s+(\S+)/g;
     
-    // Replace all @file commands in the text
+    // Replace all /file commands in the text
     html = textContent.replace(regex, (match, fileCandidate) => {
       const valid = Boolean(validateFilePath(fileCandidate, files));
-      return `<span style="color:${valid ? "green" : "red"}">@file ${fileCandidate}</span>`;
+      return `<span style="color:${valid ? "green" : "red"}">/file ${fileCandidate}</span>`;
     });
 
     element.innerHTML = html;
@@ -693,8 +694,16 @@ export function ChatInterface({
   };
 
   const handleInsert = (filePath: string) => {
+    console.log("handleInsert called with:", filePath);
     if (editorRef.current) {
-      insertAtCaret(editorRef.current, `@file ${filePath} `);
+      console.log("Editor ref exists, inserting text at cursor");
+      
+      // First, focus the editor and restore cursor position
+      editorRef.current.focus();
+      setCaretPosition(editorRef.current, savedCaretPosition);
+      
+      // Insert at the current cursor position
+      insertAtCaret(editorRef.current, `/file ${filePath} `);
       
       // Update the input state to match the editor content
       const newText = editorRef.current.innerText;
@@ -706,13 +715,20 @@ export function ChatInterface({
       // Update syntax highlighting
       updateSlashSuggestions(newText);
       requestAnimationFrame(() => highlightFileCommand());
+      
+      console.log("Text updated to:", newText);
+    } else {
+      console.log("Editor ref is null");
     }
     setShowInsertDialog(false);
-    
-    // Return focus to the editor
+  };
+
+  const handleOpenDialog = () => {
     if (editorRef.current) {
-      editorRef.current.focus();
+      // Save the current cursor position before opening dialog
+      setSavedCaretPosition(getCaretPosition(editorRef.current));
     }
+    setShowInsertDialog(true);
   };
 
   // Register the prefill callback
@@ -1049,7 +1065,7 @@ export function ChatInterface({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setShowInsertDialog(true)}
+              onClick={handleOpenDialog}
               className="px-2 py-2 h-[38px]"
             >
               <Plus className="w-4 h-4" />
