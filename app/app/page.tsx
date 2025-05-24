@@ -631,8 +631,19 @@ export default function Home() {
         // After workspace loads, prepare the test prompt
         // TODO If the breakpoint is set on a non-code line the breakpoint gets swallowed.
         // Check how other debuggers handle it (e.g. workspace.rs a few lines above the target)
-        const testPrompt =
-          "set a breakpoint on line 3397 of crates/workspace/src/workspace.rs";
+        const testPrompt = `Set a breakpoint on line 3397 of crates/workspace/src/workspace.rs
+
+          I'm working on a PR in the zed editor, and this function is responsible for navigating to the next active pane in a certain direction.
+          I'm trying to add circular navigation support, so if the user is in the rightmost pane and activates the pane to the right, it should wrap around and jump to the leftmost pane.
+          It's not working quite correctly though.
+
+          I'm testing with three panes open.
+          | Assistant | Editor 1 | Editor 2 |
+
+          If I start in editor 2 and move right, it should jump to assistant. However, it jumps to editor 1.
+
+          I'm going to perform this test, which should trigger the breakpoint. Please help me figure out why it's jumping to the wrong pane.
+          `;
         // "/file crates/workspace/src/workspace.rs set a breakpoint on line 3397 of workspace.rs, then launch the debug session. After the program stops at the breakpoint, say 'foobar'";
 
         if (prefillChatInputRef.current) {
