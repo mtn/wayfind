@@ -1,11 +1,4 @@
-import React, { useState, useEffect } from "react";
-import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandItem,
-  CommandEmpty,
-} from "cmdk";
+import React, { useState, useEffect, useRef } from "react";
 import { FileEntry } from "@/lib/fileSystem";
 
 interface FileInsertDialogProps {
@@ -25,6 +18,8 @@ export default function FileInsertDialog({
 }: FileInsertDialogProps) {
   const [search, setSearch] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Get all files recursively
   const getAllFiles = (entries: FileEntry[], basePath = ""): FileWithPath[] => {
@@ -51,6 +46,26 @@ export default function FileInsertDialog({
   useEffect(() => {
     setSelectedIndex(0);
   }, [filteredFiles.length]);
+
+  // Auto-scroll selected item into view
+  useEffect(() => {
+    if (listRef.current) {
+      const selectedElement = listRef.current.children[selectedIndex] as HTMLElement;
+      if (selectedElement) {
+        selectedElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      }
+    }
+  }, [selectedIndex]);
+
+  // Focus input on mount
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     switch (e.key) {
@@ -79,49 +94,49 @@ export default function FileInsertDialog({
     }
   };
 
+  const handleItemClick = (index: number) => {
+    const selectedFile = filteredFiles[index];
+    onSelectFile(selectedFile.relativePath || selectedFile.name);
+    onClose();
+  };
+
   return (
-    <div className="bg-white border rounded shadow-lg w-[400px] max-h-[300px] z-50 flex flex-col overflow-hidden">
-      <Command
-        className="w-full flex flex-col h-full"
+    <div 
+      className="bg-white border rounded shadow-lg w-[400px] max-h-[300px] z-50 flex flex-col overflow-hidden"
+    >
+      <div className="px-3 py-2 border-b text-sm font-medium flex-shrink-0">Insert File</div>
+      <input
+        ref={inputRef}
+        type="text"
+        placeholder="Search files..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-full px-3 py-2 border-b outline-none text-sm flex-shrink-0"
         onKeyDown={handleKeyDown}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div className="px-3 py-2 border-b text-sm font-medium flex-shrink-0">Insert File</div>
-        <CommandInput
-          placeholder="Search files..."
-          value={search}
-          onValueChange={setSearch}
-          autoFocus
-          className="w-full px-3 py-2 border-b outline-none text-sm flex-shrink-0"
-        />
-        <CommandList className="flex-1 overflow-y-auto max-h-48" role="listbox">
-          {filteredFiles.map((file, index) => (
-            <CommandItem
-              key={file.relativePath || file.name}
-              onSelect={() => {
-                onSelectFile(file.relativePath || file.name);
-                onClose();
-              }}
-              className={`p-2 cursor-pointer text-sm ${
-                index === selectedIndex
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-gray-100"
-              }`}
-            >
-              <div className="font-medium">{file.name}</div>
-              {file.relativePath && file.relativePath !== file.name && (
-                <div className="text-xs text-gray-500">{file.relativePath}</div>
-              )}
-            </CommandItem>
-          ))}
-          {filteredFiles.length === 0 && (
-            <CommandEmpty className="p-2 text-gray-500 text-sm">
-              No files found.
-            </CommandEmpty>
-          )}
-        </CommandList>
-      </Command>
+      />
+      <div ref={listRef} className="flex-1 overflow-y-auto max-h-48" role="listbox">
+        {filteredFiles.map((file, index) => (
+          <div
+            key={file.relativePath || file.name}
+            onClick={() => handleItemClick(index)}
+            className={`p-2 cursor-pointer text-sm ${
+              index === selectedIndex
+                ? "bg-blue-100 text-blue-900"
+                : "hover:bg-gray-100"
+            }`}
+          >
+            <div className="font-medium">{file.name}</div>
+            {file.relativePath && file.relativePath !== file.name && (
+              <div className="text-xs text-gray-500">{file.relativePath}</div>
+            )}
+          </div>
+        ))}
+        {filteredFiles.length === 0 && (
+          <div className="p-2 text-gray-500 text-sm">
+            No files found.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
