@@ -195,6 +195,8 @@ router.post("/", async (req: Request, res: Response) => {
               Current debug status: ${debugStatus}
               ${locationInfo}
 
+              IMPORTANT: Always ask for confirmation from the user before launching the program, unless they explicitly requested it in their messages.
+
               IMPORTANT: For setting breakpoints, prefer using setBreakpointBySearch instead of setBreakpointByLine
               whenever possible. This allows you to set breakpoints by searching for code content rather than
               relying on specific line numbers, which is more reliable if the code has been modified.
