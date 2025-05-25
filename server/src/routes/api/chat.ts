@@ -185,6 +185,34 @@ router.post("/", async (req: Request, res: Response) => {
       locationInfo = `Execution is currently paused at line ${executionLine} in file ${executionFile}.`;
     }
 
+    /* Process messages to fix incomplete tool calls */
+    // TODO this is probably not the best way, but fine for now
+    const fixedMessages = messages.map((msg: any) => {
+      if (!Array.isArray(msg.parts)) return msg;
+
+      const fixedParts = msg.parts.map((p: any) => {
+        if (
+          p.type === "tool-invocation" &&
+          p.toolInvocation?.state === "call"
+        ) {
+          return {
+            ...p,
+            toolInvocation: {
+              ...p.toolInvocation,
+              state: "result",
+              /* minimal result object that satisfies the schema */
+              result: {
+                ok: false,
+                error: "Tool invocation failed on the client side.",
+              },
+            },
+          };
+        }
+        return p;
+      });
+      return { ...msg, parts: fixedParts };
+    });
+
     const toolDocs = generateToolDocs(tools);
     const systemPrompt = {
       role: "system",
@@ -215,7 +243,7 @@ router.post("/", async (req: Request, res: Response) => {
 
     const result = streamText({
       model: anthropic("claude-3-7-sonnet-20250219"),
-      messages: [systemPrompt, ...messages],
+      messages: [systemPrompt, ...fixedMessages],
       tools,
       maxSteps: 1,
       providerOptions: {
