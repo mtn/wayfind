@@ -134,6 +134,7 @@ export default function Home() {
       toolCallLog: toolCallLogRef.current,
       executionFile,
       executionLine,
+      debugLanguage: debugEngine,
     };
   };
 

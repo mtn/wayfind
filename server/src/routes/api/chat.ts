@@ -165,6 +165,7 @@ router.post("/", async (req: Request, res: Response) => {
     }
 
     const debugStatus = debugState?.debugStatus ?? "notstarted";
+    const debugLanguage = debugState?.debugLanguage ?? "unknown";
     const toolCallLog = debugState?.toolCallLog ?? [];
     const wasLaunchDebugRecentlyCalled = toolCallLog.some(
       (call: ToolCall) =>
@@ -188,11 +189,12 @@ router.post("/", async (req: Request, res: Response) => {
     const toolDocs = generateToolDocs(tools);
     const systemPrompt = {
       role: "system",
-      content: `You are a highly skilled debugging assistant.
+      content: `You are a highly skilled debugging assistant specializing in ${debugLanguage} development.
               When you're asked questions about the code, you should always first consider using the debugging tools available to you
               to answer it efficiently and accurately. ${toolDocs}
 
               Current debug status: ${debugStatus}
+              Programming language: ${debugLanguage}
               ${locationInfo}
 
               IMPORTANT: Always ask for confirmation from the user before launching the program, unless they explicitly requested it in their messages.

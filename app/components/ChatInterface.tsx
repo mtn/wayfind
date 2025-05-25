@@ -46,6 +46,7 @@ interface DebugSyncData {
   }>;
   executionFile: string | null;
   executionLine: number | null;
+  debugLanguage: string;
 }
 interface ChatInterfaceProps {
   // An array of files that provide context.
