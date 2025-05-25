@@ -1193,13 +1193,19 @@ export function ChatInterface({
 
           {/* File Insert Dialog */}
           {showInsertDialog && (
-            <div className="absolute bottom-full left-2 mb-1 z-50">
-              <FileInsertDialog
-                files={files}
-                onSelectFile={handleInsert}
-                onClose={() => setShowInsertDialog(false)}
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowInsertDialog(false)}
               />
-            </div>
+              <div className="absolute bottom-full left-2 mb-1 z-50">
+                <FileInsertDialog
+                  files={files}
+                  onSelectFile={handleInsert}
+                  onClose={() => setShowInsertDialog(false)}
+                />
+              </div>
+            </>
           )}
         </form>
 
