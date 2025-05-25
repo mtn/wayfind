@@ -642,6 +642,8 @@ export default function Home() {
 
           If I start in editor 2 and move right, it should jump to assistant. However, it jumps to editor 1.
 
+          The function we're debugging is defined on lines 3372 to 3477.
+
           I'm going to perform this test, which should trigger the breakpoint. Please help me figure out why it's jumping to the wrong pane.
           `;
         // "/file crates/workspace/src/workspace.rs set a breakpoint on line 3397 of workspace.rs, then launch the debug session. After the program stops at the breakpoint, say 'foobar'";
