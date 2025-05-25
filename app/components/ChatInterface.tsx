@@ -1142,6 +1142,14 @@ export function ChatInterface({
                   } else {
                     editorRef.current.textContent += text;
                   }
+
+                  // Update React state to match DOM content
+                  const newText = editorRef.current.textContent || "";
+                  setInput(newText);
+                  handleInputChange({
+                    target: { value: newText },
+                  } as React.ChangeEvent<HTMLInputElement>);
+                  updateSlashSuggestions(newText);
                 }
                 requestAnimationFrame(() => {
                   highlightFileCommand();
