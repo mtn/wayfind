@@ -443,7 +443,12 @@ export function ChatInterface({
               }
             }, 0);
 
-            throw error;
+            // Return error result instead of re-throwing
+            return {
+              message: errMsg,
+              ok: false,
+              error: errMsg,
+            };
           }
         } else if (toolCall.toolName === "launchDebug") {
           onLaunch();
@@ -513,7 +518,15 @@ export function ChatInterface({
             }, 0);
           } catch (error) {
             console.error("Error reading file:", error);
-            throw error;
+            const errorMsg =
+              error instanceof Error ? error.message : String(error);
+
+            // Return error result instead of re-throwing
+            return {
+              message: errorMsg,
+              ok: false,
+              error: errorMsg,
+            };
           }
         }
 
@@ -530,7 +543,15 @@ export function ChatInterface({
           toolName: toolCall.toolName,
           error,
         });
-        throw error;
+
+        // Return error result instead of re-throwing
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        return {
+          message: errorMessage,
+          ok: false,
+          error: errorMessage,
+        };
       } finally {
         // after queueing any follow-up message
         setToolCallsInFlight((c) => c - 1);
