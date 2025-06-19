@@ -57,6 +57,26 @@ export default function Home() {
   const [rustBinaryPath, setRustBinaryPath] = useState<string>(
     "~/Documents/workspace/scratch/zed/target/debug/zed",
   );
+  const [debugpyPath, setDebugpyPath] = useState<string>("python");
+  const [lldbPath, setLldbPath] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const dp = localStorage.getItem("debugpyPath");
+    if (dp) setDebugpyPath(dp);
+    const lp = localStorage.getItem("lldbPath");
+    if (lp) setLldbPath(lp);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("debugpyPath", debugpyPath);
+  }, [debugpyPath]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("lldbPath", lldbPath);
+  }, [lldbPath]);
 
   const [queuedBreakpoints, setQueuedBreakpoints] = useState<IBreakpoint[]>([]);
   const [activeBreakpoints, setActiveBreakpoints] = useState<IBreakpoint[]>([]);
@@ -685,6 +705,7 @@ export default function Home() {
         await invoke("launch_debug_session", {
           scriptPath: rustBinaryPath,
           debugEngine,
+          lldbPath,
         });
 
         addLog(`${debugEngine} debug session launched successfully`);
@@ -799,6 +820,7 @@ export default function Home() {
       await invoke("launch_debug_session", {
         scriptPath,
         debugEngine,
+        debugpyPath,
       });
 
       addLog(`${debugEngine} debug session launched successfully`);
@@ -1020,6 +1042,10 @@ export default function Home() {
                     onDebugEngineChange={setDebugEngine}
                     rustBinaryPath={rustBinaryPath}
                     onRustBinaryPathChange={setRustBinaryPath}
+                    debugpyPath={debugpyPath}
+                    onDebugpyPathChange={setDebugpyPath}
+                    lldbPath={lldbPath}
+                    onLldbPathChange={setLldbPath}
                     onManualEvaluation={handleManualEvaluation}
                   />
                 </div>

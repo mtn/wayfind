@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
+import SettingsDialog from "./SettingsDialog";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Play,
@@ -10,6 +11,7 @@ import {
   ArrowUpCircle,
   RotateCcw,
   Square,
+  Settings,
 } from "lucide-react";
 import {
   Tooltip,
@@ -27,6 +29,10 @@ interface DebugToolbarProps {
   onDebugEngineChange?: (engine: string) => void;
   rustBinaryPath?: string;
   onRustBinaryPathChange?: (path: string) => void;
+  debugpyPath?: string;
+  onDebugpyPathChange?: (path: string) => void;
+  lldbPath?: string;
+  onLldbPathChange?: (path: string) => void;
   onManualEvaluation?: (expression: string, result: EvaluationResult) => void;
 }
 
@@ -46,9 +52,14 @@ export function DebugToolbar({
   onDebugEngineChange,
   rustBinaryPath = "",
   onRustBinaryPathChange,
+  debugpyPath = "python",
+  onDebugpyPathChange,
+  lldbPath = "",
+  onLldbPathChange,
   onManualEvaluation,
 }: DebugToolbarProps) {
   const [expression, setExpression] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
 
   function markManual() {
     window.dispatchEvent(new CustomEvent("manual-debug-action"));
@@ -227,6 +238,14 @@ export function DebugToolbar({
             <option value="python">Python</option>
             <option value="rust">Rust</option>
           </select>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => setShowSettings(true)}
+            title="Binary Paths"
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -338,6 +357,17 @@ export function DebugToolbar({
           </>
         )}
       </div>
+      {showSettings && (
+        <SettingsDialog
+          debugpyPath={debugpyPath}
+          lldbPath={lldbPath}
+          onClose={() => setShowSettings(false)}
+          onSave={({ debugpyPath: dp, lldbPath: lp }) => {
+            onDebugpyPathChange?.(dp);
+            onLldbPathChange?.(lp);
+          }}
+        />
+      )}
     </div>
   );
 }

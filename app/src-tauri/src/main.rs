@@ -142,6 +142,8 @@ async fn launch_debug_session(
     app_handle: tauri::AppHandle,
     script_path: String,
     debug_engine: String, // New parameter to specify Python or Rust
+    debugpy_path: Option<String>,
+    lldb_path: Option<String>,
     debug_state: tauri::State<'_, Arc<DebugSessionState>>,
 ) -> Result<String, String> {
     // Create a basic validation check for the debug_engine parameter
@@ -161,7 +163,8 @@ async fn launch_debug_session(
             println!("Using port {} for debugpy", debugpy_port);
 
             // 2. Spawn the Python process running debugpy.
-            let mut child = Command::new("/Users/mtn/.pyenv/versions/dbg/bin/python")
+            let python_bin = debugpy_path.unwrap_or_else(|| "python".to_string());
+            let mut child = Command::new(python_bin)
                 .args(&[
                     "-Xfrozen_modules=off",
                     "-u",
@@ -287,17 +290,27 @@ async fn launch_debug_session(
 
             println!("Using port {} for lldb-dap", lldb_port);
 
-            // Search for lldb-dap in various locations
-            let lldb_dap_paths = [
+            // Resolve lldb-dap path
+            let default_paths = [
                 "/Applications/Xcode.app/Contents/Developer/usr/bin/lldb-dap",
                 "/usr/bin/lldb-dap",
                 "/usr/local/bin/lldb-dap",
             ];
 
-            let lldb_dap_path = lldb_dap_paths
-                .iter()
-                .find(|&&path| std::path::Path::new(path).exists())
-                .ok_or_else(|| "Could not find lldb-dap executable. Please ensure LLDB with DAP support is installed.".to_string())?;
+            let lldb_dap_path = if let Some(ref p) = lldb_path {
+                if std::path::Path::new(p).exists() {
+                    p.as_str()
+                } else {
+                    return Err(format!("Provided lldb-dap path '{}' does not exist", p));
+                }
+            } else {
+                default_paths
+                    .iter()
+                    .find(|&&path| std::path::Path::new(path).exists())
+                    .ok_or_else(|| {
+                        "Could not find lldb-dap executable. Please ensure LLDB with DAP support is installed.".to_string()
+                    })?
+            };
 
             println!("Using lldb-dap at: {}", lldb_dap_path);
 
